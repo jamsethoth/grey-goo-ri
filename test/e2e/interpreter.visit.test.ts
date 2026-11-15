@@ -23,10 +23,13 @@ test('commits match the recorded intent tree', async (t) => {
   const fixture = await runFirstVisit(t, { git: 'real' });
   const commits = intents(fixture.executionRecord, 'commit');
   assert.equal(commits.length, 2);
-  const shaOf = (commit: { actionMarker: string }) =>
-    fixture.executionRecord.writeAheadLog.find(
+  const shaOf = (commit: { actionMarker: string }) => {
+    const { evidence } = fixture.executionRecord.writeAheadLog.find(
       (entry) => entry.actionMarker === commit.actionMarker && entry.step === 'evidence',
-    )!.evidence!.sha as string;
+    )!;
+    assert.ok(evidence && 'sha' in evidence && evidence.sha !== null, 'a commit saves its sha');
+    return evidence.sha;
+  };
   const [testCommit, featCommit] = commits as Commit[];
   assert.equal(gitShell.sh(fixture.worktree, 'rev-parse', `${shaOf(testCommit)}^{tree}`), testCommit.payload.tree);
   assert.equal(gitShell.sh(fixture.worktree, 'rev-parse', `${shaOf(testCommit)}^`), testCommit.payload.parent);

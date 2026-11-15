@@ -74,11 +74,11 @@ async function assertEffectIntents(fixture: GoldenRun) {
     fixture.executionRecord.writeAheadLog.find(
       (entry) => entry.actionMarker === actionMarker && entry.step === 'evidence',
     )!.evidence!;
-  assert.equal(evidenceOf(commits[1].actionMarker).sha, head);
+  assert.deepEqual(evidenceOf(commits[1].actionMarker), { sha: head });
 
   const [push] = intents(fixture.executionRecord, 'push');
   assert.deepEqual(push.payload, { branch: golden.BRANCH, sha: head });
-  assert.equal(evidenceOf(push.actionMarker).remoteSha, head);
+  assert.deepEqual(evidenceOf(push.actionMarker), { remoteSha: head });
 
   // publish's re-render is the PR body GitHub shows.
   const pr = intents(fixture.executionRecord, 'pr-upsert').at(-1) as Intent<PrPayload>;

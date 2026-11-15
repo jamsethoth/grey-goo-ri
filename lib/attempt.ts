@@ -201,9 +201,10 @@ export async function runHeld<Worked, Settled extends visit.Resolution>(
     database.save(executionRecord);
     return null;
   }
-  const saved = actionMarker && writeAhead.findEntry(executionRecord, actionMarker, 'evidence');
+  const saved = actionMarker ? writeAhead.findEntry(executionRecord, actionMarker, 'evidence') : undefined;
   const settled: visit.Resolution = resolution;
-  if (saved) saved.evidence = { ...saved.evidence, ...jsonValue.checkedObject(settled, 'the resolution') };
+  // The new result replaces the one the hold saved; the Usage the call spent stays.
+  if (saved?.evidence?.usageDelta !== undefined) saved.evidence = { ...settled, usageDelta: saved.evidence.usageDelta };
   database.save(executionRecord, eventOf(context, actionIdentity, startedAt, { ...done, resolution }));
   if (actionMarker) effectErrors.crashPoint(context, actionMarker, 'after-completion');
   return resolution;

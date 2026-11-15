@@ -10,6 +10,7 @@ import type * as commandCleanup from '../../lib/command-cleanup.ts';
 import type * as events from '../../lib/events.ts';
 import type * as integrity from '../../lib/integrity.ts';
 import type * as visit from '../../lib/visit.ts';
+import type * as writeAhead from '../../lib/write-ahead.ts';
 import type * as sameType from '../support/same-type.ts';
 import * as typeShape from '../support/type-shape.ts';
 
@@ -33,6 +34,7 @@ const READERS = {
   configurationSnapshot: same<ValueOf<typeof recordReadVisit.configurationSnapshot>, visit.ConfigurationSnapshot>(true),
   actionOutput: same<ValueOf<typeof recordReadVisit.actionOutput>, visit.ActionOutput>(true),
   usage: same<ValueOf<typeof recordReadVisit.usage>, events.Usage>(true),
+  callEvidence: same<ValueOf<typeof recordReadVisit.callEvidence>, writeAhead.CallEvidence>(true),
 };
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -249,7 +251,7 @@ test('a closed Usage may name its costBasis, reported, priced or null', () => {
 test("a keyed type's names line names the type that declares it", () => {
   const lines = typeShape.paths(EXECUTION);
   for (const line of [
-    'writeAheadLog[].evidence.*: JsonValue (writeAhead.Evidence)',
+    'configurationSnapshot.files.*: object (config.SourceFiles)',
     'sessions.*.cumulativeUsage.costBasis?: "reported" | "priced" | null (events.Usage)',
   ])
     assert.ok(lines.includes(line), line);

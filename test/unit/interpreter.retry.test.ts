@@ -103,9 +103,9 @@ test('an accepted write whose call errored is found by marker, not reposted', as
   const actionMarker = attemptMarker(fixture, 'reviewer', 1, 'comment', 0);
   const final = loadTicket(fixture);
   assert.deepEqual(writeAheadSteps(final, actionMarker), ['intent', 'evidence', 'complete']);
-  assert.equal(
-    final.writeAheadLog.find((event) => event.actionMarker === actionMarker && event.step === 'evidence')!.evidence!.id,
-    posted.id,
+  assert.deepEqual(
+    final.writeAheadLog.find((event) => event.actionMarker === actionMarker && event.step === 'evidence')!.evidence,
+    { id: posted.id },
     'the found comment is the evidence',
   );
 });

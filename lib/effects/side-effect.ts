@@ -70,11 +70,11 @@ export async function sideEffect<Payload extends writeAhead.Payload, Context>(
   { actionMarker, effect, payload, deferred = false }: SideEffect<Payload, Context>,
 ): Promise<Evidence> {
   const { record: executionRecord } = context;
-  const found = writeAhead.evidenceOf(executionRecord, actionMarker);
+  const found = writeAhead.evidenceOf(executionRecord, actionMarker)?.evidence;
   if (found) {
     if (!deferred && !writeAhead.findEntry(executionRecord, actionMarker, 'complete'))
       context.database.complete(executionRecord, actionMarker);
-    return found.evidence as Evidence;
+    return found;
   }
   const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as Payload | undefined;
   if (!intended) context.database.intent(executionRecord, actionMarker, effect.name, payload);

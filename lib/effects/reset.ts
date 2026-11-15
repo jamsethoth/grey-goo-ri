@@ -6,6 +6,8 @@ import type * as visit from '../visit.ts';
 import type * as writeAhead from '../write-ahead.ts';
 import * as effects from './index.ts';
 
+export type Evidence = { head: string };
+
 // The reset intent's payload (lib/rescue.ts): the baseline head, the History item it adds, what git clean leaves to
 // restore, and the worktree as the agent left it.
 export interface Payload {

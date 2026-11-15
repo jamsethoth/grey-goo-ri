@@ -3,6 +3,7 @@
 // reports those hold. Only lib/record-read.ts imports it.
 import type * as visit from './visit.ts';
 import * as recordReadNode from './record-read-node.ts';
+import * as referencePaths from './reference-paths.ts';
 
 const { text, count, flag, json, nullable, list, keyed, oneOf, object, open, variant, tagged } = recordReadNode;
 const nullableText = nullable(text);
@@ -215,6 +216,17 @@ const resolution = tagged(
   tableResolution,
 );
 
+// An agent call's completion evidence: its Resolution, which the next Attempt reads, beside the Usage the call spent.
+export const callEvidence = (node: recordReadNode.Node) => {
+  const { value, path } = node;
+  // Only an object holding usageDelta is read as one (lib/record-read.ts); any other refuses as a Resolution would.
+  const { usageDelta, ...settled } = referencePaths.isRecord(value) ? value : {};
+  return {
+    ...resolution({ value: settled, path }),
+    usageDelta: usage({ value: usageDelta, path: path ? `${path}.usageDelta` : 'usageDelta' }),
+  };
+};
+
 export const visitState = object((field) => ({
   recovery: count(field('recovery')),
   firstAttemptBaseline: nullable(integrityBaseline)(field('firstAttemptBaseline')),
@@ -278,9 +290,11 @@ const actionOutputValue = object((field, has) => ({
   ...(has('response') && { response: json(field('response')) }),
   ...(has('cleanup') && { cleanup: callCleanup(field('cleanup')) }),
   ...(has('evidence') && {
-    evidence: open((evidence) => ({ command: text(evidence('command')), output: text(evidence('output')) }))(
-      field('evidence'),
-    ),
+    evidence: open((evidence, hasEvidence) => ({
+      command: text(evidence('command')),
+      output: text(evidence('output')),
+      ...(hasEvidence('foundByNameOnly') && { foundByNameOnly: flag(evidence('foundByNameOnly')) }),
+    }))(field('evidence')),
   }),
   ...(has('findingsHash') && { findingsHash: text(field('findingsHash')) }),
   ...(has('files') && { files: list(text)(field('files')) }),

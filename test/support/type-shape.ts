@@ -100,6 +100,11 @@ export class TypeShapes {
     if (this.checker.isArrayType(type)) return this.checker.typeToString(type);
     const name = this.typeName(type);
     if (name) return name;
+    // A form an intersection made, such as commit.Evidence & { usageDelta?: never }, is named by its named parts.
+    const parts = type.isIntersection()
+      ? type.types.map((part) => this.typeName(part)).filter((part) => part !== null)
+      : [];
+    if (parts.length) return parts.join(' & ');
     if (tag !== null) {
       const tagType = this.checker.getTypeOfSymbol(type.getProperty(tag)!);
       return `${tag}=${this.checker.typeToString(tagType).replaceAll('"', '')}`;
@@ -190,7 +195,9 @@ export class TypeShapes {
   private structure(type: ts.Type, depth: number): Structure {
     if (this.checker.isArrayType(type))
       return { kind: 'list', of: this.shape(this.checker.getTypeArguments(type as ts.TypeReference)[0], depth + 1) };
-    const index = type.getStringIndexType();
+    // An index typed never, as Record<string, never> declares, admits no key: the object is closed and empty.
+    const indexed = type.getStringIndexType();
+    const index = indexed && !(indexed.flags & ts.TypeFlags.Never) ? indexed : undefined;
     const properties = type
       .getProperties()
       .map((property) => ({ property, type: this.checker.getTypeOfSymbol(property) }))

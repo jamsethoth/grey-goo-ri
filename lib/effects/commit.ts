@@ -4,6 +4,8 @@ import type * as writeAhead from '../write-ahead.ts';
 import * as effects from './index.ts';
 
 export type Payload = { message: string; tree: string; parent: string };
+// A commit with nothing to commit saves a null sha.
+export type Evidence = { sha: string | null };
 
 // The git verbs a commit is made with (lib/git.ts).
 export interface Context {
@@ -68,9 +70,10 @@ export const effect: effects.Effect<Payload, Context> = { name: 'commit', remote
 export function lastCommit(
   executionRecord: Pick<record.ExecutionRecord, 'writeAheadLog'>,
 ): { actionMarker: string; sha: string } | undefined {
-  const last = executionRecord.writeAheadLog.findLast(
-    (entry: writeAhead.WriteAheadEntry) =>
-      entry.step === 'evidence' && entry.effect === effect.name && typeof entry.evidence?.sha === 'string',
+  const commits = executionRecord.writeAheadLog.flatMap(({ step, effect: named, actionMarker, evidence }) =>
+    step === 'evidence' && named === effect.name && evidence && 'sha' in evidence && evidence.sha !== null
+      ? [{ actionMarker, sha: evidence.sha }]
+      : [],
   );
-  return last && { actionMarker: last.actionMarker, sha: last.evidence!.sha as string };
+  return commits.at(-1);
 }

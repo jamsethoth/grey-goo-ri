@@ -265,7 +265,7 @@ test('a landed hold comment with a lost response is not posted twice', async (t)
     ofComment.map((entry) => entry.step),
     ['intent', 'evidence', 'complete'],
   );
-  assert.equal(ofComment.find((entry) => entry.step === 'evidence')?.evidence?.id, fixture.gh.comments[0]?.id);
+  assert.deepEqual(ofComment.find((entry) => entry.step === 'evidence')?.evidence, { id: fixture.gh.comments[0]?.id });
   assert.ok(fixture.gh.labels.has(NEEDS_HUMAN_LABEL), 'the label lands');
   assert.equal(final.state, 'held');
 });

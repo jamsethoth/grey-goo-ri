@@ -8,6 +8,8 @@ import type * as record from '../record.ts';
 import type * as effects from './index.ts';
 
 export type Payload = { number: number; sha: string | null; tree: string | null };
+// Marking a PR ready leaves nothing of its own to find it by.
+export type Evidence = Record<string, never>;
 
 // What a PR is checked against before it is marked ready: the worktree, the commit's tree and the PR's head.
 export interface Context {

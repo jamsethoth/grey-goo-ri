@@ -3,6 +3,7 @@ import type * as record from '../record.ts';
 import * as effects from './index.ts';
 
 export type Payload = { branch: string; sha: string };
+export type Evidence = { remoteSha: string };
 
 // The git verbs a push is made with (lib/git.ts).
 export interface Context {

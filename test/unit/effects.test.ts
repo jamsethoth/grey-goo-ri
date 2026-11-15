@@ -14,7 +14,7 @@ import * as executionReads from '../support/execution-reads.ts';
 const resetTo = (baseline: string): reset.Payload => ({ baseline, history: { kind: 'rescued', text: 'reset' } });
 
 // The reset Effect with the perform a case gives: these cases are about the write-ahead steps, not the reset.
-const performing = (perform: (payload: reset.Payload) => Promise<Record<string, string>>) => ({
+const performing = (perform: (payload: reset.Payload) => Promise<effects.Evidence>) => ({
   ...reset.effect,
   perform: async (_context: unknown, payload: reset.Payload) => perform(payload),
 });

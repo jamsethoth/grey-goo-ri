@@ -239,7 +239,8 @@ export interface ProvenanceRow {
 export function provenance(executionRecord: record.ExecutionRecord): ProvenanceRow[] {
   const rows = new Map<string, ProvenanceRow>();
   for (const entry of executionRecord.writeAheadLog) {
-    if (entry.step !== 'evidence' || entry.effect !== 'call') continue;
+    const { evidence } = entry;
+    if (entry.step !== 'evidence' || entry.effect !== 'call' || evidence?.usageDelta === undefined) continue;
     const { vertex, visit, action } = marker.partsOf(entry.actionMarker);
     const session = executionRecord.sessions[`${vertex}/${visit}/${action}`];
     const row = rows.get(vertex) ?? {
@@ -255,11 +256,12 @@ export function provenance(executionRecord: record.ExecutionRecord): ProvenanceR
       outputTokens: 0,
     };
     rows.set(vertex, row);
-    const usage = entry.evidence!.usageDelta as Record<'inputTokens' | 'cacheReadTokens' | 'outputTokens', number>;
+    const usage = evidence.usageDelta;
     row.calls++;
-    row.inputTokens += usage.inputTokens;
-    row.cacheReadTokens += usage.cacheReadTokens;
-    row.outputTokens += usage.outputTokens;
+    // A count the Harness does not report is null, which adds nothing.
+    row.inputTokens += usage.inputTokens ?? 0;
+    row.cacheReadTokens += usage.cacheReadTokens ?? 0;
+    row.outputTokens += usage.outputTokens ?? 0;
   }
   return [...rows.values()];
 }

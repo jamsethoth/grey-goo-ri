@@ -110,7 +110,13 @@
             "reason": "1 process could not be confirmed gone",
             "containment": { "kind": "group", "pgid": 41 }
           },
-          "evidence": { "command": "npm test", "output": "ok", "exitCode": 0, "__proto__": { "kept": "as data" } },
+          "evidence": {
+            "command": "npm test",
+            "output": "ok",
+            "exitCode": 0,
+            "__proto__": { "kept": "as data" },
+            "foundByNameOnly": true
+          },
           "findingsHash": "findings",
           "files": ["a.ts", "b.ts"],
           "decision": { "outcome": "approved", "actor": "owner", "reply": "fine" },
@@ -279,7 +285,7 @@
         "actionMarker": "m-commit",
         "effect": "commit",
         "payload": null,
-        "evidence": { "sha": "c1", "rule": { "table": "fixed", "row": null }, "nested": { "list": [1, "two"] } },
+        "evidence": { "sha": "c1" },
         "time": "2026-11-13T00:00:02Z"
       },
       {
@@ -459,6 +465,148 @@
         "failureClass": "quota",
         "runStopTicket": 9,
         "source": "push"
+      }
+    ],
+    "writeAheadLog.1.evidence": [
+      { "sha": null },
+      { "remoteSha": "c1" },
+      { "id": 5 },
+      { "number": 12, "url": "https://example.invalid/pull/12" },
+      {},
+      { "ok": true },
+      { "ref": "refs/gg/rescue/1", "commit": "rc1" },
+      { "head": "h" },
+      {
+        "outcome": "failed",
+        "direction": "retry",
+        "rule": { "table": "fixed", "row": "transient-retry" },
+        "row": "transient-retry",
+        "check": "tests",
+        "retryAfterMs": 1000,
+        "retryKind": "transient",
+        "failureClass": "transient",
+        "sessionId": "session-1",
+        "reason": "overloaded",
+        "surfaces": ["tree"],
+        "attempt": 2,
+        "signal": { "id": "tests", "kind": "command", "state": "failed", "tree": null },
+        "output": "the output",
+        "usageDelta": {
+          "inputTokens": 4,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "outputTokens": 0,
+          "reasoningTokens": 0,
+          "costUsd": null,
+          "peakContextTokens": 0,
+          "turns": 0,
+          "toolCalls": 0,
+          "compactions": 0,
+          "costBasis": "reported"
+        }
+      },
+      {
+        "outcome": "failed",
+        "direction": "stop",
+        "rule": { "table": "failed", "row": "otherwise" },
+        "row": null,
+        "check": null,
+        "retryAfterMs": null,
+        "retryKind": null,
+        "failureClass": null,
+        "usageDelta": {
+          "inputTokens": 4,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "outputTokens": 0,
+          "reasoningTokens": 0,
+          "costUsd": null,
+          "peakContextTokens": 0,
+          "turns": 0,
+          "toolCalls": 0,
+          "compactions": 0,
+          "costBasis": "reported"
+        }
+      },
+      {
+        "outcome": "passed",
+        "direction": "advance",
+        "rule": { "table": "fixed", "row": "effect-completed" },
+        "row": "effect-completed",
+        "usageDelta": {
+          "inputTokens": 4,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "outputTokens": 0,
+          "reasoningTokens": 0,
+          "costUsd": null,
+          "peakContextTokens": 0,
+          "turns": 0,
+          "toolCalls": 0,
+          "compactions": 0,
+          "costBasis": "reported"
+        }
+      },
+      {
+        "outcome": "approved",
+        "direction": "stop",
+        "rule": { "table": "fixed", "row": "decision" },
+        "row": "decision",
+        "usageDelta": {
+          "inputTokens": 4,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "outputTokens": 0,
+          "reasoningTokens": 0,
+          "costUsd": null,
+          "peakContextTokens": 0,
+          "turns": 0,
+          "toolCalls": 0,
+          "compactions": 0,
+          "costBasis": "reported"
+        }
+      },
+      {
+        "outcome": "action-cap",
+        "direction": "stop",
+        "rule": { "table": "fixed", "row": "action-cap" },
+        "row": "action-cap",
+        "actionCap": 50,
+        "usageDelta": {
+          "inputTokens": 4,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "outputTokens": 0,
+          "reasoningTokens": 0,
+          "costUsd": null,
+          "peakContextTokens": 0,
+          "turns": 0,
+          "toolCalls": 0,
+          "compactions": 0,
+          "costBasis": "reported"
+        }
+      },
+      {
+        "outcome": "stopped",
+        "direction": "stop",
+        "rule": { "table": "stopped", "row": "run-stopped" },
+        "row": "run-stopped",
+        "failureClass": "quota",
+        "runStopTicket": 9,
+        "source": "push",
+        "usageDelta": {
+          "inputTokens": 4,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "outputTokens": 0,
+          "reasoningTokens": 0,
+          "costUsd": null,
+          "peakContextTokens": 0,
+          "turns": 0,
+          "toolCalls": 0,
+          "compactions": 0,
+          "costBasis": "reported"
+        }
       }
     ]
   },

@@ -25,8 +25,8 @@ here outside the Reserved section needs a new ADR under `docs/adr/` and a versio
   (X3; GitHub numbers issues and pull requests in one sequence, so an Epic's number is never a Ticket's).
 - An Agent's `response` and the `response` an Action output holds are JSON whose shape the repository owns (its
   response schemas), so a field such as `repeatOf` (#127) needs no version bump (N8). They are marked `JsonValue`.
-- An Effect's evidence (`writeAheadLog[].evidence`, `writeAhead.Evidence`) and a Check's evidence beyond `command` and
-  `output` are gg's own, saved as JSON keyed by name, so the paths below mark them `*: JsonValue`.
+- A Check's evidence beyond `command`, `output` and `foundByNameOnly` is gg's own, saved as JSON keyed by name, so the
+  paths below mark it `*: JsonValue`. An Effect's evidence is typed form by form (the write-ahead log, below).
 
 ## Top-level fields
 
@@ -267,6 +267,7 @@ outputs[].value.cleanup.containment<kind=none>.kind: "none"
 outputs[].value.evidence?: open object (visit.ActionOutputValue)
 outputs[].value.evidence.command: string
 outputs[].value.evidence.output: string
+outputs[].value.evidence.foundByNameOnly?: boolean
 outputs[].value.evidence.*: JsonValue
 outputs[].value.findingsHash?: string (visit.ActionOutputValue)
 outputs[].value.files?: list (visit.ActionOutputValue)
@@ -441,8 +442,125 @@ writeAheadLog[].payload<writeAhead.CallPayload>.baseline.tests.*: integrity.Untr
 writeAheadLog[].payload<writeAhead.CallPayload>.baseline.tests.*<integrity.UntrackedLink>.link: string (integrity.UntrackedLink)
 writeAheadLog[].payload<writeAhead.CallPayload>.baseline.tests.*<integrity.UntrackedLink>.directory: boolean (integrity.UntrackedLink)
 writeAheadLog[].payload<writeAhead.CallPayload>.baseline.tests.*<integrity.UntrackedBytes>.base64: string (integrity.UntrackedBytes)
-writeAheadLog[].evidence: keyed | null (writeAhead.WriteAheadEntry)
-writeAheadLog[].evidence.*: JsonValue (writeAhead.Evidence)
+writeAheadLog[].evidence: commit.Evidence | push.Evidence | comment.Evidence | prUpsert.Evidence | prReady.Evidence | label.Evidence | rescue.Evidence | reset.Evidence | visit.TableResolution | visit.EffectResolution | visit.ActionCapResolution | visit.RunStoppedResolution | visit.DecisionResolution | null (writeAhead.WriteAheadEntry)
+writeAheadLog[].evidence<commit.Evidence>.sha: string | null
+writeAheadLog[].evidence<push.Evidence>.remoteSha: string
+writeAheadLog[].evidence<comment.Evidence>.id: number
+writeAheadLog[].evidence<prUpsert.Evidence>.number: number
+writeAheadLog[].evidence<prUpsert.Evidence>.url: string
+writeAheadLog[].evidence<label.Evidence>.ok: boolean
+writeAheadLog[].evidence<rescue.Evidence>.ref: string
+writeAheadLog[].evidence<rescue.Evidence>.commit: string
+writeAheadLog[].evidence<reset.Evidence>.head: string
+writeAheadLog[].evidence<visit.TableResolution>.row: FixedRow | null
+writeAheadLog[].evidence<visit.TableResolution>.check: string | null
+writeAheadLog[].evidence<visit.TableResolution>.retryAfterMs: number | null
+writeAheadLog[].evidence<visit.TableResolution>.retryKind: "parse" | "timeout" | "transient" | "rateLimited" | null
+writeAheadLog[].evidence<visit.TableResolution>.failureClass: string | null
+writeAheadLog[].evidence<visit.TableResolution>.sessionId?: string | null
+writeAheadLog[].evidence<visit.TableResolution>.reason?: string | null
+writeAheadLog[].evidence<visit.TableResolution>.surfaces?: list | null
+writeAheadLog[].evidence<visit.TableResolution>.surfaces[]: string
+writeAheadLog[].evidence<visit.TableResolution>.attempt?: number
+writeAheadLog[].evidence<visit.TableResolution>.signal?: object
+writeAheadLog[].evidence<visit.TableResolution>.signal.id: string (visit.CheckSignal)
+writeAheadLog[].evidence<visit.TableResolution>.signal.kind: string (visit.CheckSignal)
+writeAheadLog[].evidence<visit.TableResolution>.signal.state: "passed" | "failed" (visit.CheckSignal)
+writeAheadLog[].evidence<visit.TableResolution>.signal.tree: string | null (visit.CheckSignal)
+writeAheadLog[].evidence<visit.TableResolution>.output?: string | null
+writeAheadLog[].evidence<visit.TableResolution>.outcome: string
+writeAheadLog[].evidence<visit.TableResolution>.direction: Direction
+writeAheadLog[].evidence<visit.TableResolution>.rule: object
+writeAheadLog[].evidence<visit.TableResolution>.rule.table: "fixed" | "stopped" | "passed" | "failed" (visit.RuleIdentity)
+writeAheadLog[].evidence<visit.TableResolution>.rule.row: string | number | null (visit.RuleIdentity)
+writeAheadLog[].evidence<visit.TableResolution>.usageDelta: object
+writeAheadLog[].evidence<visit.TableResolution>.usageDelta.inputTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.TableResolution>.usageDelta.cacheReadTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.TableResolution>.usageDelta.cacheWriteTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.TableResolution>.usageDelta.outputTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.TableResolution>.usageDelta.reasoningTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.TableResolution>.usageDelta.costUsd: number | null (events.Usage)
+writeAheadLog[].evidence<visit.TableResolution>.usageDelta.peakContextTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.TableResolution>.usageDelta.turns: number | null (events.Usage)
+writeAheadLog[].evidence<visit.TableResolution>.usageDelta.toolCalls: number | null (events.Usage)
+writeAheadLog[].evidence<visit.TableResolution>.usageDelta.compactions: number | null (events.Usage)
+writeAheadLog[].evidence<visit.TableResolution>.usageDelta.costBasis?: "reported" | "priced" | null (events.Usage)
+writeAheadLog[].evidence<visit.EffectResolution>.row: "effect-completed"
+writeAheadLog[].evidence<visit.EffectResolution>.outcome: string
+writeAheadLog[].evidence<visit.EffectResolution>.direction: Direction
+writeAheadLog[].evidence<visit.EffectResolution>.rule: object
+writeAheadLog[].evidence<visit.EffectResolution>.rule.table: "fixed" | "stopped" | "passed" | "failed" (visit.RuleIdentity)
+writeAheadLog[].evidence<visit.EffectResolution>.rule.row: string | number | null (visit.RuleIdentity)
+writeAheadLog[].evidence<visit.EffectResolution>.usageDelta: object
+writeAheadLog[].evidence<visit.EffectResolution>.usageDelta.inputTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.EffectResolution>.usageDelta.cacheReadTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.EffectResolution>.usageDelta.cacheWriteTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.EffectResolution>.usageDelta.outputTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.EffectResolution>.usageDelta.reasoningTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.EffectResolution>.usageDelta.costUsd: number | null (events.Usage)
+writeAheadLog[].evidence<visit.EffectResolution>.usageDelta.peakContextTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.EffectResolution>.usageDelta.turns: number | null (events.Usage)
+writeAheadLog[].evidence<visit.EffectResolution>.usageDelta.toolCalls: number | null (events.Usage)
+writeAheadLog[].evidence<visit.EffectResolution>.usageDelta.compactions: number | null (events.Usage)
+writeAheadLog[].evidence<visit.EffectResolution>.usageDelta.costBasis?: "reported" | "priced" | null (events.Usage)
+writeAheadLog[].evidence<visit.ActionCapResolution>.row: "action-cap"
+writeAheadLog[].evidence<visit.ActionCapResolution>.actionCap: number
+writeAheadLog[].evidence<visit.ActionCapResolution>.outcome: string
+writeAheadLog[].evidence<visit.ActionCapResolution>.direction: Direction
+writeAheadLog[].evidence<visit.ActionCapResolution>.rule: object
+writeAheadLog[].evidence<visit.ActionCapResolution>.rule.table: "fixed" | "stopped" | "passed" | "failed" (visit.RuleIdentity)
+writeAheadLog[].evidence<visit.ActionCapResolution>.rule.row: string | number | null (visit.RuleIdentity)
+writeAheadLog[].evidence<visit.ActionCapResolution>.usageDelta: object
+writeAheadLog[].evidence<visit.ActionCapResolution>.usageDelta.inputTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.ActionCapResolution>.usageDelta.cacheReadTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.ActionCapResolution>.usageDelta.cacheWriteTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.ActionCapResolution>.usageDelta.outputTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.ActionCapResolution>.usageDelta.reasoningTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.ActionCapResolution>.usageDelta.costUsd: number | null (events.Usage)
+writeAheadLog[].evidence<visit.ActionCapResolution>.usageDelta.peakContextTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.ActionCapResolution>.usageDelta.turns: number | null (events.Usage)
+writeAheadLog[].evidence<visit.ActionCapResolution>.usageDelta.toolCalls: number | null (events.Usage)
+writeAheadLog[].evidence<visit.ActionCapResolution>.usageDelta.compactions: number | null (events.Usage)
+writeAheadLog[].evidence<visit.ActionCapResolution>.usageDelta.costBasis?: "reported" | "priced" | null (events.Usage)
+writeAheadLog[].evidence<visit.RunStoppedResolution>.row: "run-stopped"
+writeAheadLog[].evidence<visit.RunStoppedResolution>.failureClass: string
+writeAheadLog[].evidence<visit.RunStoppedResolution>.runStopTicket: number
+writeAheadLog[].evidence<visit.RunStoppedResolution>.source: string | null
+writeAheadLog[].evidence<visit.RunStoppedResolution>.outcome: string
+writeAheadLog[].evidence<visit.RunStoppedResolution>.direction: Direction
+writeAheadLog[].evidence<visit.RunStoppedResolution>.rule: object
+writeAheadLog[].evidence<visit.RunStoppedResolution>.rule.table: "fixed" | "stopped" | "passed" | "failed" (visit.RuleIdentity)
+writeAheadLog[].evidence<visit.RunStoppedResolution>.rule.row: string | number | null (visit.RuleIdentity)
+writeAheadLog[].evidence<visit.RunStoppedResolution>.usageDelta: object
+writeAheadLog[].evidence<visit.RunStoppedResolution>.usageDelta.inputTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.RunStoppedResolution>.usageDelta.cacheReadTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.RunStoppedResolution>.usageDelta.cacheWriteTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.RunStoppedResolution>.usageDelta.outputTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.RunStoppedResolution>.usageDelta.reasoningTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.RunStoppedResolution>.usageDelta.costUsd: number | null (events.Usage)
+writeAheadLog[].evidence<visit.RunStoppedResolution>.usageDelta.peakContextTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.RunStoppedResolution>.usageDelta.turns: number | null (events.Usage)
+writeAheadLog[].evidence<visit.RunStoppedResolution>.usageDelta.toolCalls: number | null (events.Usage)
+writeAheadLog[].evidence<visit.RunStoppedResolution>.usageDelta.compactions: number | null (events.Usage)
+writeAheadLog[].evidence<visit.RunStoppedResolution>.usageDelta.costBasis?: "reported" | "priced" | null (events.Usage)
+writeAheadLog[].evidence<visit.DecisionResolution>.row: "decision"
+writeAheadLog[].evidence<visit.DecisionResolution>.outcome: string
+writeAheadLog[].evidence<visit.DecisionResolution>.direction: Direction
+writeAheadLog[].evidence<visit.DecisionResolution>.rule: object
+writeAheadLog[].evidence<visit.DecisionResolution>.rule.table: "fixed" | "stopped" | "passed" | "failed" (visit.RuleIdentity)
+writeAheadLog[].evidence<visit.DecisionResolution>.rule.row: string | number | null (visit.RuleIdentity)
+writeAheadLog[].evidence<visit.DecisionResolution>.usageDelta: object
+writeAheadLog[].evidence<visit.DecisionResolution>.usageDelta.inputTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.DecisionResolution>.usageDelta.cacheReadTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.DecisionResolution>.usageDelta.cacheWriteTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.DecisionResolution>.usageDelta.outputTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.DecisionResolution>.usageDelta.reasoningTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.DecisionResolution>.usageDelta.costUsd: number | null (events.Usage)
+writeAheadLog[].evidence<visit.DecisionResolution>.usageDelta.peakContextTokens: number | null (events.Usage)
+writeAheadLog[].evidence<visit.DecisionResolution>.usageDelta.turns: number | null (events.Usage)
+writeAheadLog[].evidence<visit.DecisionResolution>.usageDelta.toolCalls: number | null (events.Usage)
+writeAheadLog[].evidence<visit.DecisionResolution>.usageDelta.compactions: number | null (events.Usage)
+writeAheadLog[].evidence<visit.DecisionResolution>.usageDelta.costBasis?: "reported" | "priced" | null (events.Usage)
 writeAheadLog[].time: string (writeAhead.WriteAheadEntry)
 visits: keyed (recordJson.ExecutionRecordJson)
 visits.*: number
@@ -677,6 +795,9 @@ Every side effect is saved before it is made (ADR 0005): an `intent` entry with 
 the effect is seen, then `complete`. `effect` names the Effect (`lib/effects/`); `writeAheadLog[].payload` has one form
 per Effect, listed above: `commit`, `push`, `comment`, `pr-upsert`, `pr-ready`, `label` (and a consumed Decision's,
 `approvalAction.Consumption`), `rescue`, `reset`, and an agent call's baseline (`writeAhead.CallPayload`).
+`writeAheadLog[].evidence` likewise has one form per Effect (`commit.Evidence` and its siblings), told apart by their
+keys, and an agent call's completion: its Resolution, one form per Resolution, with the Usage the call spent
+(`usageDelta`).
 
 - An open intent whose `effect` names no Effect gg can find or safely repeat holds the Ticket at Reconciliation; it is
   never read as absent (S6, #118).
@@ -768,7 +889,7 @@ treats it as optional when absent.
   comment and close Actions (`resolve-label`, `resolve-comment`, `resolve-close`).
 - **#89, a merge Action (option 3).** The end `merged` with the State Label `gg:state:merged`.
 - **Option 3, user Actions as executables (Q8, S6).** A write-ahead intent's `effect` stays an open string; a `confirm`
-  evidence has its place in the evidence object; an Action may carry `onInterrupt`, saved in its Procedure inside
+  evidence is a new form of `writeAheadLog[].evidence`; an Action may carry `onInterrupt`, saved in its Procedure inside
   `configurationSnapshot`. Worked examples:
   - A custom effect's intent: `{ "step": "intent", "actionMarker": "gg:…:deploy:0:r1:1", "effect": "deploy",
     "payload": null, "evidence": null, "time": "…" }`. Until the executable that names `deploy` is declared,

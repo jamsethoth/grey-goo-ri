@@ -42,8 +42,8 @@ export async function agent(runContext: RunContext, running: visitScope.Running)
   for (let attempt = runContext.record.cursor.attempt; ; attempt++) {
     if (attempt > 1) {
       const previous = previousAttempt(runContext, actionIdentity, attempt, resume);
-      if (harness.capabilities.sessionResume?.supported) resume = previous.sessionId as string | null;
-      nudge = previous.row === 'parse-retry' ? (previous.reason as string | null) : null;
+      if (harness.capabilities.sessionResume?.supported) resume = previous.sessionId ?? null;
+      nudge = previous.row === 'parse-retry' ? (previous.reason ?? null) : null;
       const stopped = terminal.runStopped(runContext);
       if (stopped) return stopped;
       await runContext.enter({ ...actionIdentity, attempt });
@@ -82,12 +82,12 @@ function previousAttempt(
   actionIdentity: visitScope.Running['actionIdentity'],
   attempt: number,
   resume: string | null,
-): Record<string, unknown> {
+): { sessionId?: string | null; row?: visit.Resolution['row']; reason?: string | null } {
   const executionRecord = runContext.record;
   const saved = executionRecord.sessions[sessionKey(actionIdentity)];
   const previousMarker = runContext.markerOf({ ...actionIdentity, attempt: attempt - 1 });
   const evidence = writeAhead.findEntry(executionRecord, previousMarker, 'evidence')?.evidence;
-  if (evidence) return evidence as Record<string, unknown>;
+  if (evidence?.usageDelta !== undefined) return evidence;
   if (!saved) return { sessionId: resume };
   return { sessionId: resumable(saved) ? saved.sessionId : null };
 }
@@ -149,7 +149,10 @@ function callAttempt(runContext: RunContext, running: Attempt): Promise<ActionRe
     actionIdentity,
     busy: true,
     settle: running.settle,
-    resumed: (evidence) => evidence as unknown as ActionResolution,
+    resumed: (evidence): ActionResolution => {
+      if (evidence?.usageDelta !== undefined) return evidence;
+      throw new Error(`the completed call ${actionIdentity.action} saved no Resolution`);
+    },
     prepare: async (actionMarker): Promise<Prepared> => {
       // Each call gets its own copy: a Harness that edits its call must not change the next one.
       const pinned = structuredClone(executionRecord.configurationSnapshot!);
@@ -251,7 +254,7 @@ function settleAttempt(
       ...harnessFields(result, actionIdentity.recovery ? action.id : null),
       ...decisionFields(resolution, { result, claim, integrityRows }),
     },
-    evidence: jsonValue.checkedObject({ ...done, usageDelta: result.usage.delta }, 'the call evidence'),
+    evidence: { ...done, usageDelta: result.usage.delta },
   };
 }
 

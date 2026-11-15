@@ -6,6 +6,7 @@
 import type * as outcome from './outcome.ts';
 import * as recordReadVisit from './record-read-visit.ts';
 import * as recordReadNode from './record-read-node.ts';
+import * as referencePaths from './reference-paths.ts';
 
 export { RowFieldError } from './record-read-node.ts';
 
@@ -249,12 +250,35 @@ const payload = variant('a write-ahead payload', [
   { required: ['baseline'], read: object((field) => ({ baseline: integrityBaseline(field('baseline')) })) },
 ]);
 
+// What an Effect leaves as Evidence, one form per Effect told apart by its keys (effects.Evidence), or an agent call's,
+// which holds the Usage it spent.
+const EFFECT_EVIDENCE = [
+  { required: ['sha'], read: object((field) => ({ sha: nullableText(field('sha')) })) },
+  { required: ['remoteSha'], read: object((field) => ({ remoteSha: text(field('remoteSha')) })) },
+  { required: ['id'], read: object((field) => ({ id: count(field('id')) })) },
+  {
+    required: ['number', 'url'],
+    read: object((field) => ({ number: count(field('number')), url: text(field('url')) })),
+  },
+  { required: [], read: object((): Record<string, never> => ({})) },
+  { required: ['ok'], read: object((field) => ({ ok: flag(field('ok')) })) },
+  {
+    required: ['ref', 'commit'],
+    read: object((field) => ({ ref: text(field('ref')), commit: text(field('commit')) })),
+  },
+  { required: ['head'], read: object((field) => ({ head: text(field('head')) })) },
+];
+const evidence = (node: recordReadNode.Node) =>
+  referencePaths.isRecord(node.value) && Object.hasOwn(node.value, 'usageDelta')
+    ? recordReadVisit.callEvidence(node)
+    : variant("an Effect's evidence", EFFECT_EVIDENCE)(node);
+
 const writeAheadEntry = object((field) => ({
   step: oneOf({ intent: true, evidence: true, complete: true })(field('step')),
   actionMarker: text(field('actionMarker')),
   effect: nullableText(field('effect')),
   payload: nullable(payload)(field('payload')),
-  evidence: nullable(keyed(json))(field('evidence')),
+  evidence: nullable(evidence)(field('evidence')),
   time: text(field('time')),
 }));
 

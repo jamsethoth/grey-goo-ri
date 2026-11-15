@@ -191,7 +191,8 @@ export interface ActionOutputValue {
   // What a call's or a Check's Command Cleanup found (L11).
   cleanup?: commandCleanup.CallCleanup;
   // A passed Check's evidence (N9), and a repeat Check's Findings Hash.
-  evidence?: { command: string; output: string; [field: string]: jsonValue.JsonValue };
+  // A tests-fail pass found by its tests' names alone says so (J8).
+  evidence?: { command: string; output: string; foundByNameOnly?: boolean } & Record<string, jsonValue.JsonValue>;
   findingsHash?: string;
   // The files a commit Action committed.
   files?: string[];

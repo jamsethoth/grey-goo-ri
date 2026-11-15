@@ -316,7 +316,8 @@ commandsRun: JsonValue (events.AgentActionEvent)
   containment `{ kind: 'job' }`, `{ kind: 'group', pgid }` or `{ kind: 'none' }` (#118, L11, L14).
 - `decision` is a consumed Decision, `{ instance, event, actor?, time, outcome, next, reply }` (#119, #333).
 - `usage` is `{ cumulative, delta }`, each a Usage: every `USAGE_FIELDS` count (`harness.md`), `null` where the Harness
-  does not report it, and an optional `costBasis`, `reported` or `priced` (J13, #135).
+  does not report it, and an optional `costBasis`, `reported` or `priced` (J13, #135). The Usage is closed: an Event
+  whose Usage holds any other key, or a count that is not a number or `null`, is refused when it is written.
 - There is no `requireTestPass` (#115), `repeat` (#114) or `exhausted` (#117).
 
 A Terminal's reporting Actions carry the Action ids `<report>-<effect>` (#111), their report one of `end`, `hold`,
