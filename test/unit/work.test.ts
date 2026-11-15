@@ -11,8 +11,10 @@ import * as locks from '../../lib/locks.ts';
 import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
 import * as work from '../../lib/work.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as addSuite from '../support/add-suite.ts';
 import * as approvalFlow from '../support/approval-flow.ts';
+import * as epicRun from '../support/epic-run.ts';
 import * as fakeGh from '../support/fake-gh.ts';
 import * as golden from '../support/golden.ts';
 import * as goldenRun from '../support/golden-run.ts';
@@ -128,16 +130,27 @@ test('gg work abandon refuses a missing State Database before it takes the ticke
 // Ticket 15 run once by gg run over a suite that checks the sum: its green writes a wrong add and finds no recovery, so
 // the Execution ends at fault with red's commit and green's outputs saved and an agent call left open. `onRun` sees
 // each suite run of every later Run.
+// `configure` edits the fixture before its Run, and `fixtureOptions` go to the run fixture.
+interface Faulting {
+  responses?: Record<string, unknown>;
+  onRun?: () => void;
+  configure?: (fixture: runFixture.RunFixture) => void;
+  fixtureOptions?: runFixture.RunFixtureOptions;
+}
 async function faulted(
   t: TestContext,
-  { responses = {}, onRun = () => {} }: { responses?: Record<string, unknown>; onRun?: () => void } = {},
+  { responses = {}, onRun = () => {}, configure = () => {}, fixtureOptions = {} }: Faulting = {},
 ) {
   const scripted = {
     ...structuredClone(golden.firstVisitResponses),
     [keys.responseKey('green', 1, 'green', 1)]: goldenRun.greenWrites({ 'lib/add.mjs': goldenRun.WRONG_ADD }),
     ...responses,
   };
-  const fixture = runFixture.fixture(t, { responses: scripted as golden.GoldenOptions['responses'] });
+  const fixture = runFixture.fixture(t, {
+    responses: scripted as golden.GoldenOptions['responses'],
+    ...fixtureOptions,
+  });
+  configure(fixture);
   fixture.options.deps.exec = addSuite.addSuite({ worktree: fixture.worktree, checksSum: true, onRun });
   await run.runTarget(fixture.options);
   return fixture;
@@ -372,4 +385,101 @@ test('gg work done resolves a Pending Ticket and takes down its Await Label', as
   assert.ok(asked.gh.closed.has(golden.TICKET), 'the merged PR closes the issue');
   assert.ok(!asked.gh.labels.has(approvalFlow.AWAIT_LABEL), 'the Await Label comes down');
   assert.ok(asked.gh.labels.has('gg:state:done'));
+});
+
+const green2 = goldenRun.greenWrites({ 'lib/add.mjs': goldenRun.RIGHT_ADD });
+const openIntentMarkers = (fixture: runFixture.RunFixture) =>
+  writeAhead.openIntents(loaded(fixture)).map((entry) => entry.actionMarker);
+
+// A person's needs-human label abandons the Execution; gg work resume takes that label down, so the Run that resumes it
+// must read the issue as it is after, not the read from before the resume.
+test('gg work resume of a Ticket a person abandoned runs it, not abandons it again', async (t) => {
+  const fixture = await faulted(t, { responses: { [keys.responseKey('green', 2, 'green', 1)]: green2 } });
+  const executionRecord = loaded(fixture);
+  // An active record with no label intent of gg's own, so the needs-human label reads as the person's.
+  executionRecord.writeAheadLog = executionRecord.writeAheadLog.filter((entry) => entry.effect !== 'label');
+  Object.assign(executionRecord, { state: 'active', terminalReason: null, terminalStop: null });
+  record.save(executionRecord);
+  fixture.gh.humanAddsLabel('gg:state:needs-human', 'the-owner');
+  const [abandoned] = await run.runTarget(fixture.options);
+  assert.equal(loaded(fixture).state, 'abandoned', `the person's label abandons it (${abandoned?.outcome})`);
+  const calls = fixture.harness.calls.length;
+  const [result] = await run.runTarget({ ...fixture.options, resume: { vertex: 'green' } });
+  assert.equal(result?.outcome, 'ready-for-qa', String(result?.error));
+  assert.ok(fixture.harness.calls.length > calls, 'the resumed green Visit ran');
+});
+
+// A Vertex's Visit Bound holds on a resume as it does on a route (L12: the bounds still hold).
+test('gg work resume refuses a Vertex that has used its Visit Bound', async (t) => {
+  const fixture = await faulted(t, {
+    responses: { [keys.responseKey('green', 2, 'green', 1)]: green2 },
+    configure: ({ options }) => {
+      const flow = options.config.repository.flows.default as golden.ConfiguredFlow;
+      Object.assign(flow.ticket.vertices.green!, { max: 1, exhausted: { end: 'needs-human' } });
+    },
+  });
+  const before = loaded(fixture);
+  const calls = fixture.harness.calls.length;
+  const [result] = await run.runTarget({ ...fixture.options, resume: { vertex: 'green' } });
+  assert.match(String(result?.error), /Vertex green has used its Bound of 1 Visit/);
+  assert.deepEqual(loaded(fixture), before, 'the record is kept');
+  assert.equal(fixture.harness.calls.length, calls, 'no agent ran');
+});
+
+// Each gg work done may deliver its report once more (#60), so a comment whose retries ran out is posted once GitHub
+// recovers, not refused for good.
+test('gg work done delivers a resolve comment whose retries ran out, once GitHub recovers', async (t) => {
+  const fixture = await faulted(t);
+  const github = { broken: true };
+  for (let failure = 0; failure < 20; failure += 1)
+    fixture.gh.fail({ matches: (args) => github.broken && fakeGh.isCommentPost(args), status: 502 });
+  await assert.rejects(work.done(doneOptions(fixture, true)));
+  assert.equal(loaded(fixture).state, 'fault', 'the record is kept');
+  github.broken = false;
+  await work.done(doneOptions(fixture, true));
+  assert.equal(loaded(fixture).state, 'done');
+  assert.equal(fixture.comments().filter((body) => body.includes('resolve-comment')).length, 1, 'one resolve comment');
+});
+
+// The close is repeatable: a rerun finishes a close whose call landed but whose evidence was never saved.
+test('gg work done finishes a close that landed before its evidence', async (t) => {
+  const views: Record<string, Record<string, unknown>> = {};
+  const fixture = await faulted(t, { fixtureOptions: { issues: views } });
+  fixture.gh.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'close', status: 404, afterEffect: true });
+  await assert.rejects(work.done(doneOptions(fixture, true)));
+  assert.ok(fixture.gh.closed.has(runFixture.TICKET), 'the close landed');
+  views[String(runFixture.TICKET)] = { state: 'CLOSED' };
+  await work.done(doneOptions(fixture, true));
+  assert.equal(loaded(fixture).state, 'done');
+  const closeIntents = writeAhead.openIntents(loaded(fixture)).filter((entry) => entry.effect === 'close');
+  assert.deepEqual(closeIntents, [], 'no close intent is left open');
+});
+
+// The overridden intents are completed in the save that writes ticket_resumed, so a resume that fails before it keeps
+// them open, and the next resume names them.
+test('a resume that fails to take its labels down keeps the open intents for the next resume', async (t) => {
+  const fixture = await faulted(t, { responses: { [keys.responseKey('green', 2, 'green', 1)]: green2 } });
+  const open = openIntentMarkers(fixture);
+  assert.equal(open.length, 1, 'the interrupted agent call');
+  fixture.gh.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'edit', status: 502 });
+  const [failed] = await run.runTarget({ ...fixture.options, resume: { vertex: 'green' } });
+  assert.match(String(failed?.error), /is not resumed/);
+  assert.deepEqual(openIntentMarkers(fixture), open, 'the intent stays open');
+  assert.equal(fixture.readEvents().filter((event) => event.type === 'ticket_resumed').length, 0);
+  await run.runTarget({ ...fixture.options, resume: { vertex: 'green' } });
+  const resumed = fixture.readEvents().flatMap((event) => (event.type === 'ticket_resumed' ? [event.superseded] : []));
+  assert.deepEqual(resumed, [open]);
+});
+
+test('gg work resume refuses a target with sub-issues', async (t) => {
+  const fixture = runFixture.fixture(t, {
+    responses: structuredClone(golden.firstVisitResponses),
+    issues: epicRun.epicOf([runFixture.TICKET]),
+  });
+  await assert.rejects(
+    run.runTarget({ ...fixture.options, target: epicRun.EPIC, resume: { vertex: 'publish' } }),
+    /#20 has sub-issues; gg work resume takes one Ticket/,
+  );
+  assert.equal(fixture.harness.calls.length, 0, 'no agent ran');
+  assert.equal(fixture.readEvents().filter((event) => event.type === 'ticket_resumed').length, 0);
 });

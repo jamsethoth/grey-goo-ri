@@ -312,6 +312,7 @@ async function runRepo(repo: admission.Repo, admitted: Admitted, options: RunOpt
   const { flow, hash, source } = selected;
   const declared = [...flows.values()];
   const { issue, subIssues, tickets } = await readTickets(gh, target, repo, settings);
+  if (options.resume && subIssues.length) throw new Error(`#${target} has sub-issues; gg work resume takes one Ticket`);
   const { runId, runLog } = startRun(repo, { flows: declared, selected, clock }, { named, log });
   const eventLog = events.eventLog(repo.gitCommonDir, {}, database);
   eventLog('run_start', { run: runId });
@@ -383,8 +384,8 @@ async function runTicket(issue: github.Issue, context: admission.AdmissionContex
   try {
     lock = await locks.tryAcquire(context.repo.gitCommonDir, `ticket-${ticket}`);
     if (!lock) return admission.skip({ context, issue }, `another process holds the ticket-${ticket} lock`);
-    if (context.resume?.ticket === ticket) await work.resume(context, ticket);
-    result = await admission.admit(issue, context);
+    const admitted = context.resume?.ticket === ticket ? await work.resume(context, ticket) : issue;
+    result = await admission.admit(admitted, context);
   } catch (err) {
     result = fault(err);
   }

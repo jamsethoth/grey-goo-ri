@@ -9,9 +9,12 @@ import type * as record from './record.ts';
 // ready this commit, never HEAD. Null before either.
 export function provenTip(executionRecord: record.ExecutionRecord): { sha: string; what: string } | null {
   const last = commit.lastCommit(executionRecord);
-  // A refused row is passed over: without the resume it names, the branch reads as changed by hand, never let through.
+  // A refused resume stops the read: without its baseline, a record with no commit of gg's would check no tip at all.
+  // Any other refused row is passed over.
   const resumed = eventRead
-    .executionEvents(executionRecord.commonDir, executionRecord.execution, () => {})
+    .executionEvents(executionRecord.commonDir, executionRecord.execution, (err) => {
+      if (err.type === 'ticket_resumed') throw err;
+    })
     .findLast((event) => event.type === 'ticket_resumed');
   const committedAt =
     last &&

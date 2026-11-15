@@ -1,5 +1,7 @@
 // `gg work`: a person's recovery verbs over the Tickets gg runs: abandon, done and resume.
 import * as admission from './admission.ts';
+import * as closeEffect from './effects/close.ts';
+import * as effects from './effects/index.ts';
 import type * as config from './config.ts';
 import * as eventsModule from './events.ts';
 import type * as github from './github.ts';
@@ -56,7 +58,7 @@ export async function abandon({ ticket, commonDir, cwd, labelPrefix, gh, locks }
 
 // The record states a person hands back or resolves: each end a hold, a fault, an abandonment or a stopping end lands
 // in (owner, 2026-11-06).
-export const STOPPED_STATES = [labels.NEEDS_HUMAN, 'needs-replan', 'held', 'fault', 'abandoned'];
+const STOPPED_STATES = [labels.NEEDS_HUMAN, 'needs-replan', 'held', 'fault', 'abandoned'];
 const stoppedList = `${STOPPED_STATES.slice(0, -1).join(', ')} or ${STOPPED_STATES.at(-1)}`;
 
 // A Pending Ticket waits for a Decision or a cleanup confirmation with its record still active (L11, J6).
@@ -100,7 +102,9 @@ export async function done(options: DoneOptions): Promise<string> {
       throw new Error(
         `Ticket ${ticket} is ${executionRecord.state}; gg work done takes a Ticket that is ${stoppedList}, or Pending`,
       );
-    const close = await closesIssue(executionRecord, options);
+    // A close intent left open landed or not; the close Effect is safe to make again, so a rerun finishes it.
+    const closeOpen = effects.openIntents(executionRecord, closeEffect.effect).length > 0;
+    const close = (await closesIssue(executionRecord, options)) || closeOpen;
     // gg:state:done is created as a Run creates its State Labels.
     await deps.gh.ensureLabels(cwd, { prefix: labelPrefix });
     const human = await deps.gh.login(cwd);
@@ -116,6 +120,9 @@ export async function done(options: DoneOptions): Promise<string> {
       cwd,
       labelPrefix,
     });
+    // Each person's gg work done may deliver its report once more (#60), so a retry spent on a failed comment is
+    // launched again rather than refused for good.
+    context.laterRunReport = true;
     await terminalReport.resolve(context, { human, reason: terminal.resolvedReason(ticket, human), close });
     const closed = close ? `, and closed issue #${ticket}` : '';
     return `gg work done resolved Ticket ${ticket} as done, decided by ${human}${closed}.\n`;
@@ -151,6 +158,10 @@ function unenterable(executionRecord: record.ExecutionRecord, { vertex, flows }:
       return true;
     }
   });
+  // A Vertex's Visit Bound holds on a resume as on a route; a person who wants more Visits raises it in the Flow.
+  const visits = executionRecord.visits.get(vertex) ?? 0;
+  if (target.max !== null && visits >= target.max)
+    return `Vertex ${vertex} has used its Bound of ${target.max} Visit${target.max === 1 ? '' : 's'}`;
   if (!missing.length) return null;
   const names = missing.map(([name]) => name).join(', ');
   return `Vertex ${vertex} needs the inputs ${names}, which no Visit in the record produced`;
@@ -160,9 +171,10 @@ function unenterable(executionRecord: record.ExecutionRecord, { vertex, flows }:
 // the record (Q3 A): a person fixed what stopped the Ticket, so its Execution re-enters at a new Visit of the Vertex,
 // its Visit, Edge and Action Cap counts kept, and the branch tip the person left is the baseline Reconciliation checks
 // from (Q2 A).
-export function resume(context: admission.AdmissionContext, ticket: number): Promise<void> {
+// It gives the issue as the resume left it: the stop's labels are down, and admission must not read them as a person's.
+export async function resume(context: admission.AdmissionContext, ticket: number): Promise<github.Issue> {
   const { repo, config: settings, deps, flows, events } = context;
-  return reposition({
+  await reposition({
     ticket,
     vertex: context.resume!.vertex,
     commonDir: repo.gitCommonDir,
@@ -172,6 +184,7 @@ export function resume(context: admission.AdmissionContext, ticket: number): Pro
     deps,
     events,
   });
+  return deps.gh.viewIssue(ticket, repo.mainRoot);
 }
 
 async function reposition(options: ResumeOptions): Promise<void> {
@@ -190,13 +203,9 @@ async function reposition(options: ResumeOptions): Promise<void> {
     throw new Error(`the worktree ${worktree} of Ticket ${ticket} is not clean; commit or discard its changes first`);
   const human = await deps.gh.login(cwd);
   const head = await deps.git.headSha(worktree);
-  const superseded = await reconcile.supersedeOpenIntents(executionRecord, {
-    gh: deps.gh,
-    git: deps.git,
-    cwd,
-    database: deps.database,
-  });
   await removeStopLabels(executionRecord, options);
+  // Completed in memory only: the save that writes ticket_resumed commits them, so a failure before it keeps them open.
+  const superseded = await reconcile.supersedeOpenIntents(executionRecord, { gh: deps.gh, git: deps.git, cwd });
   Object.assign(executionRecord, {
     state: 'active',
     terminalReason: null,

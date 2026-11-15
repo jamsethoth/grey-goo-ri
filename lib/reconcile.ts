@@ -143,27 +143,26 @@ async function findEffects(
 }
 
 // gg work resume (Q1 A): each open write-ahead intent is looked for as Reconciliation looks, and completed with what
-// is found; the rest the person's resume overrides, so they are completed with nothing found. Gives their Action
-// Markers for ticket_resumed.
+// is found; the rest the person's resume overrides, so they are completed with nothing found. The entries are added to
+// the record in memory only, for the save that writes ticket_resumed. Gives the overridden Action Markers.
 export async function supersedeOpenIntents(
   executionRecord: record.ExecutionRecord,
-  { gh, git, cwd, database = record }: { gh: ReconcileGh; git: ReconcileGit; cwd?: string; database?: Database },
+  { gh, git, cwd }: { gh: ReconcileGh; git: ReconcileGit; cwd?: string },
 ): Promise<string[]> {
   const issueLabels = gh.labelNames(await gh.viewIssue(executionRecord.ticket, cwd));
   const superseded: string[] = [];
   for (const entry of writeAhead.openIntents(executionRecord)) {
-    const { actionMarker } = entry;
-    if (writeAhead.evidenceOf(executionRecord, actionMarker)) {
-      database.complete(executionRecord, actionMarker);
-      continue;
-    }
-    const result = await effects.findEffect(entry, { executionRecord, git, gh, cwd, issueLabels });
-    if (result.status === 'unknown') throw result.error;
-    if (result.status === 'found') database.complete(executionRecord, actionMarker, { evidence: result.evidence });
-    else {
-      database.complete(executionRecord, actionMarker);
-      superseded.push(actionMarker);
-    }
+    const { actionMarker, effect } = entry;
+    const found = writeAhead.evidenceOf(executionRecord, actionMarker)
+      ? null
+      : await effects.findEffect(entry, { executionRecord, git, gh, cwd, issueLabels });
+    if (found?.status === 'unknown') throw found.error;
+    if (found?.status === 'found')
+      executionRecord.writeAheadLog.push(
+        writeAhead.entryOf('evidence', actionMarker, effect, { evidence: found.evidence }),
+      );
+    else if (found) superseded.push(actionMarker);
+    executionRecord.writeAheadLog.push(writeAhead.entryOf('complete', actionMarker, effect));
   }
   return superseded;
 }

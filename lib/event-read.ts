@@ -8,11 +8,13 @@ import * as stateDatabase from './state-database.ts';
 
 export class EventCorruptError extends Error {
   declare id: number | string;
+  declare type: string;
   declare raw: string;
   constructor(id: number | string, type: string, reason: string, raw: string) {
     super(`corrupt event ${id} (${type}): ${reason}`);
     this.name = 'EventCorruptError';
     this.id = id;
+    this.type = type;
     this.raw = raw;
   }
 }
@@ -28,7 +30,7 @@ const SELECT = `SELECT ${safeNumber('id')}, type, run, execution, ${safeNumber('
 // eventLog copies these fields to indexed columns, and a filtered read trusts the column, so each must equal its field.
 const COLUMNS = ['type', 'run', 'execution', 'ticket'];
 // The fields gg's own readers use hold a string or null (#350); the declaration gives names, not value types.
-const READ_FIELDS = ['failureClass', 'execution', 'run'];
+const READ_FIELDS = ['failureClass', 'execution', 'run', 'head'];
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
