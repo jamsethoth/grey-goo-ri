@@ -149,10 +149,33 @@ test("with GG_KEEP_TEMP a coverage stage keeps its tests' temp directory and nam
   const { temp, env } = ownTemp(copy.root);
   const result = copy.run(['coverage'], [], { ...env, GG_KEEP_TEMP: '1' });
   assert.equal(result.status, 1, result.stdout);
-  const kept = /^coverage kept its temp directory: (.+)$/m.exec(result.stderr)?.[1];
+  const kept = /^temp census: GG_KEEP_TEMP kept the stage's temp directory: (.+)$/m.exec(result.stderr)?.[1];
   assert.ok(kept, result.stderr);
   assert.deepEqual(readdirSync(temp), [basename(kept)]);
   assert.match(readdirSync(kept).join(), /node-coverage-/);
+});
+
+// A copy whose one test makes a temp directory and never removes it, as a case that skips its cleanup does.
+function untidyCopy(t: TestContext) {
+  const copy = launcherCopy(t);
+  writeFileSync(
+    join(copy.root, 'test', 'unit', 'untidy.test.mjs'),
+    `import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+mkdtempSync(join(tmpdir(), 'sample-left-'));
+`,
+  );
+  return copy;
+}
+
+test('a coverage stage fails when a case leaves a temp directory, names it and removes it', (t) => {
+  const copy = untidyCopy(t);
+  const { temp, env } = ownTemp(copy.root);
+  const result = copy.run(['coverage'], [], env);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /^ {2}sample-left-\w{6}\/$/m);
+  assert.deepEqual(readdirSync(temp), []);
 });
 
 test('the check stage runs the format check, lint and the type check in that order, no tests, and exits 0', (t) => {
@@ -258,6 +281,25 @@ for (const [stage, argv] of [
     const result = launcherCopy(t).run(argv);
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stderr, /^census: no process left$/m);
+  });
+
+  test(`the ${stage} stage fails when a case leaves a temp directory, names it and removes it`, (t) => {
+    const copy = untidyCopy(t);
+    const { temp, env } = ownTemp(copy.root);
+    const result = copy.run(argv, [], env);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stdout, /^ℹ fail 0$/m);
+    assert.match(result.stderr, /^ {2}sample-left-\w{6}\/$/m);
+    assert.deepEqual(readdirSync(temp), []);
+  });
+
+  test(`the ${stage} stage that leaves nothing says its temp census found nothing`, (t) => {
+    const copy = launcherCopy(t);
+    const { temp, env } = ownTemp(copy.root);
+    const result = copy.run(argv, [], env);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /^temp census: nothing left$/m);
+    assert.deepEqual(readdirSync(temp), []);
   });
 
   // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it

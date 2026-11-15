@@ -66,6 +66,7 @@ export interface SuiteCommand {
   steps: string[][];
   coverage?: true;
   census?: true;
+  tempCensus?: true;
 }
 
 // No arguments is the full stage. `fast` is test/unit/ plus the named contract suites, whose paths are built from the
@@ -243,6 +244,10 @@ export async function census(strays: Strays): Promise<{ failed: boolean; report:
   } catch (err) {
     return { failed: false, report: `census did not run: ${(err as Error).message}` };
   }
+}
+
+export function tempCensus(_directory: string, _keep: boolean): { failed: boolean; report: string } {
+  return { failed: false, report: '' };
 }
 
 const self = fileURLToPath(import.meta.url);
