@@ -1,8 +1,11 @@
-// `gg work`: a person's recovery verbs over the Tickets gg runs. Only abandon is implemented.
+// `gg work`: a person's recovery verbs over the Tickets gg runs: abandon, done and resume.
+import type * as events from './events.ts';
 import type * as github from './github.ts';
 import * as labels from './labels.ts';
 import type * as locks from './locks.ts';
+import type * as model from './model.ts';
 import * as record from './record.ts';
+import type * as runContext from './run-context.ts';
 import * as stateDatabase from './state-database.ts';
 
 // What gg work abandon reaches: the repository's State Database and ticket lock, and GitHub for its State Label.
@@ -52,3 +55,35 @@ export async function abandon({ ticket, commonDir, cwd, labelPrefix, gh, locks }
     await locks.release(lock);
   }
 }
+
+// What gg work done reaches: the deps a Run has, with the locks, and whether the person passed --close.
+export interface DoneOptions {
+  ticket: number;
+  commonDir: string;
+  cwd: string;
+  labelPrefix: string;
+  deps: runContext.Deps & { locks: locks.Locks };
+  close: boolean;
+  log: (line: string) => void;
+}
+
+// Stub (#133): records nothing.
+export async function done(_options: DoneOptions): Promise<string> {
+  return '';
+}
+
+// What gg work resume reaches, under the ticket lock gg run's admission holds: the Flow the record runs under, and the
+// deps of the Run that resumes it.
+export interface ResumeOptions {
+  ticket: number;
+  vertex: string;
+  commonDir: string;
+  cwd: string;
+  labelPrefix: string;
+  flow: model.ResolvedFlow | undefined;
+  deps: Pick<runContext.Deps, 'gh' | 'git' | 'integrity' | 'locks' | 'database'>;
+  events: ReturnType<typeof events.eventLog>;
+}
+
+// Stub (#133): repositions nothing.
+export async function resume(_options: ResumeOptions): Promise<void> {}

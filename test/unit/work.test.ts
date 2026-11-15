@@ -1,14 +1,21 @@
 import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as github from '../../lib/github.ts';
+import * as labels from '../../lib/labels.ts';
 import * as locks from '../../lib/locks.ts';
 import * as record from '../../lib/record.ts';
+import * as run from '../../lib/run.ts';
 import * as work from '../../lib/work.ts';
+import * as addSuite from '../support/add-suite.ts';
 import * as fakeGh from '../support/fake-gh.ts';
+import * as golden from '../support/golden.ts';
+import * as goldenRun from '../support/golden-run.ts';
+import * as keys from '../support/keys.ts';
+import * as runFixture from '../support/run-fixture.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
 const TICKET = 7;
@@ -114,4 +121,205 @@ test('gg work abandon refuses a missing State Database before it takes the ticke
   });
   assert.equal(existsSync(join(commonDir, 'gg')), false, 'no gg directory: no lock file and no database');
   assert.deepEqual(fake.calls, [], 'no gh call');
+});
+
+// Ticket 15 run once by gg run over a suite that checks the sum: its green writes a wrong add and finds no recovery, so
+// the Execution ends at fault with red's commit and green's outputs saved and an agent call left open. `onRun` sees
+// each suite run of every later Run.
+async function faulted(
+  t: TestContext,
+  { responses = {}, onRun = () => {} }: { responses?: Record<string, unknown>; onRun?: () => void } = {},
+) {
+  const scripted = {
+    ...structuredClone(golden.firstVisitResponses),
+    [keys.responseKey('green', 1, 'green', 1)]: goldenRun.greenWrites({ 'lib/add.mjs': goldenRun.WRONG_ADD }),
+    ...responses,
+  };
+  const fixture = runFixture.fixture(t, { responses: scripted as golden.GoldenOptions['responses'] });
+  fixture.options.deps.exec = addSuite.addSuite({ worktree: fixture.worktree, checksSum: true, onRun });
+  await run.runTarget(fixture.options);
+  return fixture;
+}
+
+const loaded = (fixture: runFixture.RunFixture) => record.load(fixture.commonDir, 'ticket', runFixture.TICKET)!;
+const stateLabelsOf = (fixture: runFixture.RunFixture) =>
+  [...fixture.gh.labels].filter((name) => labels.labelsFor('gg').parse(name)?.family === 'state');
+
+function doneOptions(fixture: runFixture.RunFixture, close = false): work.DoneOptions {
+  return {
+    ticket: runFixture.TICKET,
+    commonDir: fixture.commonDir,
+    cwd: fixture.mainRoot,
+    labelPrefix: 'gg',
+    deps: { ...fixture.options.deps, locks },
+    close,
+    log: (line) => fixture.logs.push(line),
+  };
+}
+
+// The Ticket's record moved to `state`, as an earlier Run or a person left it.
+function landedIn(fixture: runFixture.RunFixture, state: string) {
+  const executionRecord = loaded(fixture);
+  executionRecord.state = state;
+  record.save(executionRecord);
+}
+
+// The pull request a person left on the Ticket's branch, in `state`, named by the record.
+function prIn(fixture: runFixture.RunFixture, state: string) {
+  fixture.gh.prs.set(runFixture.BRANCH, {
+    number: 9,
+    state,
+    isDraft: false,
+    url: 'https://github.com/o/r/pull/9',
+    body: 'Closes #15',
+    headRefName: runFixture.BRANCH,
+  });
+  const executionRecord = loaded(fixture);
+  executionRecord.pr = 9;
+  record.save(executionRecord);
+}
+
+test('gg work done records the human end and swaps the label', async (t) => {
+  const fixture = await faulted(t);
+  fixture.gh.repoLabels.delete('gg:state:done');
+  const text = await work.done(doneOptions(fixture, true));
+  const executionRecord = loaded(fixture);
+  assert.equal(executionRecord.state, 'done');
+  assert.deepEqual(executionRecord.terminalReason?.decidedBy, { human: fakeGh.HUMAN_LOGIN });
+  assert.ok(fixture.gh.repoLabels.has('gg:state:done'), 'gg:state:done is created as a Run creates its State Labels');
+  assert.deepEqual(stateLabelsOf(fixture), ['gg:state:done'], 'done replaces needs-human');
+  const resolved = fixture.readEvents().filter((event) => event.type === 'ticket_resolved');
+  assert.deepEqual(
+    resolved.map(({ execution, ticket, owner, human }) => ({ execution, ticket, owner, human })),
+    [{ execution: executionRecord.execution, ticket: 15, owner: { kind: 'ticket', number: 15 }, human: 'octo-human' }],
+  );
+  const comments = fixture.comments().filter((body) => body.includes('resolve-comment'));
+  assert.equal(comments.length, 1, 'one comment');
+  assert.match(comments[0]!, /octo-human/, 'naming who resolved it');
+  // Each report Action is write-ahead with its Action Event, under the report name resolve.
+  const actions = fixture.readEvents().flatMap((event) => (event.type === 'action' ? [event.action] : []));
+  assert.deepEqual(actions.filter((action) => action.startsWith('resolve-')).sort(), [
+    'resolve-close',
+    'resolve-comment',
+    'resolve-label',
+  ]);
+  assert.ok(fixture.gh.closed.has(runFixture.TICKET), '--close closes the issue');
+  assert.equal(text, 'gg work done resolved Ticket 15 as done, decided by octo-human, and closed issue #15.\n');
+});
+
+test('gg work done closes the issue only when its PR is merged or --close is given', async (t) => {
+  const noMergedPr = /Ticket 15 has no merged PR; pass --close when no change was needed/;
+  const open = /PR #9 of Ticket 15 is open; merge or close it first/;
+  const cases: { pr: string | null; close: boolean; refused?: RegExp; closed?: boolean }[] = [
+    { pr: null, close: false, refused: noMergedPr },
+    { pr: 'OPEN', close: false, refused: open },
+    { pr: 'OPEN', close: true, refused: open },
+    { pr: 'CLOSED', close: false, refused: noMergedPr },
+    { pr: 'CLOSED', close: true, closed: true },
+    { pr: 'MERGED', close: false, closed: true },
+    { pr: null, close: true, closed: true },
+  ];
+  for (const given of cases) {
+    const fixture = await faulted(t);
+    if (given.pr) prIn(fixture, given.pr);
+    const name = `PR ${given.pr ?? 'none'}, --close ${given.close}`;
+    if (given.refused) {
+      await assert.rejects(work.done(doneOptions(fixture, given.close)), given.refused, name);
+      assert.equal(loaded(fixture).state, 'fault', `${name}: the record is kept`);
+      assert.ok(!fixture.gh.closed.has(runFixture.TICKET), `${name}: the issue stays open`);
+    } else {
+      await work.done(doneOptions(fixture, given.close));
+      assert.equal(loaded(fixture).state, 'done', name);
+      assert.equal(fixture.gh.closed.has(runFixture.TICKET), given.closed, `${name}: the issue is closed`);
+    }
+  }
+});
+
+// Every record state an Execution lands in, and the ones each verb takes (owner, 2026-11-06).
+const RECORD_STATES = ['active', ...labels.END_STATES, 'held', 'fault', 'abandoned', 'done'];
+const STOPPED = ['needs-human', 'needs-replan', 'held', 'fault', 'abandoned'];
+
+test('gg work done and gg work resume take a Ticket in each stopped state and refuse every other state', async (t) => {
+  assert.deepEqual(
+    RECORD_STATES.filter((state) => !STOPPED.includes(state)),
+    ['active', 'ready-for-qa', 'done'],
+    'the states both verbs refuse',
+  );
+  for (const state of RECORD_STATES) {
+    const resolving = await faulted(t);
+    landedIn(resolving, state);
+    const resolved = work.done(doneOptions(resolving, true));
+    if (STOPPED.includes(state)) {
+      await resolved;
+      assert.equal(loaded(resolving).state, 'done', `done takes ${state}`);
+    } else {
+      await assert.rejects(resolved, new RegExp(`Ticket 15 is ${state}; gg work done takes`), `done refuses ${state}`);
+    }
+    const resuming = await faulted(t);
+    landedIn(resuming, state);
+    const [result] = await run.runTarget({ ...resuming.options, resume: { vertex: 'publish' } });
+    const resumed = resuming.readEvents().filter((event) => event.type === 'ticket_resumed');
+    if (STOPPED.includes(state)) assert.equal(resumed.length, 1, `resume takes ${state}`);
+    else {
+      const refusal = new RegExp(`Ticket 15 is ${state}; gg work resume takes`);
+      assert.match(String(result?.error), refusal, `resume refuses ${state}`);
+      assert.equal(resumed.length, 0, `resume refuses ${state}`);
+    }
+  }
+});
+
+test('gg work resume --at publish runs the suite and reaches ready-for-qa', async (t) => {
+  let suiteRuns = 0;
+  const fixture = await faulted(t, { onRun: () => (suiteRuns += 1) });
+  writeFileSync(join(fixture.worktree, 'lib', 'add.mjs'), goldenRun.RIGHT_ADD);
+  fixture.fakeGit!.commit(fixture.worktree, 'Fix add by hand');
+  const head = await fixture.options.deps.git.headSha(fixture.worktree);
+  const runsBefore = suiteRuns;
+  const [result] = await run.runTarget({ ...fixture.options, resume: { vertex: 'publish' } });
+  assert.equal(result?.outcome, 'ready-for-qa', String(result?.error));
+  assert.ok(suiteRuns > runsBefore, 'publish ran the suite on the fix');
+  assert.equal(loaded(fixture).state, 'ready-for-qa');
+  assert.equal(fixture.gh.pr()?.isDraft, false, 'the PR is marked ready');
+  const resumed = fixture.readEvents().filter((event) => event.type === 'ticket_resumed');
+  assert.deepEqual(
+    resumed.map(({ ticket, human, vertex, head: tip }) => ({ ticket, human, vertex, head: tip })),
+    [{ ticket: 15, human: 'octo-human', vertex: 'publish', head }],
+  );
+});
+
+test('gg work resume refuses a Vertex the pinned Flow lacks', async (t) => {
+  const fixture = await faulted(t);
+  const before = loaded(fixture);
+  const [result] = await run.runTarget({ ...fixture.options, resume: { vertex: 'deploy' } });
+  assert.equal(result?.outcome, 'fault');
+  assert.match(String(result?.error), /Flow default has no Vertex deploy; its Vertices are red, green, publish/);
+  assert.deepEqual(loaded(fixture), before, 'the record is kept');
+  assert.equal(fixture.readEvents().filter((event) => event.type === 'ticket_resumed').length, 0);
+});
+
+test('gg work resume refuses a Vertex whose required inputs were never produced, naming them', async (t) => {
+  // red has no scripted response, so the Execution stops at its first Visit with no output saved.
+  const fixture = await faulted(t, { responses: { [keys.responseKey('red', 1, 'red', 1)]: undefined } });
+  const before = loaded(fixture);
+  assert.deepEqual(before.outputs, [], 'no Visit produced an output');
+  const [result] = await run.runTarget({ ...fixture.options, resume: { vertex: 'publish' } });
+  assert.match(String(result?.error), /Vertex publish needs the inputs report, red, green, which no Visit in the record/);
+  assert.deepEqual(loaded(fixture), before, 'the record is kept');
+});
+
+test('resume keeps the Visit and Action Cap counts', async (t) => {
+  const green2 = goldenRun.greenWrites({ 'lib/add.mjs': goldenRun.RIGHT_ADD });
+  const fixture = await faulted(t, { responses: { [keys.responseKey('green', 2, 'green', 1)]: green2 } });
+  const before = loaded(fixture);
+  assert.deepEqual(Object.fromEntries(before.visits), { red: 1, green: 1 });
+  const [result] = await run.runTarget({ ...fixture.options, resume: { vertex: 'green' } });
+  assert.equal(result?.outcome, 'ready-for-qa', String(result?.error));
+  const after = loaded(fixture);
+  assert.deepEqual(Object.fromEntries(after.visits), { red: 1, green: 2, publish: 1 }, 'green is entered again');
+  assert.ok(after.attempts > before.attempts, `the Action Cap count goes on from ${before.attempts}`);
+  assert.deepEqual(
+    [...after.traversals].filter(([edge]) => before.traversals.has(edge)),
+    [...before.traversals],
+    'no Edge count is reset',
+  );
 });

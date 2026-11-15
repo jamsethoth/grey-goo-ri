@@ -269,7 +269,13 @@ function issueVerbs({ gh, ghJson }: Client) {
     return { id: ghAnswer.count(field('id')), url: ghAnswer.text(field('html_url')) };
   }
 
-  return { viewIssue, comments, comment };
+  // Stub (#133): closes nothing.
+  const closeIssue = async (_issue: number, _cwd?: string): Promise<void> => {};
+
+  // Stub (#133): the wrong login.
+  const login = async (_cwd?: string): Promise<string> => '';
+
+  return { viewIssue, comments, comment, closeIssue, login };
 }
 
 // An issue's events, which GitHub gives no way to edit or delete, so a Decision is read from them (ADR 0003).

@@ -114,6 +114,8 @@ export interface RunOptions {
   cwd: string;
   log: (line: string) => void;
   testImmutability?: runContext.TestImmutability;
+  // gg work resume: the target Ticket re-enters its Execution at a new Visit of this Vertex first (#133).
+  resume?: { vertex: string };
 }
 
 // A declared Flow as it runs, pinned with what its Config Hash covers (config.Pinned), and its source.
