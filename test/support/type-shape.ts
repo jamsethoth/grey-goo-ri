@@ -114,7 +114,12 @@ export class TypeShapes {
     const members = declared.isUnion() ? declared.types : [declared];
     const nullable = members.some((member) => member.flags & ts.TypeFlags.Null);
     const held = members.filter((member) => !(member.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)));
-    const scalars = held.filter((member) => !(member.flags & ts.TypeFlags.Object) && !member.isIntersection());
+    // A tuple is a value of its own, written as its type: walked as an object, it would list every Array method, one
+    // by a symbol whose name carries the program's id for it, which differs from one program to the next.
+    const scalars = held.filter(
+      (member) =>
+        this.checker.isTupleType(member) || (!(member.flags & ts.TypeFlags.Object) && !member.isIntersection()),
+    );
     const structured = held.filter((member) => !scalars.includes(member));
     if (!structured.length) {
       const literal = scalars.every((member) => member.isStringLiteral());
