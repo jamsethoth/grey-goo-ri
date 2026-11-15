@@ -85,13 +85,6 @@ function usedProcedures(
   );
 }
 
-// The files a checked Procedure names, at each key procedures.FILE_KEYS declares: on each Action whatever its kind, in
-// its `recover`, then on each Claim token, as it declares them.
-const filesOf = ({ actions, recover, claimTokens }: checked.CheckedProcedure) => [
-  ...actions.flatMap((action) => procedures.filesAt('action', action)),
-  ...procedures.filesAt('recover', recover),
-  ...Object.values(claimTokens).flatMap((token) => procedures.filesAt('claimToken', token)),
-];
 // The commands named on a checked Procedure's Actions, whatever their kind: a user Flow naming one the repository lacks
 // does not fit it (Q21).
 const commandsOf = ({ actions }: checked.CheckedProcedure) =>
@@ -100,7 +93,7 @@ const commandsOf = ({ actions }: checked.CheckedProcedure) =>
 // What a Flow uses: its Personas, then each used Procedure's files, and those Procedures' commands, each name once.
 function usesOf(personas: string[], used: checked.CheckedProcedure[]): Uses {
   return {
-    files: [...new Set([...personas, ...used.flatMap(filesOf)])],
+    files: [...new Set([...personas, ...used.flatMap(procedures.procedureFiles)])],
     commands: [...new Set(used.flatMap(commandsOf))],
   };
 }
