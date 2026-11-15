@@ -1,9 +1,11 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as runSuite from '../../scripts/run-suite.ts';
 import * as processProbe from '../support/process-probe.ts';
 import * as options from '../support/shell-case-options.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
@@ -149,10 +151,38 @@ test("with GG_KEEP_TEMP a coverage stage keeps its tests' temp directory and nam
   const { temp, env } = ownTemp(copy.root);
   const result = copy.run(['coverage'], [], { ...env, GG_KEEP_TEMP: '1' });
   assert.equal(result.status, 1, result.stdout);
-  const kept = /^coverage kept its temp directory: (.+)$/m.exec(result.stderr)?.[1];
+  const kept = /^temp census: GG_KEEP_TEMP kept the stage's temp directory: (.+)$/m.exec(result.stderr)?.[1];
   assert.ok(kept, result.stderr);
   assert.deepEqual(readdirSync(temp), [basename(kept)]);
   assert.match(readdirSync(kept).join(), /node-coverage-/);
+});
+
+// A copy whose one test makes a temp directory and never removes it, as a case that skips its cleanup does.
+function untidyCopy(t: TestContext) {
+  const copy = launcherCopy(t);
+  writeFileSync(
+    join(copy.root, 'test', 'unit', 'untidy.test.mjs'),
+    `import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+mkdtempSync(join(tmpdir(), 'sample-left-'));
+`,
+  );
+  return copy;
+}
+
+test('a coverage stage fails when a case leaves a temp directory, names it and removes it', (t) => {
+  const copy = untidyCopy(t);
+  // One module its test covers whole, so the coverage figures pass and only the temp census can fail the stage.
+  rmSync(join(copy.root, 'lib'), { recursive: true });
+  mkdirSync(join(copy.root, 'lib'));
+  writeFileSync(join(copy.root, 'lib', 'one.ts'), 'export const one = () => 1;\n');
+  writeFileSync(join(copy.root, 'test', 'unit', 'one.test.mjs'), "import { one } from '../../lib/one.ts';\none();\n");
+  const { temp, env } = ownTemp(copy.root);
+  const result = copy.run(['coverage'], [], env);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /^ {2}sample-left-\w{6}\/$/m);
+  assert.deepEqual(readdirSync(temp), []);
 });
 
 test('the check stage runs the format check, lint and the type check in that order, no tests, and exits 0', (t) => {
@@ -260,6 +290,25 @@ for (const [stage, argv] of [
     assert.match(result.stderr, /^census: no process left$/m);
   });
 
+  test(`the ${stage} stage fails when a case leaves a temp directory, names it and removes it`, (t) => {
+    const copy = untidyCopy(t);
+    const { temp, env } = ownTemp(copy.root);
+    const result = copy.run(argv, [], env);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stdout, /^ℹ fail 0$/m);
+    assert.match(result.stderr, /^ {2}sample-left-\w{6}\/$/m);
+    assert.deepEqual(readdirSync(temp), []);
+  });
+
+  test(`the ${stage} stage that leaves nothing says its temp census found nothing`, (t) => {
+    const copy = launcherCopy(t);
+    const { temp, env } = ownTemp(copy.root);
+    const result = copy.run(argv, [], env);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /^temp census: nothing left$/m);
+    assert.deepEqual(readdirSync(temp), []);
+  });
+
   // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
   test(`the ${stage} stage runs the format check, lint, the type check and the tests in that order and exits 0`, (t) => {
     const copy = launcherCopy(t);
@@ -299,3 +348,33 @@ for (const [stage, argv] of [
     assert.equal(copy.steps(), '');
   });
 }
+
+test('with GG_KEEP_TEMP the fast stage keeps what a case left, names the directory and passes', (t) => {
+  const copy = untidyCopy(t);
+  const { temp, env } = ownTemp(copy.root);
+  const result = copy.run(['fast'], [], { ...env, GG_KEEP_TEMP: '1' });
+  assert.equal(result.status, 0, result.stderr);
+  const kept = /^temp census: GG_KEEP_TEMP kept the stage's temp directory: (.+)$/m.exec(result.stderr)?.[1];
+  assert.ok(kept, result.stderr);
+  assert.deepEqual(readdirSync(temp), [basename(kept)]);
+  assert.match(readdirSync(kept).join(), /sample-left-/);
+});
+
+// Windows refuses to remove a directory a live process works in; elsewhere the removal succeeds. The child opens its
+// working directory as it starts up, after the spawn event, so the census waits for the child's own word that it runs.
+test('a temp census that cannot remove the directory still names each entry left', options.WIN_CASE, async (t) => {
+  const directory = tempDirectory.tempDirectory(t, 'gg-temp-census-');
+  writeFileSync(join(directory, 'one.txt'), '');
+  mkdirSync(join(directory, 'held'));
+  const holder = spawn(process.execPath, ['-e', "process.stdout.write('running'); setTimeout(() => {}, 600000)"], {
+    cwd: join(directory, 'held'),
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  t.after(() => holder.kill());
+  await once(holder.stdout, 'data');
+  const { failed, report } = runSuite.tempCensus(directory, false);
+  holder.kill();
+  await once(holder, 'exit');
+  assert.equal(failed, true);
+  assert.match(report, /not read or not removed: .+\n {2}held\/\n {2}one\.txt$/);
+});

@@ -1,10 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
-import { matchesGlob, resolve } from 'node:path';
+import { join, matchesGlob, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as runSuite from '../../scripts/run-suite.ts';
+import * as tempDirectory from '../support/temp-directory.ts';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const launcherUrl = new URL('../../scripts/run-suite.ts', import.meta.url);
@@ -74,6 +76,62 @@ test('the check stage takes no census: it runs no tests', () => {
 // test/unit/ may not reach process boundaries, and a forced exit could lose the one process's report (#290).
 test('the coverage stage takes no census', () => {
   assert.equal(runSuite.suiteCommand({}, ['coverage']).census, undefined);
+});
+
+test('every stage that runs tests takes a temp census, and the check stage does not', () => {
+  assert.equal(runSuite.suiteCommand({}, []).tempCensus, true);
+  assert.equal(runSuite.suiteCommand({}, ['fast']).tempCensus, true);
+  assert.equal(runSuite.suiteCommand({}, ['coverage']).tempCensus, true);
+  assert.equal(runSuite.suiteCommand({}, ['check']).tempCensus, undefined);
+});
+
+test('a temp census of an empty directory passes, says nothing was left and removes it', (t) => {
+  const directory = tempDirectory.tempDirectory(t, 'gg-temp-census-');
+  assert.deepEqual(runSuite.tempCensus(directory, false), { failed: false, report: 'temp census: nothing left' });
+  assert.equal(existsSync(directory), false);
+});
+
+test('a temp census fails naming each entry left, then removes the directory', (t) => {
+  const directory = tempDirectory.tempDirectory(t, 'gg-temp-census-');
+  mkdirSync(join(directory, 'sample-left'));
+  writeFileSync(join(directory, 'sample-left', 'inner.txt'), '');
+  writeFileSync(join(directory, 'left.txt'), '');
+  assert.deepEqual(runSuite.tempCensus(directory, false), {
+    failed: true,
+    report:
+      'temp census: this stage left 2 in its temp directory, now removed; a case removes what it makes:\n' +
+      '  left.txt\n  sample-left/',
+  });
+  assert.equal(existsSync(directory), false);
+});
+
+// node keeps its compile cache there on purpose when a step enables it, as Prettier, ESLint and tsc do.
+test("a temp census passes over node's compile cache", (t) => {
+  const directory = tempDirectory.tempDirectory(t, 'gg-temp-census-');
+  mkdirSync(join(directory, 'node-compile-cache'));
+  assert.deepEqual(runSuite.tempCensus(directory, false), { failed: false, report: 'temp census: nothing left' });
+  assert.equal(existsSync(directory), false);
+});
+
+test("a temp census fails naming a file left under the compile cache's name, which is a directory", (t) => {
+  const directory = tempDirectory.tempDirectory(t, 'gg-temp-census-');
+  writeFileSync(join(directory, 'node-compile-cache'), '');
+  assert.deepEqual(runSuite.tempCensus(directory, false), {
+    failed: true,
+    report:
+      'temp census: this stage left 1 in its temp directory, now removed; a case removes what it makes:\n' +
+      '  node-compile-cache',
+  });
+});
+
+test('with GG_KEEP_TEMP a temp census keeps the directory, names it and does not fail', (t) => {
+  const directory = tempDirectory.tempDirectory(t, 'gg-temp-census-');
+  writeFileSync(join(directory, 'left.txt'), '');
+  assert.deepEqual(runSuite.tempCensus(directory, true), {
+    failed: false,
+    report: `temp census: GG_KEEP_TEMP kept the stage's temp directory: ${directory}`,
+  });
+  assert.deepEqual(readdirSync(directory), ['left.txt']);
 });
 
 // ADR 0016, amended: a unit test imports the launcher, so what it loads of lib/ is loaded on demand.
