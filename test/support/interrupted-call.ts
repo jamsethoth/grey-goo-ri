@@ -34,12 +34,14 @@ const uncontained: commandCleanup.CleanupReport = {
 // reports its containment.
 export type Interruption = 'job' | 'none' | 'unsaved';
 
-export async function interruptedFixture(
-  t: TestContext,
+type Scripted = { files?: Record<string, string>; earlier?: fakeHarness.ScriptedResponses };
+
+// red's responses: each interrupted Attempt writes `files`, and the one after the last completes. `earlier` scripts the
+// Attempts before an interrupted one, by response key.
+export function interruptedResponses(
   interrupted: Record<number, Interruption>,
-  { files = LEFT, earlier = {} }: { files?: Record<string, string>; earlier?: fakeHarness.ScriptedResponses } = {},
-) {
-  // `earlier` scripts the Attempts before an interrupted one, by response key.
+  { files = LEFT, earlier = {} }: Scripted = {},
+): fakeHarness.ScriptedResponses {
   const responses: fakeHarness.ScriptedResponses = { ...structuredClone(golden.firstVisitResponses), ...earlier };
   const completed = structuredClone(golden.firstVisitResponses)[callOf(1)]!;
   for (const [attempt, how] of Object.entries(interrupted))
@@ -50,14 +52,28 @@ export async function interruptedFixture(
     };
   const last = Math.max(...Object.keys(interrupted).map(Number));
   responses[callOf(last + 1)] = completed;
-  const fixture = await golden.fixture(t, { responses, integrity: 'real', git: 'real', baseFiles: BASE_FILES });
-  const run = fixture.harness.run;
-  fixture.harness.run = (async (call: Record<string, unknown>, ...hooks: unknown[]) => {
+  return responses;
+}
+
+// gg dies during each interrupted red call, once the Harness has written its files.
+export function interrupting(harness: fakeHarness.FakeHarness, interrupted: Record<number, Interruption>) {
+  const run = harness.run;
+  harness.run = (async (call: Record<string, unknown>, ...hooks: unknown[]) => {
     const how = call.vertex === 'red' ? interrupted[call.attempt as number] : undefined;
     if (!how) return (run as (...args: unknown[]) => Promise<unknown>)(call, ...hooks);
     await (run as (...args: unknown[]) => Promise<unknown>)(call, ...(how === 'unsaved' ? [] : hooks));
     throw new interpreter.CrashError(`gg was killed during ${call.marker as string}`);
   }) as typeof run;
+}
+
+export async function interruptedFixture(
+  t: TestContext,
+  interrupted: Record<number, Interruption>,
+  scripted: Scripted = {},
+) {
+  const responses = interruptedResponses(interrupted, scripted);
+  const fixture = await golden.fixture(t, { responses, integrity: 'real', git: 'real', baseFiles: BASE_FILES });
+  interrupting(fixture.harness, interrupted);
   return fixture;
 }
 

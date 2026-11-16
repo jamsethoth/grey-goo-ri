@@ -247,25 +247,6 @@ for (const [how, name] of [
   });
 }
 
-test('a second interruption exhausts the crash budget and holds', async (t) => {
-  const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job', 2: 'job' });
-  await interruptedCall.crashed(fixture);
-  await interruptedCall.crashed(fixture);
-  const result = await interruptedCall.resumed(fixture);
-
-  assert.equal(result.held, true, JSON.stringify(result));
-  const refs = [interruptedCall.refOf(fixture, 1), interruptedCall.refOf(fixture, 2)];
-  assert.deepEqual(rescueFlow.rescueRefs(fixture).sort(), [...refs].sort());
-  for (const [index, ref] of refs.entries())
-    assert.ok(
-      terminalText(fixture).includes(`${ref} keeps the work of Attempt ${index + 1} of red at red`),
-      `the hold names ${ref} with its Attempt and Action`,
-    );
-  assert.equal(inWorktree(fixture, 'notes.txt'), false, 'the second Attempt was reset before the hold');
-  assert.equal(interruptedCall.crashBudget(fixture), 1);
-  assert.equal(interruptedCall.redCalls(fixture).length, 2);
-});
-
 test("an interrupted later attempt is reset to the visit's first baseline and retried", async (t) => {
   // Attempt 1 leaves uncommitted work and a response that fails to parse, so Attempt 2's baseline holds that work.
   const parseFailure = { files: { 'first.txt': 'what attempt 1 left\n' }, response: 'not json' };
@@ -294,43 +275,6 @@ test('a crash retry counts toward the Action Cap', async (t) => {
   assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
   assert.equal(interruptedCall.redCalls(fixture).length, 1, 'the retry did not launch past the cap');
   assert.equal(executionReads.loadTicket(fixture).attempts, 2, 'the retry was counted');
-});
-
-test('a second interruption whose reset fails names both Rescue Refs', async (t) => {
-  const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job', 2: 'job' });
-  await interruptedCall.crashed(fixture);
-  await interruptedCall.crashed(fixture);
-  fixture.options.deps.git = {
-    ...fixture.options.deps.git,
-    resetTo: async () => {
-      throw new exec.CommandError('git reset failed', { code: 1, stdout: '', stderr: 'Permission denied' });
-    },
-  };
-  const result = await interruptedCall.resumed(fixture);
-
-  assert.equal(result.held, true, JSON.stringify(result));
-  for (const ref of [interruptedCall.refOf(fixture, 1), interruptedCall.refOf(fixture, 2)])
-    assert.ok(terminalText(fixture).includes(ref), `the hold names ${ref}`);
-  assert.equal(executionReads.loadTicket(fixture).terminalReason?.decidedBy?.hold, 'interrupted-attempt');
-});
-
-test("a hold before the recovery names the Action's earlier Rescue Refs, and no other", async (t) => {
-  const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job', 2: 'job' });
-  await interruptedCall.crashed(fixture);
-  await interruptedCall.crashed(fixture);
-  // The Procedure changes before the next run, so Reconciliation holds before the recovery starts.
-  const flow = {
-    ...fixture.flow,
-    procedures: new Map([...fixture.flow.procedures].map(([name, procedure]) => [name, { ...procedure, hash: 'new' }])),
-  };
-  const decided = await reconcile.reconcile(
-    crashResume.reconcileOptions(fixture, executionReads.loadTicket(fixture), flow),
-  );
-
-  assert.equal(decided.next, 'hold');
-  const first = interruptedCall.refOf(fixture, 1);
-  assert.ok(decided.reason.includes(`${first} keeps the work of Attempt 1 of red at red`), decided.reason);
-  assert.equal(decided.reason.match(/Rescue Ref /g)?.length, 1, 'only the rescue Attempt 2 left before it');
 });
 
 test("an interrupted attempt's rescue is not a vertex rescue output", async (t) => {

@@ -243,6 +243,24 @@ export function fixture(t: TestContext, fixtureOptions: RunFixtureOptions = {}) 
 // the fake git's own verbs and the steps a human takes outside gg (null on real git).
 export type RunFixture = ReturnType<typeof fixture>;
 
+// The seeded Execution's record, saved: a new one, or with `resume` the one an earlier seed left.
+function recordToSeed(runFixture: RunFixture, flow: model.ResolvedFlow, resume: boolean): record.ExecutionRecord {
+  if (resume) return executionReads.loadTicket(runFixture);
+  const executionRecord = record.createExecutionRecord({
+    commonDir: runFixture.commonDir,
+    repository: 'o/r',
+    ticket: TICKET,
+    flow: { name: flow.name, entry: flow.ticket.entry as string },
+    configHash: 'cfg-hash',
+    run: '20261016T000000Z-seed00',
+    worktree: runFixture.worktree,
+    branch: BRANCH,
+    base: 'main',
+  });
+  (runFixture.options.deps.database as record.StateDatabase).save(executionRecord);
+  return executionRecord;
+}
+
 // An Execution of the fixture's Ticket run straight through the interpreter, as an earlier Run left it.
 export async function seedExecution(
   runFixture: RunFixture,
@@ -251,15 +269,17 @@ export async function seedExecution(
     crashAt,
     exec = runFixture.exec,
     integrity = runFixture.options.deps.integrity,
+    resume = false,
   }: {
     git?: runContext.RunGit;
     crashAt?: (executionRecord: record.ExecutionRecord) => runContext.ExecutionOptions['crashAt'];
     exec?: runContext.Deps['exec'];
     integrity?: runContext.Deps['integrity'];
+    resume?: boolean;
   } = {},
 ) {
   const { mainRoot, worktree, commonDir, options } = runFixture;
-  await git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
+  if (!resume) await git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
   const configured = options.config.repository;
   const flows = validate.validate(configured, {
     harnesses: options.harnesses,
@@ -268,19 +288,8 @@ export async function seedExecution(
   }).flows;
   const flow = model.fromJson(flows.default!);
   const contract = { files: configured.files, commands: { test: 'npm test' }, testPaths: [...exampleLayer.TEST_GLOBS] };
-  const executionRecord = record.createExecutionRecord({
-    commonDir,
-    repository: 'o/r',
-    ticket: TICKET,
-    flow: { name: flow.name, entry: flow.ticket.entry as string },
-    configHash: 'cfg-hash',
-    run: '20261016T000000Z-seed00',
-    worktree,
-    branch: BRANCH,
-    base: 'main',
-  });
+  const executionRecord = recordToSeed(runFixture, flow, resume);
   const database = options.deps.database as record.StateDatabase;
-  database.save(executionRecord);
   await assert.rejects(
     interpreter.runExecution({
       deps: { gh: options.deps.gh, git, exec, database, clock: runFixture.clock, integrity },
@@ -303,23 +312,16 @@ export async function seedExecution(
   return executionReads.loadTicket(runFixture);
 }
 
-// The green commit was intended, its implementation staged, and the process died before the commit landed.
-export const crashBeforeCommit = (runFixture: RunFixture) =>
+// green's commit (its implementation staged) or push was intended, and the process died before it landed.
+const crashBefore = (runFixture: RunFixture, action: 'commit' | 'push') =>
   seedExecution(runFixture, {
     crashAt: (executionRecord) => ({
-      marker: golden.markerOf(executionRecord, 'green', 1, 'commit', 0),
+      marker: golden.markerOf(executionRecord, 'green', 1, action),
       point: 'before-effect',
     }),
   });
-
-// green's push was intended, and the process died before it was made.
-export const crashBeforePush = (runFixture: RunFixture) =>
-  seedExecution(runFixture, {
-    crashAt: (executionRecord) => ({
-      marker: golden.markerOf(executionRecord, 'green', 1, 'push', 0),
-      point: 'before-effect',
-    }),
-  });
+export const crashBeforeCommit = (runFixture: RunFixture) => crashBefore(runFixture, 'commit');
+export const crashBeforePush = (runFixture: RunFixture) => crashBefore(runFixture, 'push');
 
 // A merge conflict left in the worktree: conflict.txt at stages 1 to 3 with the markers on disk. git write-tree refuses
 // such an index, so the snapshot cannot fingerprint it.
