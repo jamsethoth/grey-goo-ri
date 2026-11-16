@@ -12,7 +12,7 @@ import * as tempDirectory from '../../support/temp-directory.ts';
 
 const saver = fileURLToPath(new URL('../../support/record-saver.ts', import.meta.url));
 
-// Each adapter of the database a Run is handed (#367): the real State Database, and the failing wrapper with no failure.
+// Each adapter of the database a Run is handed (#367): the real State Database, and the failing wrapper with no hook.
 const ADAPTERS: [string, (t: TestContext) => stateDatabase.StateDatabase][] = [
   ['the real State Database', () => stateDatabase],
   ['the failing wrapper', (t) => caseDatabase.caseDatabase(t)],

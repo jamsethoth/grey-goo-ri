@@ -1,10 +1,11 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
+import { posix } from 'node:path';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as contract from '../../lib/harnesses/contract.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
 const ROOT = new URL('../../', import.meta.url);
@@ -249,16 +250,26 @@ test('the read census finds a read of the events table in any form', () => {
   assert.equal(EVENTS_TABLE_READ.test('INSERT INTO events (ts) VALUES (?)'), false, 'an append is no read');
 });
 
+// The modules that import `target` at run time, by the path each relative specifier resolves to.
+const runtimeImporters = (files: string[], target: string) =>
+  files.filter((file) =>
+    [...textOf(file).matchAll(/^import (?!type )[^\n]* from '(\.[^']+)';$/gm)].some(
+      ([, specifier]) => posix.join(posix.dirname(file), specifier!) === target,
+    ),
+  );
+
+// The SQL lives with the State Database's (#367): one module reads the table, and only lib/state-database/index.ts
+// takes its rows, each of which it hands to lib/event-read.ts's check.
 test('every read of the events table goes through lib/event-read.ts', () => {
-  const sites = ['lib/', 'bin/', 'scripts/', 'test/support/']
-    .flatMap(sourceFiles)
-    .filter((file) => EVENTS_TABLE_READ.test(textOf(file)));
-  assert.ok(sites.includes('lib/event-read.ts'), 'the read module reads the table');
+  const files = ['lib/', 'bin/', 'scripts/', 'test/support/'].flatMap(sourceFiles);
+  const table = 'lib/state-database/events.ts';
   assert.deepEqual(
-    sites.filter((file) => file !== 'lib/event-read.ts'),
-    [],
+    files.filter((file) => EVENTS_TABLE_READ.test(textOf(file))),
+    [table],
     'a read of the events table outside the checked read',
   );
+  assert.deepEqual(runtimeImporters(files, table), ['lib/state-database/index.ts']);
+  assert.match(textOf('lib/state-database/index.ts'), /eventRead\.checkedRows\(eventsTable\./);
 });
 
 test('a row that is not JSON is refused by name', (t) => {

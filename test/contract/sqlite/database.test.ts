@@ -32,7 +32,7 @@ const ticketRecord = (commonDir: string, ticket: number) =>
 const typesOf = (found: events.Event[]) => found.map((event) => event.type);
 
 for (const [name, databaseOf] of ADAPTERS) {
-  test(`${name}: a Pinned Configuration is read back by its hash, and a second save of that hash keeps the first`, (t) => {
+  test(`${name}: a Pinned Configuration reads back by its hash, and a second save of the hash keeps the first`, (t) => {
     const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-database-');
     const database = databaseOf(t);
     database.savePinnedConfiguration(commonDir, 'hash-1', { flows: ['first'] });
@@ -49,7 +49,7 @@ for (const [name, databaseOf] of ADAPTERS) {
     database.saveCheckResult(commonDir, { ...result, marker: 'm2', output: 'ok 2\n' });
     database.saveCheckResult(commonDir, { ...result, state: 'failed', marker: 'm3', output: 'not ok\n' });
     database.saveCheckResult(commonDir, { ...result, tree: 't2', marker: 'm4' });
-    assert.deepEqual(database.reusablePass(commonDir, 't1', 'npm test'), { marker: 'm2', output: 'ok 2\n' });
+    assert.deepEqual({ ...database.reusablePass(commonDir, 't1', 'npm test') }, { marker: 'm2', output: 'ok 2\n' });
     assert.equal(database.reusablePass(commonDir, 't1', 'npm run lint'), null);
     assert.equal(database.reusablePass(commonDir, 't3', 'npm test'), null);
   });

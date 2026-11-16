@@ -4,6 +4,7 @@ import type * as events from '../../lib/events.ts';
 import * as github from '../../lib/github.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as golden from '../support/golden.ts';
 import {
   actionEvent,
@@ -347,7 +348,7 @@ test('a pending report waiting out a sibling cooldown checks the human override 
   });
   assert.equal(first.fault, true, JSON.stringify(first));
   const mid = loadTicket(fixture);
-  assert.equal(interpreter.resumption(mid), 'finish-report');
+  assert.equal(interpreter.resumption(mid, stateDatabase), 'finish-report');
   const posted = fixture.gh.calls.filter((call) => fakeGhModule.isCommentPost(call.args)).length;
 
   // Another Ticket of the next Run is backing off; a human sets needs-human during the wait.

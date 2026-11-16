@@ -11,7 +11,7 @@ import type * as locks from './locks.ts';
 import * as reconcile from './reconcile.ts';
 import * as record from './record.ts';
 import * as runContext from './run-context.ts';
-import * as stateDatabase from './state-database.ts';
+import * as stateDatabase from './state-database/index.ts';
 import * as terminal from './terminal.ts';
 import * as terminalReport from './terminal-report.ts';
 import * as visitInputs from './visit-inputs.ts';
@@ -35,7 +35,7 @@ export async function abandon({ ticket, commonDir, cwd, labelPrefix, gh, locks }
   // Before the lock, which would leave its file in a repository gg init never set up (#150).
   stateDatabase.open(commonDir);
   return underTicketLock({ commonDir, ticket, locks, verb: 'abandon' }, async () => {
-    const executionRecord = record.load(commonDir, 'ticket', ticket);
+    const executionRecord = stateDatabase.load(commonDir, 'ticket', ticket);
     if (!executionRecord) throw new Error(`Ticket ${ticket} has no Execution Record to abandon`);
     const names = labels.labelsFor(labelPrefix);
     const stateLabels = gh
@@ -45,7 +45,7 @@ export async function abandon({ ticket, commonDir, cwd, labelPrefix, gh, locks }
     const report = { log: (line: string) => failures.push(line), ev: () => {} };
     if (stateLabels.length && !(await gh.setLabels(ticket, { remove: stateLabels }, cwd, report)))
       throw new Error(`${failures.join('; ')}; Execution Record ticket-${ticket} is kept`);
-    record.removeRecord(commonDir, 'ticket', ticket);
+    stateDatabase.removeRecord(commonDir, 'ticket', ticket);
     const plural = stateLabels.length > 1 ? 's' : '';
     const removed = stateLabels.length ? ` and removed the ${stateLabels.join(', ')} label${plural}` : '';
     return (
@@ -96,7 +96,7 @@ export async function done(options: DoneOptions): Promise<string> {
   // Before the lock, which would leave its file in a repository gg init never set up (#150).
   stateDatabase.open(commonDir);
   return underTicketLock({ commonDir, ticket, locks: deps.locks, verb: 'resolve' }, async () => {
-    const executionRecord = record.load(commonDir, 'ticket', ticket);
+    const executionRecord = (deps.database ?? stateDatabase).load(commonDir, 'ticket', ticket);
     if (!executionRecord) throw new Error(`Ticket ${ticket} has no Execution Record to resolve`);
     if (!STOPPED_STATES.includes(executionRecord.state) && !isPending(executionRecord))
       throw new Error(
@@ -194,7 +194,8 @@ export async function resume(context: admission.AdmissionContext, ticket: number
 
 async function reposition(options: ResumeOptions): Promise<void> {
   const { ticket, vertex, commonDir, cwd, deps, events } = options;
-  const executionRecord = record.load(commonDir, 'ticket', ticket);
+  const database = deps.database ?? stateDatabase;
+  const executionRecord = database.load(commonDir, 'ticket', ticket);
   if (!executionRecord) throw new Error(`Ticket ${ticket} has no Execution Record to resume`);
   if (!STOPPED_STATES.includes(executionRecord.state))
     throw new Error(
@@ -224,7 +225,7 @@ async function reposition(options: ResumeOptions): Promise<void> {
     cursor: { vertex, visit: (executionRecord.visits.get(vertex) ?? 0) + 1, action: null, recovery: 0, attempt: 1 },
   });
   const { execution, owner } = executionRecord;
-  (deps.database ?? record).save(executionRecord, () =>
+  database.save(executionRecord, () =>
     events('ticket_resumed', { run: options.run, execution, ticket, owner, human, vertex, head, superseded }),
   );
 }

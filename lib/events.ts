@@ -6,9 +6,9 @@ import * as eventDeclaration from './event-declaration.ts';
 import type * as commandCleanup from './command-cleanup.ts';
 import type * as github from './github.ts';
 import type * as integrity from './integrity.ts';
-import * as jsonValue from './json-value.ts';
-import * as record from './record.ts';
-import * as stateDatabase from './state-database.ts';
+import type * as jsonValue from './json-value.ts';
+import type * as record from './record.ts';
+import * as stateDatabase from './state-database/index.ts';
 import type * as visit from './visit.ts';
 
 type Declaration<Fields> = eventDeclaration.Declaration<Fields>;
@@ -311,12 +311,11 @@ const ACTION_REQUIRED = declaredAs(ACTION, 'required');
 const ACTION_OPTIONAL = declaredAs(ACTION, 'optional');
 const AGENT_REQUIRED = declaredAs(AGENT, 'required');
 
-// `database` (record.createStateDatabase) sees each Event before it is inserted; the real one, the record module, lets
-// every Event through.
+// The Event goes in through `database`; the real one, lib/state-database/, inserts every Event.
 export function eventLog<Base extends EventInput<EventType>>(
   commonDir: string,
   base?: Gated<Base, EventInput<EventType>>,
-  database: Pick<record.StateDatabase, 'beforeAppend'> = record,
+  database: Pick<stateDatabase.StateDatabase, 'appendEvent'> = stateDatabase,
 ): <Type extends EventType, Given extends EventInput<Type>>(type: Type, data?: Gated<Given, EventInput<Type>>) => void {
   const always: EventInput<EventType> | undefined = base;
   return (type, data) => {
@@ -329,20 +328,7 @@ export function eventLog<Base extends EventInput<EventType>>(
       time: new Date().toISOString(),
       ...(type === 'action' ? actionEvent(fields) : lifecycleEvent(type, fields)),
     };
-    database.beforeAppend(event);
-    // Not every Event carries the indexed columns' fields.
-    const columns = event as Partial<Record<'run' | 'execution' | 'ticket', string | number | null>>;
-    stateDatabase
-      .open(commonDir)
-      .prepare('INSERT INTO events (ts, type, run, execution, ticket, json) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(
-        event.time,
-        event.type,
-        columns.run ?? null,
-        columns.execution ?? null,
-        columns.ticket ?? null,
-        jsonValue.text(event, `the ${event.type} Event`),
-      );
+    database.appendEvent(commonDir, event);
   };
 }
 

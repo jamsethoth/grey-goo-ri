@@ -11,7 +11,7 @@ import type * as model from './model.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as record from './record.ts';
 import * as settingsModule from './settings.ts';
-import * as stateDatabase from './state-database.ts';
+import * as stateDatabase from './state-database/index.ts';
 import * as report from './validate/report.ts';
 import * as validator from './validate/index.ts';
 
@@ -180,11 +180,11 @@ function stateDatabaseProblems(found: report.Report, commonDir: string) {
 
 // Each Execution Record a Run would resume whose Flow is not admitted: gg run keeps it and exits 2 for its Ticket (A2),
 // and gg doctor lists every one as an error.
-function goneFlowRecords(commonDir: string, admitted: ReadonlySet<string>): report.Problem[] {
+function goneFlowRecords(commonDir: string, admitted: ReadonlySet<string>, database: Database): report.Problem[] {
   const found = report.newReport();
-  for (const executionRecord of record.loadAll(commonDir, 'ticket')) {
+  for (const executionRecord of database.loadAll(commonDir, 'ticket')) {
     const { ticket, flow } = executionRecord;
-    if (admitted.has(flow) || interpreter.resumption(executionRecord) !== 'resume') continue;
+    if (admitted.has(flow) || interpreter.resumption(executionRecord, database) !== 'resume') continue;
     const message = `Execution Record ticket-${ticket} ${missingFlowAdvice(flow, ticket)}`;
     report.error(found, `records.ticket-${ticket}`, 'unknown-flow', message, {
       name: flow,
@@ -195,12 +195,17 @@ function goneFlowRecords(commonDir: string, admitted: ReadonlySet<string>): repo
   return found.errors;
 }
 
+// The records' reads the check makes through the database it is given.
+type Database = Pick<stateDatabase.StateDatabase, 'loadAll' | 'hasTicketEnd'>;
+
 // What the check reads: both sources, the registered Harnesses, and the repository's common dir, which must hold the
-// State Database (gg doctor may leave it out, and then checks neither it nor its records).
+// State Database (gg doctor may leave it out, and then checks neither it nor its records), read through `database`,
+// the real one when none is given.
 interface CheckOptions {
   config: config.Configuration;
   harnesses: Record<string, unknown>;
   commonDir?: string;
+  database?: Database;
 }
 
 // The checked configuration: every declared Flow, the configuration's errors (the settings' first, as #301 lists
@@ -224,6 +229,7 @@ export async function check({
   config: configuration,
   harnesses,
   commonDir,
+  database = stateDatabase,
 }: CheckOptions): Promise<CheckedConfiguration> {
   const parsed = settingsModule.parse(configuration);
   const declared = declaredFlows(configuration, harnesses);
@@ -236,7 +242,8 @@ export async function check({
     flows: declared.flows,
     configurationErrors: [...(parsed.errors ?? []), ...declared.errors],
     environmentErrors: environment.errors,
-    goneFlowRecords: () => (readable ? goneFlowRecords(commonDir, new Set(admitted.map(([name]) => name))) : []),
+    goneFlowRecords: () =>
+      readable ? goneFlowRecords(commonDir, new Set(admitted.map(([name]) => name)), database) : [],
     warnings: declared.warnings,
     misfits: declared.misfits,
     ...(parsed.settings && { settings: parsed.settings }),

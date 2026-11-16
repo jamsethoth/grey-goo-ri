@@ -13,6 +13,7 @@ import * as exampleLayer from '../../support/example-layer.ts';
 import * as fakeGitModule from '../../support/fake-git.ts';
 import * as fakeIntegrityModule from '../../support/fake-integrity.ts';
 import * as gitShell from '../../support/git-shell.ts';
+import * as stateDatabase from '../../../lib/state-database/index.ts';
 import * as worktrees from '../../support/integrity-worktrees.ts';
 
 type Fake = ReturnType<typeof fakeIntegrityModule.fakeIntegrity>;
@@ -115,7 +116,10 @@ for (const scenario of SCENARIOS) {
       // The baseline is saved in the call intent, so its fields are part of the shape.
       return {
         fields: Object.keys(baseline).sort(),
-        violations: shapeOf((await implementation.findViolations({ ...call, baseline })).violations, names),
+        violations: shapeOf(
+          (await implementation.findViolations({ database: stateDatabase, ...call, baseline })).violations,
+          names,
+        ),
       };
     };
     const real = await attempt(integrity.createIntegrity(gitModule), () => scenario.real(pair));
@@ -138,6 +142,7 @@ test('the fake integrity records the untracked tests the real one records', asyn
   writeFileSync(join(own, 'test', 'cache', 'out.json'), '{}\n');
   writeFileSync(join(own, 'notes.txt'), 'notes\n');
   const beginArguments = {
+    database: stateDatabase,
     record: ownRecord,
     others: [],
     access: 'workspace-write',

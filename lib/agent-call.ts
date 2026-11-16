@@ -135,6 +135,7 @@ const visitBaseline = (runContext: RunContext, others: string[]) =>
     others,
     protectedPaths: runContext.protectedPaths,
     testPaths: checks.testPathSet(runContext.record.configurationSnapshot!.testPaths),
+    database: runContext.database,
   });
 
 // The baseline of a Check with no agent Action before it, whose run is otherwise compared with nothing if it holds for
@@ -161,6 +162,7 @@ async function callViolations(
     others,
     access,
     protectedPaths: runContext.protectedPaths,
+    database: runContext.database,
   });
   if (access !== 'read-only' && running.state.proc.tests !== 'write') {
     const violation = await changedTests(runContext, running, baseline, { response });

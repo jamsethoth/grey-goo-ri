@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import { fakeGit } from '../support/fake-git.ts';
 import * as integrityWorktrees from '../support/integrity-worktrees.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
@@ -84,7 +84,8 @@ async function protectedRootFile(t: TestContext, name: string) {
   const real = integrity.createIntegrity(fake.git);
   const executionRecord = integrityWorktrees.worktreeRecord(commonDir, 1, mainRoot);
   const protectedPaths = [name];
-  const takeBaseline = () => real.takeBaseline({ record: executionRecord, others: [], protectedPaths });
+  const takeBaseline = () =>
+    real.takeBaseline({ database: stateDatabase, record: executionRecord, others: [], protectedPaths });
   const rollBack = (baseline: integrity.IntegrityBaseline) =>
     real.restoreUntracked(mainRoot, integrity.rollbackSet(baseline, protectedPaths, {}));
   return { mainRoot, takeBaseline, rollBack };
@@ -134,6 +135,7 @@ test('a workflow file change is an integrity violation', async (t) => {
   const real = integrity.createIntegrity(fake.git);
   const executionRecord = integrityWorktrees.worktreeRecord(commonDir, 1, mainRoot);
   const baseline = await real.takeBaseline({
+    database: stateDatabase,
     record: executionRecord,
     others: [],
     protectedPaths: interpreter.protectedFiles({}),
@@ -143,6 +145,7 @@ test('a workflow file change is an integrity violation', async (t) => {
   writeFileSync(join(mainRoot, '.github', 'actions', 'setup', 'action.yml'), 'runs: {}\n');
 
   const { violations } = await real.findViolations({
+    database: stateDatabase,
     baseline,
     record: executionRecord,
     others: [],

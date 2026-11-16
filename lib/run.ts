@@ -13,10 +13,9 @@ import * as github from './github.ts';
 import * as labels from './labels.ts';
 import * as locksModule from './locks.ts';
 import * as model from './model.ts';
-import * as record from './record.ts';
 import type * as runContext from './run-context.ts';
 import * as report from './validate/report.ts';
-import * as stateDatabase from './state-database.ts';
+import * as stateDatabase from './state-database/index.ts';
 import * as work from './work.ts';
 
 // A Ticket's result: its Outcome, the State Label it ends with, and whether a label update or a fault failed it.
@@ -172,6 +171,7 @@ function selectionErrors(
 // What gg run admits: both sources, the registered Harnesses, the Flow `--flow` names, and the repository's common
 // dir, which must hold the State Database.
 interface ConfigurationOptions {
+  deps?: Pick<runContext.Deps, 'database'>;
   commonDir: string;
   config: config.Configuration;
   harnesses: Record<string, unknown>;
@@ -186,8 +186,9 @@ export async function admitConfiguration({
   config: configuration,
   harnesses,
   flow: flowName = 'default',
+  deps: { database } = {},
 }: ConfigurationOptions) {
-  const checked = await configurationCheck.check({ config: configuration, harnesses, commonDir });
+  const checked = await configurationCheck.check({ config: configuration, harnesses, commonDir, database });
   const errors = [...checked.configurationErrors, ...selectionErrors(checked, flowName), ...checked.environmentErrors];
   const { settings } = checked;
   if (errors.length || !settings) {
@@ -284,16 +285,16 @@ function labelEnsuringGh(
 
 // The Run's directory with the Flow it runs, the Pinned Configuration of every declared Flow, which a resumed Execution
 // may run under, and the Run's log: each line goes to the run log and the caller's log, named.
+type RunStart = { flows: PinnedFlow[]; selected: PinnedFlow } & Required<Pick<runContext.Deps, 'clock' | 'database'>>;
 function startRun(
   repo: admission.Repo,
-  { flows, selected, clock }: { flows: PinnedFlow[]; selected: PinnedFlow; clock: clockModule.Clock },
+  { flows, selected, clock, database }: RunStart,
   { named, log }: { named: (message: string) => string; log: (line: string) => void },
 ) {
   const runId = `${new Date(clock.now()).toISOString().replace(/[-:]|\.\d+/g, '')}-${randomBytes(3).toString('hex')}`;
   const runDir = join(repo.gitCommonDir, 'gg', 'runs', runId);
   flowModule.writeResolved(runDir, model.toJson(selected.flow), selected.hash);
-  for (const { hash, configuration } of flows)
-    stateDatabase.savePinnedConfiguration(repo.gitCommonDir, hash, configuration);
+  for (const { hash, configuration } of flows) database.savePinnedConfiguration(repo.gitCommonDir, hash, configuration);
   const runLog = (message: string) => {
     const line = named(message);
     appendFileSync(join(runDir, 'run.log'), `${new Date().toISOString()} ${line}\n`);
@@ -308,12 +309,13 @@ type Admitted = Awaited<ReturnType<typeof admitConfiguration>> & { named: (messa
 async function runRepo(repo: admission.Repo, admitted: Admitted, options: RunOptions) {
   const { flows, selected, warnings, settings, named } = admitted;
   const { target, harnesses, protectedPaths, testImmutability, deps, log } = options;
-  const { gh, git, exec, integrity, locks = locksModule, database = record, clock = clockModule.WALL_CLOCK } = deps;
+  const { gh, git, exec, integrity, locks = locksModule, clock = clockModule.WALL_CLOCK } = deps;
+  const { database = stateDatabase } = deps;
   const { flow, hash, source } = selected;
   const declared = [...flows.values()];
   const { issue, subIssues, tickets } = await readTickets(gh, target, repo, settings);
   if (options.resume && subIssues.length) throw new Error(`#${target} has sub-issues; gg work resume takes one Ticket`);
-  const { runId, runLog } = startRun(repo, { flows: declared, selected, clock }, { named, log });
+  const { runId, runLog } = startRun(repo, { flows: declared, selected, clock, database }, { named, log });
   const eventLog = events.eventLog(repo.gitCommonDir, {}, database);
   eventLog('run_start', { run: runId });
   runLog(

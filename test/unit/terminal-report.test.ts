@@ -4,7 +4,7 @@ import type * as sideEffect from '../../lib/effects/side-effect.ts';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as terminalReport from '../../lib/terminal-report.ts';
 import type * as visit from '../../lib/visit.ts';
 import * as support from '../support/execution-context.ts';
@@ -86,9 +86,9 @@ test('a declared stop holds every field, the flags false and the rest null', () 
 
 test("an Execution's run stop is read from its Action Events in the State Database", async (t) => {
   const { context, executionRecord, logs } = await support.executionContext(t);
-  assert.equal(terminalReport.runStopOf(executionRecord, context.log), null);
+  assert.equal(terminalReport.runStopOf(executionRecord, context.log, context.database), null);
   context.events('action', { ...PUSH_EVENT, execution: executionRecord.execution, failureClass: 'auth' });
-  assert.deepEqual(terminalReport.runStopOf(executionRecord, context.log), { failureClass: 'auth' });
+  assert.deepEqual(terminalReport.runStopOf(executionRecord, context.log, context.database), { failureClass: 'auth' });
   assert.deepEqual(logs, []);
 });
 
@@ -114,7 +114,7 @@ test('a refused row of the Execution is skipped and logged by name; the others g
   context.events('action', { ...PUSH_EVENT, execution: executionRecord.execution, failureClass: 'auth' });
   let runStop: ReturnType<typeof terminalReport.runStopOf> = null;
   assert.doesNotThrow(() => {
-    runStop = terminalReport.runStopOf(executionRecord, context.log);
+    runStop = terminalReport.runStopOf(executionRecord, context.log, context.database);
   });
   assert.deepEqual(runStop, { failureClass: 'auth' });
   assert.equal(logs.length, 1, logs.join('\n'));

@@ -5,7 +5,6 @@ import * as clockModule from './clock.ts';
 import type * as commandCleanup from './command-cleanup.ts';
 import type * as config from './config.ts';
 import type * as sideEffect from './effects/side-effect.ts';
-import * as eventRead from './event-read.ts';
 import * as events from './events.ts';
 import type * as exec from './exec.ts';
 import type * as github from './github.ts';
@@ -15,9 +14,10 @@ import type * as locks from './locks.ts';
 import * as marker from './marker.ts';
 import type * as model from './model.ts';
 import type * as reconcile from './reconcile.ts';
-import * as record from './record.ts';
+import type * as record from './record.ts';
 import * as remoteEffects from './remote-effects.ts';
 import * as publicText from './public-text.ts';
+import * as stateDatabase from './state-database/index.ts';
 import type * as terminalReport from './terminal-report.ts';
 import type * as visit from './visit.ts';
 
@@ -156,14 +156,17 @@ export interface RunContext extends Omit<ExecutionOptions, 'deps'>, terminalRepo
 }
 
 // A hold, fault or abandonment decided and saved, at admission or by a Terminal, whose ticket_end has not landed.
-export const reportDecided = (executionRecord: record.ExecutionRecord): boolean =>
+export const reportDecided = (
+  executionRecord: record.ExecutionRecord,
+  database: Pick<record.StateDatabase, 'hasTicketEnd'>,
+): boolean =>
   !!(
     executionRecord.terminalStop?.held ||
     executionRecord.terminalStop?.error ||
     executionRecord.terminalStop?.abandoned ||
     // A person's gg work done, saved before its report: only a rerun of that verb finishes it (D5 D).
     (executionRecord.state === 'active' && executionRecord.terminalReason?.decidedBy.human !== undefined)
-  ) && !eventRead.hasTicketEnd(executionRecord.commonDir, executionRecord.execution);
+  ) && !database.hasTicketEnd(executionRecord.commonDir, executionRecord.execution);
 
 // The deps and options as one context; `integrity` and `testImmutability` default to the real ones over the git given.
 export function createRunContext(options: ExecutionOptions): RunContext {
@@ -172,7 +175,6 @@ export function createRunContext(options: ExecutionOptions): RunContext {
   const { clock = clockModule.WALL_CLOCK } = deps;
   // A resumed record keeps the Run that wrote its markers, while its Events belong to the Run resuming it. The
   // methods are attached below, so the literal is not yet a whole RunContext.
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
   const runContext = {
     ...given,
     ...deps,
@@ -180,7 +182,7 @@ export function createRunContext(options: ExecutionOptions): RunContext {
     flow: options.pinned.flow,
     run: options.run ?? executionRecord.run,
     runState: options.runState ?? { stop: null, remoteNotBefore: 0 },
-    database: deps.database ?? record,
+    database: deps.database ?? stateDatabase,
     integrity: deps.integrity ?? integrity.createIntegrity(deps.git, undefined, deps.locks),
     testImmutability:
       options.testImmutability ??
@@ -198,7 +200,7 @@ export function createRunContext(options: ExecutionOptions): RunContext {
     cwd: options.cwd,
   });
   attachActionMethods(runContext);
-  runContext.laterRunReport = reportDecided(executionRecord);
+  runContext.laterRunReport = reportDecided(executionRecord, runContext.database);
   return runContext;
 }
 

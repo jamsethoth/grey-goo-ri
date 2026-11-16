@@ -4,7 +4,7 @@ import * as branchTip from '../../lib/branch-tip.ts';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as record from '../../lib/record.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
 // Ticket 7's record with no commit of gg's, and a gg work resume that took `person-sha` as its baseline.
@@ -38,7 +38,7 @@ function resumedRecord(t: TestContext) {
 
 test('the branch tip is the one a resume took when gg has no commit after it', (t) => {
   const { executionRecord } = resumedRecord(t);
-  assert.deepEqual(branchTip.provenTip(executionRecord), {
+  assert.deepEqual(branchTip.provenTip(executionRecord, stateDatabase), {
     sha: 'person-sha',
     what: 'person-sha, the tip gg work resume took as the baseline',
   });
@@ -51,7 +51,7 @@ test('a ticket_resumed row that fails its check stops the branch tip read', (t) 
     .open(commonDir)
     .prepare(`UPDATE events SET json = replace(json, '"head":"person-sha"', '"head":5') WHERE type = 'ticket_resumed'`)
     .run();
-  assert.throws(() => branchTip.provenTip(executionRecord), eventRead.EventCorruptError);
+  assert.throws(() => branchTip.provenTip(executionRecord, stateDatabase), eventRead.EventCorruptError);
 });
 
 // The resume row's own corruptions, one per column eventLog copies and per field it saves: each makes the row fail its
@@ -77,7 +77,7 @@ test('every corruption of a resume row stops the branch tip read, and none of an
   for (const [name, change] of Object.entries(ROW_CORRUPTIONS)) {
     const { commonDir, executionRecord } = resumedRecord(t);
     stateDatabase.open(commonDir).prepare(`UPDATE events SET ${change} WHERE type = 'ticket_resumed'`).run();
-    assert.throws(() => branchTip.provenTip(executionRecord), eventRead.EventCorruptError, name);
+    assert.throws(() => branchTip.provenTip(executionRecord, stateDatabase), eventRead.EventCorruptError, name);
   }
   for (const [name, change] of Object.entries(ROW_CORRUPTIONS)) {
     if (name === 'its execution column') continue;
@@ -96,7 +96,11 @@ test('every corruption of a resume row stops the branch tip read, and none of an
       .open(commonDir)
       .prepare(`UPDATE events SET ${change} WHERE type = 'ticket_resumed' AND ticket = 8`)
       .run();
-    assert.equal(branchTip.provenTip(executionRecord)?.sha, 'person-sha', `${name}, on another Execution's row`);
+    assert.equal(
+      branchTip.provenTip(executionRecord, stateDatabase)?.sha,
+      'person-sha',
+      `${name}, on another Execution's row`,
+    );
   }
 });
 
@@ -113,5 +117,5 @@ test("a resume's tip outranks a commit of gg's saved in the same millisecond", (
     evidence: { sha: 'gg-sha' },
     time: resumed!.time,
   });
-  assert.equal(branchTip.provenTip(executionRecord)?.sha, 'person-sha');
+  assert.equal(branchTip.provenTip(executionRecord, stateDatabase)?.sha, 'person-sha');
 });

@@ -14,6 +14,7 @@ import * as options from '../lib/options.ts';
 import * as record from '../lib/record.ts';
 import * as run from '../lib/run.ts';
 import * as settingsModule from '../lib/settings.ts';
+import * as stateDatabase from '../lib/state-database/index.ts';
 import * as report from '../lib/validate/report.ts';
 import * as work from '../lib/work.ts';
 
@@ -31,7 +32,7 @@ const realDeps = (gh: github.Gh): interpreter.Deps => ({
   git: git.createGit(),
   exec: exec.createExec({ kernel32: containment.openKernel32() }),
   locks: locks.createLocks(),
-  database: record.createStateDatabase(),
+  database: stateDatabase.createStateDatabase(),
   clock: clock.WALL_CLOCK,
 });
 

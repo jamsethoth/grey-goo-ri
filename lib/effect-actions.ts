@@ -138,7 +138,9 @@ function pushAction(runContext: RunContext, { actionIdentity, settle }: Running)
       effect: push.effect,
       payload: {
         branch: executionRecord.branch,
-        sha: branchTip.provenTip(executionRecord)?.sha ?? (await git.headSha(executionRecord.worktree)),
+        sha:
+          branchTip.provenTip(executionRecord, runContext.database)?.sha ??
+          (await git.headSha(executionRecord.worktree)),
       },
     }),
   });
@@ -223,7 +225,7 @@ function markReady(runContext: RunContext, { actionIdentity, state, settle }: Ru
   const [first] = checked;
   const tree =
     first && checked.every((check) => check.state === 'passed' && check.tree === first.tree) ? first.tree : null;
-  const lastSha = branchTip.provenTip(executionRecord)?.sha ?? null;
+  const lastSha = branchTip.provenTip(executionRecord, runContext.database)?.sha ?? null;
   const target = { number: executionRecord.pr!, sha: lastSha, tree };
   return attempt.effectAction(runContext, {
     actionIdentity,

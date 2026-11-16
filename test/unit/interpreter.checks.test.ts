@@ -4,7 +4,7 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import { signalsOf } from '../support/action-signals.ts';
 import * as addSuite from '../support/add-suite.ts';
 import { GREEN_FAIL_OUTPUT } from '../support/add-suite.ts';

@@ -16,3 +16,6 @@ export function canonical(path: string): string {
 // Windows paths are case-insensitive, so equality must not hinge on how a caller cased the path.
 export const pathKey = (path: string): string =>
   process.platform === 'win32' ? canonical(path).toLowerCase() : canonical(path);
+
+// The State Database's file in a repository's git common directory (lib/state-database/).
+export const stateDatabaseFile = (commonDir: string): string => join(commonDir, 'gg', 'gg.db');

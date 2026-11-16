@@ -6,7 +6,6 @@ import * as cleanupHold from './cleanup-hold.ts';
 import * as effectErrors from './effect-errors.ts';
 import * as effects from './effects/index.ts';
 import * as attempt from './attempt.ts';
-import * as eventRead from './event-read.ts';
 import * as events from './events.ts';
 import * as flow from './flow.ts';
 import * as labels from './labels.ts';
@@ -40,19 +39,22 @@ export function protectedFiles(harnesses: Record<string, { protectedPaths?: unkn
   return [...new Set([...GG_PROTECTED_PATHS, ...declared])].sort();
 }
 
+// Whether a ticket_end landed is read through the database the caller is handed.
+type TicketEnds = Pick<record.StateDatabase, 'hasTicketEnd'>;
+
 // A hold, fault or abandonment decided and saved, at admission or by a Terminal, whose ticket_end has not landed: the
 // next Run finishes its report.
-const pendingReport = (executionRecord: record.ExecutionRecord): boolean =>
-  (!!executionRecord.admissionStop && !eventRead.hasTicketEnd(executionRecord.commonDir, executionRecord.execution)) ||
-  context.reportDecided(executionRecord);
+const pendingReport = (executionRecord: record.ExecutionRecord, database: TicketEnds): boolean =>
+  (!!executionRecord.admissionStop && !database.hasTicketEnd(executionRecord.commonDir, executionRecord.execution)) ||
+  context.reportDecided(executionRecord, database);
 
 // What a Run does with an Execution Record it finds: finish a report decided and saved, start a new Execution after a
 // fresh hold whose report landed, leave a held or finished record, or resume it. Admission and the configuration check
 // both decide by it (#362).
 export type Resumption = 'finish-report' | 'restart' | 'held' | 'finished' | 'resume';
 
-export function resumption(executionRecord: record.ExecutionRecord): Resumption {
-  if (pendingReport(executionRecord)) return 'finish-report';
+export function resumption(executionRecord: record.ExecutionRecord, database: TicketEnds): Resumption {
+  if (pendingReport(executionRecord, database)) return 'finish-report';
   if (executionRecord.state === 'held') return executionRecord.terminalStop?.fresh ? 'restart' : 'held';
   return executionRecord.state === 'active' ? 'resume' : 'finished';
 }
@@ -76,11 +78,9 @@ export async function runExecution(options: context.ExecutionOptions): Promise<T
     if (options.fault) throw options.fault;
     // An admission's kind decides which of its fields it holds (lib/admission.ts builds each kind whole), which its
     // Partial type cannot say.
-    /* eslint-disable @typescript-eslint/no-unsafe-type-assertion */
     if (admission?.kind === 'fault') throw new Error(admission.error as string);
     if (admission?.kind === 'hold') return await terminal.hold(runContext, admission as HoldDecision);
     if (admission?.kind === 'abandon') return await terminal.abandon(runContext, admission as AbandonDecision);
-    /* eslint-enable @typescript-eslint/no-unsafe-type-assertion */
     if (runContext.laterRunReport) return await finishReport(runContext);
     // A record that has entered a Vertex is resumed, so GitHub and git are reconciled with it first.
     if (executionRecord.visits.size) {
@@ -254,7 +254,7 @@ async function endCaught(runContext: RunContext, caught: unknown): Promise<Termi
       fault: true,
       error: effectErrors.errorText(err),
     };
-    const runStop = terminalReport.runStopOf(executionRecord, runContext.log);
+    const runStop = terminalReport.runStopOf(executionRecord, runContext.log, runContext.database);
     if (runStop) result.runStop = runStop;
     return result;
   }

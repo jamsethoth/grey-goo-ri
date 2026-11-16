@@ -544,6 +544,7 @@ test("a worktree backing off is idle to other Tickets' integrity checks", async 
     others: [fixture.worktree],
     protectedPaths: fixture.options.protectedPaths,
     git: fixture.options.deps.git,
+    database: fixture.options.deps.database!,
   };
   const stray = join(fixture.worktree, 'stray.txt');
   let violations = undefined as integrity.IntegrityViolation[] | undefined;

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as executionReads from '../support/execution-reads.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.ts';
 import * as executionContext from '../support/execution-context.ts';

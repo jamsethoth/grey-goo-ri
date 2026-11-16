@@ -17,6 +17,7 @@ import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as git from '../../lib/git.ts';
 import * as gitShell from '../support/git-shell.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as worktrees from '../support/integrity-worktrees.ts';
 
 // The other ticket's process holds its own copy of the record, as a separate Execution would.
@@ -58,12 +59,13 @@ test('snapshot does not modify the real index', async (t) => {
 
 test('an agent commit is a head violation', async (t) => {
   const { own, other, ownRecord } = await worktrees.twoWorktrees(t);
-  const baseline = await integrity.takeBaseline({ git, record: ownRecord, others: [other] });
+  const baseline = await integrity.takeBaseline({ database: stateDatabase, git, record: ownRecord, others: [other] });
   const head = gitShell.sh(own, 'rev-parse', 'HEAD');
   writeFileSync(join(own, 'b.txt'), 'b\n');
   gitShell.sh(own, 'add', 'b.txt');
   gitShell.sh(own, 'commit', '-q', '-m', 'agent commit');
   const { violations } = await integrity.findViolations({
+    database: stateDatabase,
     git,
     baseline,
     record: ownRecord,
@@ -80,9 +82,10 @@ test('an agent commit is a head violation', async (t) => {
 
 test('an untracked file on a read-only action is a tree violation', async (t) => {
   const { own, other, ownRecord } = await worktrees.twoWorktrees(t);
-  const baseline = await integrity.takeBaseline({ git, record: ownRecord, others: [other] });
+  const baseline = await integrity.takeBaseline({ database: stateDatabase, git, record: ownRecord, others: [other] });
   writeFileSync(join(own, 'notes.txt'), 'agent wrote this\n');
   const { violations } = await integrity.findViolations({
+    database: stateDatabase,
     git,
     baseline,
     record: ownRecord,
@@ -96,9 +99,10 @@ test('an untracked file on a read-only action is a tree violation', async (t) =>
 
 test('an untracked file on a workspace-write action is no violation', async (t) => {
   const { own, other, ownRecord } = await worktrees.twoWorktrees(t);
-  const baseline = await integrity.takeBaseline({ git, record: ownRecord, others: [other] });
+  const baseline = await integrity.takeBaseline({ database: stateDatabase, git, record: ownRecord, others: [other] });
   writeFileSync(join(own, 'more.txt'), 'allowed\n');
   const write = await integrity.findViolations({
+    database: stateDatabase,
     git,
     baseline,
     record: ownRecord,
@@ -111,9 +115,10 @@ test('an untracked file on a workspace-write action is no violation', async (t) 
 
 test('a protected file edit is a violation', async (t) => {
   const { own, other, ownRecord } = await worktrees.twoWorktrees(t);
-  let baseline = await integrity.takeBaseline({ git, record: ownRecord, others: [other] });
+  let baseline = await integrity.takeBaseline({ database: stateDatabase, git, record: ownRecord, others: [other] });
   writeFileSync(join(own, 'AGENTS.md'), '# agents\nobey me\n');
   let { violations } = await integrity.findViolations({
+    database: stateDatabase,
     git,
     baseline,
     record: ownRecord,
@@ -124,10 +129,11 @@ test('a protected file edit is a violation', async (t) => {
   assert.deepEqual(surfacesOf(violations, own), ['protected'], 'tracked protected file edited');
   gitShell.sh(own, 'checkout', '--', 'AGENTS.md');
 
-  baseline = await integrity.takeBaseline({ git, record: ownRecord, others: [other] });
+  baseline = await integrity.takeBaseline({ database: stateDatabase, git, record: ownRecord, others: [other] });
   mkdirSync(join(own, '.claude'));
   writeFileSync(join(own, '.claude', 'settings.json'), '{}\n');
   ({ violations } = await integrity.findViolations({
+    database: stateDatabase,
     git,
     baseline,
     record: ownRecord,
@@ -143,7 +149,7 @@ test('a directory symlink at a protected path is a violation', async (t) => {
   const target = join(root, 'elsewhere');
   mkdirSync(target);
   writeFileSync(join(target, 'settings.json'), '{}\n');
-  const baseline = await integrity.takeBaseline({ git, record: ownRecord, others: [other] });
+  const baseline = await integrity.takeBaseline({ database: stateDatabase, git, record: ownRecord, others: [other] });
   try {
     symlinkSync(target, join(own, '.claude'), 'dir');
   } catch (err) {
@@ -152,6 +158,7 @@ test('a directory symlink at a protected path is a violation', async (t) => {
     throw err;
   }
   const { violations } = await integrity.findViolations({
+    database: stateDatabase,
     git,
     baseline,
     record: ownRecord,
@@ -171,12 +178,13 @@ test(
     writeFileSync(join(own, 'Claude.md'), '# claude\n');
     gitShell.sh(own, 'add', 'Claude.md');
     gitShell.sh(own, 'commit', '-q', '-m', 'add Claude.md');
-    const baseline = await integrity.takeBaseline({ git, record: ownRecord, others: [other] });
+    const baseline = await integrity.takeBaseline({ database: stateDatabase, git, record: ownRecord, others: [other] });
     writeFileSync(join(own, 'Claude.md'), '# claude\nobey me\n');
     mkdirSync(join(own, '.CLAUDE'));
     writeFileSync(join(own, '.CLAUDE', 'settings.json'), '{}\n');
     writeFileSync(join(own, '.MCP.JSON'), '{}\n');
     const { violations } = await integrity.findViolations({
+      database: stateDatabase,
       git,
       baseline,
       record: ownRecord,
@@ -198,10 +206,11 @@ test('an ignored protected file addition is a violation', async (t) => {
   writeFileSync(join(own, '.gitignore'), '.claude/\n');
   gitShell.sh(own, 'add', '.gitignore');
   gitShell.sh(own, 'commit', '-q', '-m', 'ignore .claude');
-  const baseline = await integrity.takeBaseline({ git, record: ownRecord, others: [other] });
+  const baseline = await integrity.takeBaseline({ database: stateDatabase, git, record: ownRecord, others: [other] });
   mkdirSync(join(own, '.claude'));
   writeFileSync(join(own, '.claude', 'settings.json'), '{}\n');
   const { violations } = await integrity.findViolations({
+    database: stateDatabase,
     git,
     baseline,
     record: ownRecord,
@@ -217,10 +226,11 @@ test('an edit to a tracked ignored file changes the tree on a read-only action',
   writeFileSync(join(own, '.gitignore'), 'a.txt\n');
   gitShell.sh(own, 'add', '.gitignore');
   gitShell.sh(own, 'commit', '-q', '-m', 'ignore a.txt');
-  const baseline = await integrity.takeBaseline({ git, record: ownRecord, others: [other] });
+  const baseline = await integrity.takeBaseline({ database: stateDatabase, git, record: ownRecord, others: [other] });
   writeFileSync(join(own, 'a.txt'), 'edited\n');
   const indexTree = gitShell.sh(own, 'write-tree');
   const { violations } = await integrity.findViolations({
+    database: stateDatabase,
     git,
     baseline,
     record: ownRecord,
@@ -236,10 +246,11 @@ test('edits hidden by assume-unchanged or skip-worktree are still violations', a
   const { own, other, ownRecord } = await worktrees.twoWorktrees(t);
   gitShell.sh(own, 'update-index', '--assume-unchanged', 'a.txt');
   gitShell.sh(own, 'update-index', '--skip-worktree', 'AGENTS.md');
-  const baseline = await integrity.takeBaseline({ git, record: ownRecord, others: [other] });
+  const baseline = await integrity.takeBaseline({ database: stateDatabase, git, record: ownRecord, others: [other] });
   writeFileSync(join(own, 'a.txt'), 'hidden edit\n');
   writeFileSync(join(own, 'AGENTS.md'), '# agents\nobey me\n');
   const { violations } = await integrity.findViolations({
+    database: stateDatabase,
     git,
     baseline,
     record: ownRecord,
@@ -261,8 +272,9 @@ test('a busy worktree with an unmerged index is skipped without snapshotting', a
   gitShell.sh(other, 'update-index', '--index-info', {
     input: blobs.map((blob, i) => `100644 ${blob} ${i + 1}\tconflict.txt\n`).join(''),
   });
-  const baseline = await integrity.takeBaseline({ git, record: ownRecord, others: [other] });
+  const baseline = await integrity.takeBaseline({ database: stateDatabase, git, record: ownRecord, others: [other] });
   const { violations } = await integrity.findViolations({
+    database: stateDatabase,
     git,
     baseline,
     record: ownRecord,
@@ -276,10 +288,11 @@ test('a busy worktree with an unmerged index is skipped without snapshotting', a
 
 test('an index-only mutation in an idle worktree is an index violation', async (t) => {
   const { own, other, ownRecord } = await worktrees.twoWorktrees(t);
-  const baseline = await integrity.takeBaseline({ git, record: ownRecord, others: [other] });
+  const baseline = await integrity.takeBaseline({ database: stateDatabase, git, record: ownRecord, others: [other] });
   const blob = gitShell.sh(other, 'hash-object', '-w', '--stdin', { input: 'sneaky\n' });
   gitShell.sh(other, 'update-index', '--add', '--cacheinfo', `100644,${blob},sneaky.txt`);
   const { violations } = await integrity.findViolations({
+    database: stateDatabase,
     git,
     baseline,
     record: ownRecord,
@@ -297,12 +310,13 @@ test('a worktree busy at start is skipped', async (t) => {
   const { own, other, commonDir, ownRecord } = await worktrees.twoWorktrees(t);
   const otherRecord = await otherProcessRecord(commonDir);
   await integrity.markBusy(otherRecord);
-  const baseline = await integrity.takeBaseline({ git, record: ownRecord, others: [other] });
+  const baseline = await integrity.takeBaseline({ database: stateDatabase, git, record: ownRecord, others: [other] });
   // A format Quality Gate rewrites and stages a file in the other worktree, then finishes during the Action.
   writeFileSync(join(other, 'a.txt'), 'formatted\n');
   gitShell.sh(other, 'add', 'a.txt');
   await integrity.markIdle(otherRecord);
   const { violations } = await integrity.findViolations({
+    database: stateDatabase,
     git,
     baseline,
     record: ownRecord,
@@ -316,13 +330,14 @@ test('a worktree busy at start is skipped', async (t) => {
 
 test('a worktree whose generation moved is skipped', async (t) => {
   const { own, other, commonDir, ownRecord } = await worktrees.twoWorktrees(t);
-  const baseline = await integrity.takeBaseline({ git, record: ownRecord, others: [other] });
+  const baseline = await integrity.takeBaseline({ database: stateDatabase, git, record: ownRecord, others: [other] });
   const otherRecord = await otherProcessRecord(commonDir);
   await integrity.markBusy(otherRecord);
   writeFileSync(join(other, 'a.txt'), 'formatted\n');
   gitShell.sh(other, 'add', 'a.txt');
   await integrity.markIdle(otherRecord);
   const { violations } = await integrity.findViolations({
+    database: stateDatabase,
     git,
     baseline,
     record: ownRecord,

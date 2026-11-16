@@ -5,7 +5,7 @@
 // The test runner also loads this file with no arguments, where it does nothing.
 import * as events from '../../lib/events.ts';
 import * as locks from '../../lib/locks.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as gitShell from './git-shell.ts';
 
 const [commonDir, worktree, run] = process.argv.slice(2);

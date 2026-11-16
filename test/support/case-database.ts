@@ -2,7 +2,7 @@
 import type { TestContext } from 'node:test';
 import type * as events from '../../lib/events.ts';
 import * as record from '../../lib/record.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 
 type Saved = record.ExecutionRecord | record.EpicRecord;
 type SaveHook = (next: Saved) => void;
@@ -33,7 +33,7 @@ function hooksOf(t: TestContext) {
 // record about to be saved or Event about to be inserted, and may throw to fail that write.
 export function caseDatabase(t: TestContext): record.StateDatabase {
   const hooks = hooksOf(t);
-  return record.createStateDatabase({
+  return stateDatabase.createStateDatabase({
     beforeSave: (next: Saved) => hooks.saves.forEach((hook) => hook(next)),
     beforeAppend: (event: events.Event) => hooks.appends.forEach((hook) => hook(event)),
   });

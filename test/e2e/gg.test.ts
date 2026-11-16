@@ -16,7 +16,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 

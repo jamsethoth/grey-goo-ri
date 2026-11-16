@@ -25,6 +25,7 @@ type DiffStatsFile = Parameters<typeof events.diffStats>[0][number];
 // Run its ticket_end goes to, and how each Terminal Action is entered and marked. A stop token's comment renders from
 // the stopped Visit's Configuration Snapshot.
 export interface TerminalContext extends sideEffect.EffectContext {
+  database: sideEffect.EffectContext['database'] & Pick<record.StateDatabase, 'executionEvents'>;
   gh: github.Gh;
   git: effects.EvidenceGit & {
     diffStats(worktree: string, base: string, to?: string): Promise<DiffStatsFile[]>;
@@ -83,10 +84,11 @@ const reachOf = (failureClass: string | null) =>
 export function runStopOf(
   executionRecord: record.ExecutionRecord,
   log: (line: string) => void,
+  database: Pick<record.StateDatabase, 'executionEvents'>,
 ): { failureClass: string } | null {
   const { commonDir, execution, ticket } = executionRecord;
   const skipped = (err: eventRead.EventCorruptError) => log(`#${ticket} run stop: skipped ${err.message}`);
-  const failureClass = runStopEvent(eventRead.executionEvents(commonDir, execution, skipped))?.failureClass;
+  const failureClass = runStopEvent(database.executionEvents(commonDir, execution, skipped))?.failureClass;
   return failureClass == null ? null : { failureClass };
 }
 
@@ -330,7 +332,7 @@ export async function report(
       interrupted: stop?.interrupted,
     }),
   );
-  const runStop = runStopOf(executionRecord, context.log);
+  const runStop = runStopOf(executionRecord, context.log, context.database);
   return {
     outcome: name,
     ...(stop?.held && { held: true as const }),

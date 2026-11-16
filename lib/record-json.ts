@@ -5,7 +5,7 @@ import type * as commandCleanup from './command-cleanup.ts';
 import type * as record from './record.ts';
 import * as recordRead from './record-read.ts';
 import * as referencePaths from './reference-paths.ts';
-import * as stateDatabase from './state-database.ts';
+import * as paths from './paths.ts';
 import type * as visit from './visit.ts';
 
 // The frozen schema version of both records' rows (docs/interfaces/record.md); a change to it needs a new ADR (#23).
@@ -86,7 +86,7 @@ export function parseRow(
   commonDir: string,
   { kind, n: recordNumber, json }: RecordRow,
 ): record.ExecutionRecord | record.EpicRecord {
-  const file = `${stateDatabase.filePath(commonDir)}#${kind}-${recordNumber}`;
+  const file = `${paths.stateDatabaseFile(commonDir)}#${kind}-${recordNumber}`;
   const corrupt = (reason: string) => new RecordCorruptError(file, reason, json);
   let data: unknown;
   try {

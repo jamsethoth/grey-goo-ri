@@ -1,5 +1,6 @@
 import * as branchTip from './branch-tip.ts';
 import * as record from './record.ts';
+import * as stateDatabase from './state-database/index.ts';
 import * as writeAhead from './write-ahead.ts';
 import * as integrityModule from './integrity.ts';
 import * as commit from './effects/commit.ts';
@@ -39,7 +40,7 @@ export type HumanOverride = {
 type Hold = { next: 'hold'; cursor: record.Cursor | null; reason: string; name?: string; advice?: string };
 export type ReconcileResult = { next: 'continue'; cursor: record.Cursor; reason: null } | Hold | HumanOverride;
 
-type Database = Pick<record.StateDatabase, 'evidence' | 'complete'>;
+type Database = Pick<record.StateDatabase, 'evidence' | 'complete' | 'rowsNaming'>;
 
 // The Visit's result is a call held for cleanup (L11): what its worktree holds is for the suspended call's validation
 // to judge (L15), once a later Run has confirmed its processes gone.
@@ -52,7 +53,7 @@ export async function resets(
   {
     git,
     integrity = integrityModule.createIntegrity(git),
-    database = record,
+    database = stateDatabase,
   }: { git: ReconcileGit; integrity?: integrityModule.Integrity; database?: Database },
 ): Promise<'held' | 'continue'> {
   for (const entry of reset.openResets(executionRecord)) {
@@ -177,7 +178,7 @@ export async function terminalEffects(
     cwd,
     markers,
     find,
-    database = record,
+    database = stateDatabase,
   }: {
     gh: ReconcileGh;
     labelPrefix?: string;
@@ -212,9 +213,13 @@ export type LoadedRecord =
   | { executionRecord: record.ExecutionRecord | null; corrupt: null }
   | { executionRecord: null; corrupt: record.RecordCorruptError };
 
-export function loadExecutionRecord(commonDir: string, ticket: number): LoadedRecord {
+export function loadExecutionRecord(
+  commonDir: string,
+  ticket: number,
+  database: Pick<record.StateDatabase, 'load'>,
+): LoadedRecord {
   try {
-    return { executionRecord: record.load(commonDir, 'ticket', ticket), corrupt: null };
+    return { executionRecord: database.load(commonDir, 'ticket', ticket), corrupt: null };
   } catch (err) {
     if (err instanceof record.RecordCorruptError) return { executionRecord: null, corrupt: err };
     throw err;
@@ -236,7 +241,17 @@ export type ReconcileOptions = ({ record: record.ExecutionRecord } | { corrupt: 
 export async function reconcile(options: ReconcileOptions): Promise<ReconcileResult> {
   if ('corrupt' in options)
     return { next: 'hold', cursor: null, reason: `${options.corrupt.message}; it is kept for a human.` };
-  const { record: executionRecord, flow, git, integrity, gh, labelPrefix, cwd, find, database = record } = options;
+  const {
+    record: executionRecord,
+    flow,
+    git,
+    integrity,
+    gh,
+    labelPrefix,
+    cwd,
+    find,
+    database = stateDatabase,
+  } = options;
   const issueLabels = gh.labelNames(await gh.viewIssue(executionRecord.ticket, cwd));
   const overridden = humanOverride(executionRecord, issueLabels, labelPrefix);
   if (overridden) return overridden;
@@ -259,7 +274,7 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
   if (conflict) return hold(conflict);
   // A completed commit has no open intent to check, and an amend keeps its marker: only the branch tip shows the
   // change.
-  const expected = branchTip.provenTip(executionRecord);
+  const expected = branchTip.provenTip(executionRecord, database);
   const head = expected && (await git.headSha(executionRecord.worktree));
   if (expected && head !== expected.sha)
     return hold(

@@ -6,8 +6,7 @@ import { join } from 'node:path';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as record from '../../lib/record.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
-import * as stateDatabaseIndex from '../../lib/state-database/index.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
@@ -100,15 +99,33 @@ const ENTRY_POINTS: Record<string, Record<string, ((commonDir: string) => unknow
         output: '',
       }),
     reusablePass: (commonDir) => stateDatabase.reusablePass(commonDir, 't', 'npm test'),
+    createStateDatabase: null,
+    load: (commonDir) => stateDatabase.load(commonDir, 'ticket', 8),
+    removeRecord: (commonDir) => stateDatabase.removeRecord(commonDir, 'ticket', 8),
+    loadAll: (commonDir) => stateDatabase.loadAll(commonDir, 'ticket'),
+    save: (commonDir) => stateDatabase.save(knownRecord(commonDir)),
+    intent: (commonDir) =>
+      stateDatabase.intent(knownRecord(commonDir), MARKER, 'commit', { message: 'red', tree: 't1', parent: 'p1' }),
+    evidence: (commonDir) => stateDatabase.evidence(withIntent(commonDir), MARKER, { sha: 'abc' }),
+    complete: (commonDir) => stateDatabase.complete(withIntent(commonDir), MARKER),
+    appendEvent: (commonDir) =>
+      stateDatabase.appendEvent(commonDir, {
+        schemaVersion: events.EVENT_SCHEMA_VERSION,
+        time: 't',
+        ...events.lifecycleEvent('run_start', { run: 'r1' }),
+      }),
+    readEvents: (commonDir) => stateDatabase.readEvents(commonDir),
+    executionEvents: (commonDir) => stateDatabase.executionEvents(commonDir, '8.run-1'),
+    hasTicketEnd: (commonDir) => stateDatabase.hasTicketEnd(commonDir, '8.run-1'),
+    rowsNaming: (commonDir) => stateDatabase.rowsNaming(commonDir, '8.run-1', () => {}),
   },
   record: {
     terminalCursor: null,
     createExecutionRecord: null,
     createEpicRecord: null,
-    createStateDatabase: null,
     toJson: null,
     fromJson: null,
-    beforeAppend: null,
+    rowOf: null,
     load: (commonDir) => record.load(commonDir, 'ticket', 8),
     removeRecord: (commonDir) => record.removeRecord(commonDir, 'ticket', 8),
     loadAll: (commonDir) => record.loadAll(commonDir, 'ticket'),
@@ -125,6 +142,8 @@ const ENTRY_POINTS: Record<string, Record<string, ((commonDir: string) => unknow
     eventLog: (commonDir) => events.eventLog(commonDir)('run_start', { run: 'r1' }),
   },
   eventRead: {
+    checkedRows: null,
+    ofExecution: null,
     readEvents: (commonDir) => eventRead.readEvents(commonDir),
     executionEvents: (commonDir) => eventRead.executionEvents(commonDir, '8.run-1'),
     hasTicketEnd: (commonDir) => eventRead.hasTicketEnd(commonDir, '8.run-1'),
@@ -204,7 +223,7 @@ test("the State Database's SQL lives under lib/state-database/, the locks apart 
 // The modules whose exports reach the State Database by a repository's commonDir: the real instance's reads and
 // writes, and the connection.
 const REAL_INSTANCE = /^import \* as (\w+) from '(?:\.\.?\/)+(?:state-database(?:\/index)?|record|event-read)\.ts';$/gm;
-const BY_COMMON_DIR = ['open', ...Object.keys(stateDatabaseIndex.createStateDatabase())];
+const BY_COMMON_DIR = ['open', ...Object.keys(stateDatabase.createStateDatabase())];
 const directCalls = (text: string): string[] =>
   [...text.matchAll(REAL_INSTANCE)]
     .flatMap(([, alias]) =>
@@ -213,18 +232,20 @@ const directCalls = (text: string): string[] =>
       ),
     )
     .sort();
-// Only the commands that take no dependency open it by commonDir: gg doctor and gg init (lib/doctor.ts) and gg work
-// abandon (lib/work.ts), the owner's decision 2.
+// Only the commands that take no dependency read or write it by commonDir: gg doctor and gg init (lib/doctor.ts) and gg
+// work abandon (lib/work.ts), the owner's decision 2. gg work done also opens it before taking the ticket lock, which
+// would otherwise leave its file in a repository gg init never set up (#150), and reads nothing there.
 const TAKES_NO_DEPENDENCY: Record<string, string[]> = {
   'lib/doctor.ts': ['stateDatabase.open'],
-  'lib/work.ts': ['record.load', 'record.removeRecord', 'stateDatabase.open'],
+  'lib/work.ts': ['stateDatabase.load', 'stateDatabase.open', 'stateDatabase.open', 'stateDatabase.removeRecord'],
 };
 
 test("no lib module on a Run's path reaches the State Database by commonDir: each goes through database (#367)", () => {
   // The census sees a call on any name the module gives the real instance.
   assert.deepEqual(
     directCalls(
-      "import * as records from './record.ts';\nrecords.load(commonDir, 'ticket', 1);\nrecords\n  .loadAll(commonDir);\n" +
+      "import * as records from './record.ts';\nrecords.load(commonDir, 'ticket', 1);\n" +
+        'records\n  .loadAll(commonDir);\n' +
         'records.toJson(x);\n',
     ),
     ['records.load', 'records.loadAll'],

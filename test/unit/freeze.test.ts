@@ -8,7 +8,7 @@ import * as contract from '../../lib/harnesses/contract.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as outcome from '../../lib/outcome.ts';
 import * as record from '../../lib/record.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as terminalReport from '../../lib/terminal-report.ts';
 import * as report from '../../lib/validate/report.ts';
 import * as fakeHarness from '../support/fake-harness.ts';

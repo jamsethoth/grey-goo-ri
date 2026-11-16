@@ -9,6 +9,7 @@ import * as reset from '../../lib/effects/reset.ts';
 import * as contract from '../../lib/harnesses/contract.ts';
 import * as sideEffect from '../../lib/effects/side-effect.ts';
 import * as record from '../../lib/record.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import type * as visit from '../../lib/visit.ts';
 import * as visitScope from '../../lib/visit-scope.ts';
 import type * as writeAhead from '../../lib/write-ahead.ts';
@@ -240,7 +241,7 @@ test('a complete marker returns its saved result without running the work', asyn
 test("outputs land in the completion's save and in no save before it", async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
   const outputsAtSave: unknown[] = [];
-  context.database = record.createStateDatabase({
+  context.database = stateDatabase.createStateDatabase({
     beforeSave: (saved) => {
       outputsAtSave.push('outputs' in saved ? structuredClone(saved.outputs) : null);
     },
@@ -261,7 +262,7 @@ test("outputs land in the completion's save and in no save before it", async (t)
 
   // The save that carries them carries the Event: one that fails records neither.
   const failing = await support.executionContext(t);
-  failing.context.database = record.createStateDatabase({
+  failing.context.database = stateDatabase.createStateDatabase({
     beforeSave: (saved) => {
       if ('outputs' in saved && saved.outputs.length) throw new Error('disk full');
     },
