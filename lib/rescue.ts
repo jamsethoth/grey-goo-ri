@@ -199,12 +199,18 @@ function attemptOf(executionRecord: RunContext['record'], actionMarker: string):
 }
 
 // The Rescue Refs of the Action's interrupted Attempts up to this one, each rescued under its own Attempt's marker.
-const interruptedRefs = (runContext: RunContext, actionIdentity: marker.ActionIdentity): string[] =>
-  Array.from({ length: actionIdentity.attempt ?? 1 }, (_, index) =>
-    runContext.markerOf({ ...actionIdentity, action: INTERRUPTED.rescue, attempt: index + 1 }),
-  )
-    .filter((actionMarker) => writeAhead.findEntry(runContext.record, actionMarker, 'intent'))
-    .map(rescueRef);
+// Each says which Attempt of which Action it keeps, since a ref's name is a digest (D6).
+const interruptedRefs = (runContext: RunContext, actionIdentity: marker.ActionIdentity) =>
+  Array.from({ length: actionIdentity.attempt ?? 1 }, (_, index) => index + 1)
+    .map((number) => ({
+      number,
+      actionMarker: runContext.markerOf({ ...actionIdentity, action: INTERRUPTED.rescue, attempt: number }),
+    }))
+    .filter(({ actionMarker }) => writeAhead.findEntry(runContext.record, actionMarker, 'intent'))
+    .map(({ number, actionMarker }) => ({
+      ref: rescueRef(actionMarker),
+      keeps: `the work of Attempt ${number} of ${actionIdentity.action} at ${actionIdentity.vertex}`,
+    }));
 
 // An Interrupted Attempt at resume (ADR 0011, N1): its work, whoever wrote it (V9), is rescued to a Rescue Ref and,
 // once its processes are known gone, reset to the Attempt's baseline and retried in a fresh Session, once. Each step is
@@ -227,8 +233,8 @@ export async function recoverInterrupted(runContext: RunContext): Promise<void> 
   const named = (reason: string) =>
     reason +
     interruptedRefs(runContext, actionIdentity)
-      .filter((ref) => !reason.includes(ref))
-      .map((ref) => ` Rescue Ref ${ref} keeps an interrupted Attempt's work.`)
+      .filter(({ ref }) => !reason.includes(ref))
+      .map(({ ref, keeps }) => ` Rescue Ref ${ref} keeps ${keeps}.`)
       .join('');
   try {
     await rescueAndReset(runContext, { actionIdentity, baseline, failure, ids: INTERRUPTED }, { reset: contained });

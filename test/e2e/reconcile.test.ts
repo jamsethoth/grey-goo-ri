@@ -256,7 +256,11 @@ test('a second interruption exhausts the crash budget and holds', async (t) => {
   assert.equal(result.held, true, JSON.stringify(result));
   const refs = [interruptedCall.refOf(fixture, 1), interruptedCall.refOf(fixture, 2)];
   assert.deepEqual(rescueFlow.rescueRefs(fixture).sort(), [...refs].sort());
-  for (const ref of refs) assert.ok(terminalText(fixture).includes(ref), `the hold names ${ref}`);
+  for (const [index, ref] of refs.entries())
+    assert.ok(
+      terminalText(fixture).includes(`${ref} keeps the work of Attempt ${index + 1} of red at red`),
+      `the hold names ${ref} with its Attempt and Action`,
+    );
   assert.equal(inWorktree(fixture, 'notes.txt'), false, 'the second Attempt was reset before the hold');
   assert.equal(interruptedCall.crashBudget(fixture), 1);
   assert.equal(interruptedCall.redCalls(fixture).length, 2);
