@@ -66,6 +66,7 @@
         "timeout": 0,
         "transient": 2,
         "rateLimited": 1,
+        "crash": 1,
         "remote": { "count": 1, "failureClass": "rate-limited", "nextEligibleAt": 1700000000000, "started": true }
       }
     },
@@ -405,6 +406,7 @@
         "actionMarker": "m-call",
         "effect": "call",
         "payload": {
+          "containment": { "kind": "job" },
           "baseline": {
             "head": "head-1",
             "own": { "head": "head-1", "index": "index-1", "tree": "tree-1" },

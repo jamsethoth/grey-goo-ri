@@ -2,6 +2,8 @@
 import * as effectErrors from '../effect-errors.ts';
 import type * as integrity from '../integrity.ts';
 import type * as record from '../record.ts';
+import * as marker from '../marker.ts';
+import * as writeAhead from '../write-ahead.ts';
 import * as effects from './index.ts';
 
 export type Evidence = { ref: string; commit: string };
@@ -74,4 +76,29 @@ export function openRescue(
   if (!open[0]) return null;
   const { ref, commit } = open[0].payload as Payload;
   return { ref, commit };
+}
+
+// An Interrupted Attempt's rescue Action id, which no Procedure may declare (lib/validate/actions.ts, #68).
+export const INTERRUPTED_RESCUE = 'interrupted-rescue';
+
+// Names, after `reason`, each Rescue Ref the interrupted Attempts of the call `callMarker`'s Action made, Attempts 1 to
+// its own, with the Attempt and Action it keeps, since a ref's name is a digest (D5, D6). A ref `reason` already names
+// is given its Attempt alone (D9), and no other rescue is named: each is found by its own marker.
+export function namingInterrupted(executionRecord: record.ExecutionRecord, callMarker: string, reason: string): string {
+  const parts = marker.partsOf(callMarker);
+  return (
+    reason +
+    Array.from({ length: Number(parts.attempt) }, (_, index) => index + 1)
+      .map((number) => {
+        const rescueMarker = marker.formatMarker({ ...parts, action: INTERRUPTED_RESCUE, attempt: number });
+        // Its evidence, not its intent: the intent comes before the ref, which a crash can leave unmade (D8).
+        const made = writeAhead.evidenceOf(executionRecord, rescueMarker)?.evidence as Evidence | undefined;
+        const attempt = `Attempt ${number} of ${parts.action} at ${parts.vertex}`;
+        // A ref the reason names, made or not, is its intent's: the reason says what became of it, this whose it is.
+        const planned = writeAhead.findEntry(executionRecord, rescueMarker, 'intent')?.payload as Payload | undefined;
+        if (planned && reason.includes(planned.ref)) return ` ${planned.ref} is the Rescue Ref of ${attempt}.`;
+        return made ? ` Rescue Ref ${made.ref} keeps the work of ${attempt}.` : '';
+      })
+      .join('')
+  );
 }

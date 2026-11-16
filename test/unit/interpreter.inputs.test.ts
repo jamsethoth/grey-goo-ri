@@ -156,7 +156,8 @@ test('a held Execution saves a Terminal stop that declares every field', async (
     admission: {
       kind: 'hold',
       name: 'dirty-worktree',
-      terminalReasonText: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
+      terminalReasonText:
+        'The worktree has uncommitted changes the Execution Record does not account for, so the Ticket is held.',
     },
   });
   assert.equal(result.held, true, JSON.stringify(result));

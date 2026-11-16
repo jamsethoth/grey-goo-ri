@@ -14,7 +14,9 @@ import * as locks from '../../lib/locks.ts';
 import * as marker from '../../lib/marker.ts';
 import * as run from '../../lib/run.ts';
 import * as epicRun from '../support/epic-run.ts';
-import type * as golden from '../support/golden.ts';
+import * as interpreter from '../../lib/interpreter.ts';
+import * as golden from '../support/golden.ts';
+import * as keys from '../support/keys.ts';
 import * as suiteRuns from '../support/suite-runs.ts';
 import * as executionContext from '../support/execution-context.ts';
 import * as executionReads from '../support/execution-reads.ts';
@@ -764,4 +766,26 @@ test("another Ticket's run stop leaves a Pending request as it was", async (t) =
   const sibling = record.load(fixture.commonDir, 'ticket', TICKET + 1);
   assert.equal(sibling!.state, 'active');
   assert.ok(sibling!.approvalRequest, 'its request stands');
+});
+
+// A failed save at a call's completion rolls the call's result back with its Event, leaving its intent open (#68).
+test("a run stopped by a failed save at a call's completion is rescued and retried at the next run", async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses[keys.responseKey('red', 1, 'red', 2)] = responses[keys.responseKey('red', 1, 'red', 1)]!;
+  const fixture = await golden.fixture(t, { responses });
+  const undo = caseDatabase.failAppends(t, (event) => event.type === 'action' && event.action === 'red');
+  await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof record.RecordSaveError);
+  undo();
+
+  const result = await interpreter.runExecution({ ...fixture.options, record: executionReads.loadTicket(fixture) });
+  assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
+  const saved = executionReads.loadTicket(fixture);
+  assert.equal(saved.history.filter((item) => item.kind === 'rescued').length, 1, 'rescued and reset');
+  assert.deepEqual(
+    fixture.harness.calls
+      .filter((call) => call.marker?.includes(':red:'))
+      .map((call) => call.marker?.split(':').at(-1)),
+    ['1', '2'],
+    'and retried',
+  );
 });

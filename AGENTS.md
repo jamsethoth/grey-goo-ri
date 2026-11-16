@@ -109,7 +109,7 @@ leverage and a change lands in one place (locality).
 | `lib/visit-runner.ts` | one Visit: its Configuration Snapshot and inputs, its Actions and recovery passes, the saved result of each (`settleOf`, the only writer of `visitState.settled`), a stop and its rollback, and the Visit's Outcome |
 | `lib/visit-inputs.ts` | the Vertex inputs a Visit pins at its entry, read from the outputs of the Visits before it |
 | `lib/branch-tip.ts` | the branch tip an Execution Record proves: gg's last commit, or the tip a later `gg work resume` took as the baseline (Q2 A), which Reconciliation holds the branch to and publishing pushes and marks ready |
-| `lib/rescue.ts` | the Rescue Ref and the write-ahead reset, one mechanism for a failure routed to another Vertex and for an Interrupted Attempt (#68) |
+| `lib/rescue.ts` | the Rescue Ref and the write-ahead reset, one mechanism for a failure routed to another Vertex and for an Interrupted Attempt; the Interrupted Attempt's recovery at resume: rescued, reset under a `job` and retried once on its `crash` budget, else held (#68) |
 | `lib/visit-scope.ts` | what every Action of a Visit reads and writes: its scope, outputs and Claim token, and `settle` |
 | `lib/bounds.ts` | Edge traversal: the route `lib/flow.ts` gives under each Bound, and the Action Cap, each read from the Execution Record and its Flow alone, which a Run context holds |
 | `lib/agent-action.ts` | the agent Action: its Attempts, each with its Brief, Session and Harness, and the result the Transition Table makes of its Signals |

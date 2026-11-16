@@ -3,8 +3,9 @@
 // test/e2e/interpreter.rescue.test.ts.
 import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as interpreter from '../../lib/interpreter.ts';
 import type * as rescueEffect from '../../lib/effects/rescue.ts';
 import * as rescue from '../../lib/rescue.ts';
@@ -195,4 +196,21 @@ test('a read-only Vertex routed on is not rescued', async (t) => {
   });
   await interpreter.runExecution(fixture.options);
   assert.deepEqual(intents(fixture.executionRecord, 'rescue'), []);
+});
+
+// One rescue and one reset for every caller, a routed failure's and an Interrupted Attempt's (#68): only lib/rescue.ts
+// writes either Effect's intent.
+test('only lib/rescue.ts performs the rescue and the reset', () => {
+  const lib = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'lib');
+  const performing = readdirSync(lib, { recursive: true, encoding: 'utf8' })
+    .filter((path) => path.endsWith('.ts'))
+    .filter((path) => {
+      const source = readFileSync(join(lib, path), 'utf8');
+      const aliases = [...source.matchAll(/import \* as (\w+) from '[./]+effects\/(?:rescue|reset)\.ts'/g)].map(
+        ([, alias]) => alias,
+      );
+      return aliases.some((alias) => new RegExp(`effect: ${alias}\\.effect\\b`).test(source));
+    })
+    .map((path) => path.replaceAll('\\', '/'));
+  assert.deepEqual(performing, ['rescue.ts']);
 });

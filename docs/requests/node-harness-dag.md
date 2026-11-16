@@ -778,7 +778,7 @@ hang, and a capability matrix the validator reads.
   traces. (2) Claude harness with the launch profile and launcher acceptance. (3) Codex harness with sandbox and
   resume quirks. (4) Bounds and escalation, resolution policy, quality gates, approval vertex, slice-4 golden
   traces. (5) Flows in config, `--flow`, configuration sources, migration errors. (6) Trace, stats, ATIF export, `gg work`,
-  registry. (7) Planning, publish, replan.
+  registry; `gg work reset` also deletes the Ticket's Rescue Refs (`refs/gg/rescue/`), which gg keeps until then (#68). (7) Planning, publish, replan.
 - Interface freeze: the fake harness, the execution record schema and the event schema are frozen at the end of
   slice 1 before any parallel ticket starts. Parallel-safe after that: the two harness modules, flow loader and
   validator, trace renderer, migration table.

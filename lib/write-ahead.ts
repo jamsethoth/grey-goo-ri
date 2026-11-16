@@ -10,7 +10,10 @@ import type * as visit from './visit.ts';
 
 // What an intent saves ahead of its effect: an Effect's payload (lib/effects/), a consumed Decision's, or an agent
 // Attempt's baseline.
-export type CallPayload = { baseline: integrity.IntegrityBaseline };
+export type CallPayload = { baseline: integrity.IntegrityBaseline; containment?: CallContainment };
+// What contains a call's processes, saved by a second write once its Harness has started: `job` (lib/containment.ts)
+// or `none`, an open string (#128 adds `cgroup`). A call with none saved is uncontained (N1).
+export type CallContainment = { kind: string };
 export type Payload = effects.Payload | approvalAction.Consumption | CallPayload;
 
 // What a side effect leaves as Evidence: an Effect's own (effects.Evidence: a sha, an id, a url), or an agent call's

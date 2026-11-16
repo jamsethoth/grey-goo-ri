@@ -12,6 +12,7 @@ import * as flow from './flow.ts';
 import * as labels from './labels.ts';
 import * as pendingRun from './pending-report.ts';
 import * as reconcile from './reconcile.ts';
+import * as rescue from './rescue.ts';
 import * as record from './record.ts';
 import * as remoteEffects from './remote-effects.ts';
 import * as context from './run-context.ts';
@@ -174,6 +175,7 @@ async function resume(runContext: RunContext): Promise<TerminalResult | null> {
       terminalReasonText: decided.reason,
       advice: decided.advice,
     });
+  await rescue.recoverInterrupted(runContext);
   return null;
 }
 

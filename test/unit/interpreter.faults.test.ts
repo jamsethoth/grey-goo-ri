@@ -343,7 +343,8 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
     admission: {
       kind: 'hold',
       name: 'dirty-worktree',
-      terminalReasonText: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
+      terminalReasonText:
+        'The worktree has uncommitted changes the Execution Record does not account for, so the Ticket is held.',
       advice: 'Commit, stash or remove these changes in the worktree.',
       detail: ' human.txt (untracked)\n',
     },
@@ -353,7 +354,7 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
   const [posted, ...rest] = ticketComments(fixture);
   assert.equal(rest.length, 0, 'only the hold is reported');
   assert.ok(posted.body.includes(terminalMarker(fixture, 'hold-comment')), 'the hold has its own Action Marker');
-  assert.match(posted.body, /uncommitted changes gg did not make/);
+  assert.match(posted.body, /uncommitted changes the Execution Record does not account for/);
   assert.match(posted.body, /Commit, stash or remove/);
   assert.match(posted.body, /human\.txt \(untracked\)/);
   assert.doesNotMatch(posted.body, /### gg: blocked|contradicts/, 'the interrupted blocked comment is not replayed');

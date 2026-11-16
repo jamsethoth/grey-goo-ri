@@ -1,7 +1,8 @@
 import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type * as events from '../../lib/events.ts';
 import * as github from '../../lib/github.ts';
 import * as integrity from '../../lib/integrity.ts';
@@ -613,4 +614,22 @@ test('a dirty worktree hold names no Rescue Ref that holds another commit', asyn
 
 test('a dirty worktree hold names no Rescue Ref when its rescue never made the ref', async (t) => {
   assert.doesNotMatch(await heldWithRescue(t, () => null), /Rescue Ref/);
+});
+
+test('a dirty worktree hold does not say gg did not make the changes', async (t) => {
+  const { runFixture: fixture } = await runFixture.dirtyTicket(t, false);
+  await run.runTarget(fixture.options);
+  const { terminalReason } = record.load(fixture.commonDir, 'ticket', runFixture.TICKET)!;
+  assert.deepEqual(terminalReason!.decidedBy, { hold: 'dirty-worktree' });
+  assert.doesNotMatch(terminalReason!.text, /did not make/);
+  assert.match(terminalReason!.text, /the Execution Record does not account for/);
+});
+
+// The rule over every text gg publishes: none says gg did not make changes its own agent may have made (#68).
+test('no text in lib says gg did not make the changes', () => {
+  const lib = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'lib');
+  const saying = readdirSync(lib, { recursive: true, encoding: 'utf8' })
+    .filter((path) => /\.(ts|md)$/.test(path))
+    .filter((path) => /did not make/.test(readFileSync(join(lib, path), 'utf8')));
+  assert.deepEqual(saying, []);
 });

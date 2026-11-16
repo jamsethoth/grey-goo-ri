@@ -9,8 +9,9 @@ import * as report from './report.ts';
 
 // The heads of gg's own reference paths, so an Action id never shadows one.
 const HEADS = ['claim', 'pass', 'check', 'response', 'inputs', 'rescue'];
-// A rollback's or a rescue's reset is gg's own Action of the Visit, whose marker a declared Action would share.
-const RESERVED_IDS = HEADS.concat('reset');
+// A rollback's or a rescue's reset, and an Interrupted Attempt's rescue and reset, are gg's own Actions of the Visit,
+// whose markers a declared Action would share.
+const RESERVED_IDS = HEADS.concat('reset', 'interrupted-rescue', 'interrupted-reset');
 
 type Value = Record<string, unknown>;
 // A schema read once, however many Procedures name it; one that cannot be used types as ANY and reports its error.

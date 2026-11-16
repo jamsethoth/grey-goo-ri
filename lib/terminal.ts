@@ -267,7 +267,8 @@ export function stopText(
 
 // An Execution ended early, as an Action found it must (effectErrors.EarlyTerminalError): held, abandoned, or stopped.
 export function endEarly(context: TerminalContext, ending: effectErrors.Ending): Promise<TerminalResult> {
-  context.log(`#${context.record.ticket} ${ending.next}: ${ending.reason}`);
+  const advice = 'advice' in ending && ending.advice ? ` ${ending.advice}` : '';
+  context.log(`#${context.record.ticket} ${ending.next}: ${ending.reason}${advice}`);
   if (ending.next === 'pending')
     return Promise.resolve({ outcome: 'pending', ...(ending.unread && { unread: ending.unread }) });
   // A run stop ends what would start new work (request 3.4). An Execution Pending on its request or on a cleanup hold

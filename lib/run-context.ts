@@ -80,8 +80,19 @@ export interface HarnessResult {
   commandsRun?: jsonValue.JsonValue;
   cleanup?: commandCleanup.CallCleanup;
 }
+// The Harness's report that its call has started, given before run resolves: what contains the call's processes, so
+// an Interrupted Attempt is reset only once they are known gone (N1).
+export interface HarnessStarted {
+  kind: string;
+}
+export interface HarnessHooks {
+  started(report: HarnessStarted): void;
+}
 export interface Harness {
-  run(call: Record<string, unknown>): Promise<{
+  run(
+    call: Record<string, unknown>,
+    hooks: HarnessHooks,
+  ): Promise<{
     response: jsonValue.JsonValue;
     result: HarnessResult;
     failure: visit.HarnessFailure | null;

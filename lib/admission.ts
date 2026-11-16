@@ -242,7 +242,7 @@ function advise(admitting: Admitting, fresh: boolean, next: string | undefined):
   return `Execution Record ticket-${ticket} is held and cannot resume. ${next ? `${next}. ` : ''}${recovery}`;
 }
 
-// A worktree with a merge conflict, or with changes gg did not make, holds the Ticket.
+// A merge conflict, or changes the Execution Record does not account for (whoever made them, #68), holds the Ticket.
 function dirtyHold(
   admitting: Admitting,
   fresh: boolean,
@@ -251,8 +251,10 @@ function dirtyHold(
   const conflicted = held.conflicts.length > 0;
   const found = conflicted
     ? 'The worktree has a merge conflict'
-    : 'The worktree has uncommitted changes gg did not make';
+    : 'The worktree has uncommitted changes the Execution Record does not account for';
   admitting.context.log(`#${admitting.ticket} hold: ${found}`);
+  const reason = `${found}, so the Ticket is held, no agent ran and nothing was deleted.`;
+  const kept = held.rescueRef ? ` Rescue Ref ${held.rescueRef} keeps the work rescued before it.` : '';
   const next = conflicted
     ? 'Resolve and commit the conflicted paths in the worktree'
     : 'Commit, stash or remove these changes in the worktree';
@@ -260,9 +262,7 @@ function dirtyHold(
     kind: 'hold',
     name: conflicted ? 'merge-conflict' : 'dirty-worktree',
     fresh,
-    terminalReasonText:
-      `${found}, so the Ticket is held, no agent ran and nothing was deleted.` +
-      (held.rescueRef ? ` Rescue Ref ${held.rescueRef} keeps the work rescued before it.` : ''),
+    terminalReasonText: reconcile.namingInterrupted(admitting.executionRecord, reason + kept),
     advice: advise(admitting, fresh, next),
     detail: (conflicted ? `Conflicted paths:\n${held.conflicts.join('\n')}\n\n` : '') + held.stat,
   };
@@ -292,7 +292,7 @@ async function admitReadyTicket(admitting: Admitting, fresh: boolean, decided: D
     decided.admission = {
       kind: 'hold',
       name: 'branch-mismatch',
-      terminalReasonText: admitted.hold,
+      terminalReasonText: reconcile.namingInterrupted(executionRecord, admitted.hold),
       fresh,
       advice: advise(admitting, fresh, admitted.next),
     };
