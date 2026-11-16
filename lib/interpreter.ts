@@ -133,6 +133,7 @@ async function unfinishedDone(runContext: RunContext): Promise<TerminalResult> {
       labelPrefix: runContext.labelPrefix,
       cwd: runContext.cwd,
       markers: [],
+      database: runContext.database,
     }),
   );
   if (decided.next === 'abandon')

@@ -257,3 +257,27 @@ test("no lib module on a Run's path reaches the State Database by commonDir: eac
   );
   assert.deepEqual(found, TAKES_NO_DEPENDENCY);
 });
+
+// A save whose Event fails and whose ROLLBACK then fails too is a failed save like any other, which stops the Run: the
+// next save on that connection would report success and never reach the disk (#367, D6 A).
+test('a save whose rollback fails is a RecordSaveError carrying the rollback failure', (t) => {
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-state-');
+  const connection = stateDatabase.open(commonDir);
+  const exec = connection.exec.bind(connection);
+  connection.exec = (sql: string) => {
+    exec(sql);
+    if (sql === 'ROLLBACK') throw new Error('rollback failed');
+  };
+  t.after(() => {
+    connection.exec = exec;
+  });
+  assert.throws(
+    () =>
+      stateDatabase.save(knownRecord(commonDir), () => {
+        throw new Error('event failed');
+      }),
+    (err: Error) => err instanceof record.RecordSaveError && err.message.endsWith('not saved: rollback failed'),
+  );
+  connection.exec = exec;
+  assert.equal(stateDatabase.load(commonDir, 'ticket', 8), null, 'the row rolled back');
+});

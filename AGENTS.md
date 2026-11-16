@@ -84,10 +84,10 @@ leverage and a change lands in one place (locality).
   built once in `bin/gg.ts` and passed down as one `deps` key typed `Deps` (ADR 0019): `run.runTarget` takes it and
   passes it on to `interpreter.runExecution`. `database` is every read and write a Run makes to the State Database
   (#367): the record rows with their write-ahead log, the Event append and reads, Pinned Configurations, Check results,
-  and the other Tickets' Activity the Integrity Assertions read, which their caller passes them. New code takes what it needs from its caller as a parameter; ESLint fails
-  a module-level `let` or an exported `set*` function. A new key in `Deps` needs a second adapter beside the real one:
-  the double `docs/testing.md` (Test doubles) lists for it, held to the real module by a contract suite where the
-  boundary allows one.
+  and the other Tickets' Activity the Integrity Assertions read, which their caller passes them. New code takes what it
+  needs from its caller as a parameter; ESLint fails a module-level `let` or an exported `set*` function. A new key in
+  `Deps` needs a second adapter beside the real one: the double `docs/testing.md` (Test doubles) lists for it, held to
+  the real module by a contract suite where the boundary allows one.
 
 ## Layout
 
