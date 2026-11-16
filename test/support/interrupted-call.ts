@@ -37,10 +37,11 @@ export type Interruption = 'job' | 'none' | 'unsaved';
 export async function interruptedFixture(
   t: TestContext,
   interrupted: Record<number, Interruption>,
-  { files = LEFT }: { files?: Record<string, string> } = {},
+  { files = LEFT, earlier = {} }: { files?: Record<string, string>; earlier?: fakeHarness.ScriptedResponses } = {},
 ) {
-  const responses: fakeHarness.ScriptedResponses = structuredClone(golden.firstVisitResponses);
-  const completed = responses[callOf(1)]!;
+  // `earlier` scripts the Attempts before an interrupted one, by response key.
+  const responses: fakeHarness.ScriptedResponses = { ...structuredClone(golden.firstVisitResponses), ...earlier };
+  const completed = structuredClone(golden.firstVisitResponses)[callOf(1)]!;
   for (const [attempt, how] of Object.entries(interrupted))
     responses[callOf(Number(attempt))] = {
       ...completed,

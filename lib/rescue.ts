@@ -205,7 +205,10 @@ export async function recoverInterrupted(runContext: RunContext): Promise<void> 
   const interrupted = writeAhead.openIntents(executionRecord).find((entry) => entry.effect === 'call');
   if (!interrupted) return;
   const actionIdentity = attemptOf(executionRecord, interrupted.actionMarker);
-  const { baseline, containment } = interrupted.payload as writeAhead.CallPayload;
+  const { baseline: own, containment } = interrupted.payload as writeAhead.CallPayload;
+  // Reset to where the Visit started, as a routed failure is: a later call's own baseline holds the earlier Attempts'
+  // uncommitted work, which #118's reset cannot restore, and the Rescue Ref keeps it (D2).
+  const baseline = executionRecord.visitState?.firstAttemptBaseline ?? own;
   const { action, vertex, attempt: number } = actionIdentity;
   const failure =
     `Attempt ${number} of ${action} at ${vertex}, Action Marker ${interrupted.actionMarker}, ` + 'was interrupted';

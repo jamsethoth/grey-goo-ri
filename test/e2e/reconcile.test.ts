@@ -262,6 +262,23 @@ test('a second interruption exhausts the crash budget and holds', async (t) => {
   assert.equal(interruptedCall.redCalls(fixture).length, 2);
 });
 
+test("an interrupted later attempt is reset to the visit's first baseline and retried", async (t) => {
+  // Attempt 1 leaves uncommitted work and a response that fails to parse, so Attempt 2's baseline holds that work.
+  const parseFailure = { files: { 'first.txt': 'what attempt 1 left\n' }, response: 'not json' };
+  const fixture = await interruptedCall.interruptedFixture(
+    t,
+    { 2: 'job' },
+    { earlier: { [interruptedCall.callOf(1)]: parseFailure } },
+  );
+  await interruptedCall.crashed(fixture);
+  const result = await interruptedCall.resumed(fixture);
+
+  assert.equal(result.outcome, 'ready-for-qa', terminalText(fixture));
+  const ref = interruptedCall.refOf(fixture, 2);
+  assert.equal(rescueFlow.inRef(fixture, ref, 'first.txt'), 'what attempt 1 left', 'the earlier work is rescued');
+  assert.equal(interruptedCall.redCalls(fixture).length, 3, 'and Attempt 3 retried it');
+});
+
 test('a crash retry counts toward the Action Cap', async (t) => {
   const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job' });
   golden.configure(fixture, (configured) => {
