@@ -318,7 +318,8 @@ test("an interrupted attempt's rescue is not a vertex rescue output", async (t) 
   assert.equal(rescueFlow.rescueRefs(fixture).length, 1, 'the Attempt was rescued');
   const { outputs } = executionReads.loadTicket(fixture);
   assert.deepEqual(
-    outputs.filter((output) => 'rescue' in output.value),
+    // A rescue output carries its Rescue Ref (#118); none may come from the interrupted Attempt's rescue.
+    outputs.filter((output) => 'ref' in output.value),
     [],
   );
 });
