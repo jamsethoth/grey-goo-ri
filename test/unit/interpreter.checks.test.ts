@@ -441,6 +441,24 @@ test(
   },
 );
 
+test('a reuse: tree command Check reads the pass it reuses through the database it is given', async (t) => {
+  const fixture = await golden.fixture(t);
+  golden.configure(fixture, reuseTree('implement'));
+  const database = fixture.options.deps.database!;
+  const elsewhere = 'gg:9.run-0:green:1:test:1';
+  fixture.options.deps.database = {
+    ...database,
+    reusablePass: (_commonDir, _tree, command) =>
+      command === 'npm test' ? { marker: elsewhere, output: 'passed in another Run\n' } : null,
+  };
+  await interpreter.runExecution(fixture.options);
+
+  assert.equal(
+    evidenceOf(fixture, 'green', 'test').output,
+    `Reused the passing run of ${elsewhere} on this tree.\npassed in another Run\n`,
+  );
+});
+
 test('a failing reuse: tree result is never reused', async (t) => {
   const fixture = await greenFixture(t, { responses: { [GREEN_CALL]: greenWrites({ 'lib/add.mjs': WRONG_ADD }) } });
   golden.configure(fixture, reuseTree('implement', 'publish'));

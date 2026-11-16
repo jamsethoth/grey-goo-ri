@@ -39,16 +39,28 @@ test('markBusy and markIdle bump the generation and save', async (t) => {
 
 test("readActivity reads another ticket's record from disk", async (t) => {
   const { root, other, commonDir } = await twoRecords(t);
-  assert.deepEqual(await integrity.readActivity(commonDir, other), { busy: false, generation: 0 });
+  assert.deepEqual(await integrity.readActivity(commonDir, other, record), { busy: false, generation: 0 });
   await integrity.markBusy(await otherProcessRecord(commonDir));
-  assert.deepEqual(await integrity.readActivity(commonDir, other), { busy: true, generation: 1 });
-  assert.deepEqual(await integrity.readActivity(commonDir, join(root, 'nobody')), { busy: false, generation: 0 });
+  assert.deepEqual(await integrity.readActivity(commonDir, other, record), { busy: true, generation: 1 });
+  assert.deepEqual(await integrity.readActivity(commonDir, join(root, 'nobody'), record), {
+    busy: false,
+    generation: 0,
+  });
+});
+
+test("readActivity reads another ticket's Activity through the database it is given", async (t) => {
+  const { other, commonDir } = await twoRecords(t);
+  const busy = { ...otherProcessRecord(commonDir), activity: { busy: true, generation: 7 } };
+  const database = {
+    loadAll: ((_commonDir, kind) => (kind === 'ticket' ? [busy] : [])) as record.StateDatabase['loadAll'],
+  };
+  assert.deepEqual(await integrity.readActivity(commonDir, other, database), { busy: true, generation: 7 });
 });
 
 test('readActivity matches a differently cased path on Windows', { skip: process.platform !== 'win32' }, async (t) => {
   const { other, commonDir } = await twoRecords(t);
   await integrity.markBusy(await otherProcessRecord(commonDir));
-  assert.deepEqual(await integrity.readActivity(commonDir, other.toUpperCase()), { busy: true, generation: 1 });
+  assert.deepEqual(await integrity.readActivity(commonDir, other.toUpperCase(), record), { busy: true, generation: 1 });
 });
 
 test('sameFile never takes an absent file for the same', () => {

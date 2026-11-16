@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as record from '../../lib/record.ts';
 import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabaseIndex from '../../lib/state-database/index.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
@@ -167,4 +168,72 @@ test('open refuses a gg.db deleted from an existing gg directory, and creates no
     message: `no State Database at ${dbPath(commonDir)}: run gg init`,
   });
   assert.equal(existsSync(dbPath(commonDir)), false, 'no gg.db is created');
+});
+
+// Every lib module, by its path from the repository root.
+const LIB_ROOT = new URL('../../', import.meta.url);
+const libModules = (): string[] =>
+  readdirSync(new URL('lib/', LIB_ROOT), { recursive: true, encoding: 'utf8' })
+    .map((path) => `lib/${path.replaceAll('\\', '/')}`)
+    .filter((path) => path.endsWith('.ts'))
+    .sort();
+const sourceOf = (path: string) => readFileSync(new URL(path, LIB_ROOT), 'utf8');
+
+// A statement run on a SQLite connection: prepare, or exec given SQL text, never RegExp's exec over a value.
+const SQL_CALL = /\.prepare\(|\.exec\(\s*[`'"A-Z]/;
+const sqlSites = (path: string, text: string) =>
+  text.split('\n').flatMap((line, index) => (SQL_CALL.test(line) ? [`${path}:${index + 1}`] : []));
+
+test("the State Database's SQL lives under lib/state-database/, the locks apart (#367)", () => {
+  // The census finds each form of statement, and passes over RegExp's exec.
+  assert.deepEqual(
+    sqlSites('sample.ts', "db.prepare('SELECT 1')\nconnection.exec('BEGIN')\nbuilding.exec(SCHEMA)\n/x/.exec(text)"),
+    ['sample.ts:1', 'sample.ts:2', 'sample.ts:3'],
+  );
+  const sites = libModules().flatMap((path) => sqlSites(path, sourceOf(path)));
+  assert.deepEqual(
+    sites.filter((site) => !site.startsWith('lib/state-database/') && !site.startsWith('lib/locks.ts:')),
+    [],
+  );
+  assert.ok(
+    sites.some((site) => site.startsWith('lib/state-database/')),
+    'the census reaches the SQL itself',
+  );
+});
+
+// The modules whose exports reach the State Database by a repository's commonDir: the real instance's reads and
+// writes, and the connection.
+const REAL_INSTANCE = /^import \* as (\w+) from '(?:\.\.?\/)+(?:state-database(?:\/index)?|record|event-read)\.ts';$/gm;
+const BY_COMMON_DIR = ['open', ...Object.keys(stateDatabaseIndex.createStateDatabase())];
+const directCalls = (text: string): string[] =>
+  [...text.matchAll(REAL_INSTANCE)]
+    .flatMap(([, alias]) =>
+      [...text.matchAll(new RegExp(`\\b${alias}\\s*\\.(${BY_COMMON_DIR.join('|')})\\(`, 'g'))].map(
+        ([, method]) => `${alias}.${method}`,
+      ),
+    )
+    .sort();
+// Only the commands that take no dependency open it by commonDir: gg doctor and gg init (lib/doctor.ts) and gg work
+// abandon (lib/work.ts), the owner's decision 2.
+const TAKES_NO_DEPENDENCY: Record<string, string[]> = {
+  'lib/doctor.ts': ['stateDatabase.open'],
+  'lib/work.ts': ['record.load', 'record.removeRecord', 'stateDatabase.open'],
+};
+
+test("no lib module on a Run's path reaches the State Database by commonDir: each goes through database (#367)", () => {
+  // The census sees a call on any name the module gives the real instance.
+  assert.deepEqual(
+    directCalls(
+      "import * as records from './record.ts';\nrecords.load(commonDir, 'ticket', 1);\nrecords\n  .loadAll(commonDir);\n" +
+        'records.toJson(x);\n',
+    ),
+    ['records.load', 'records.loadAll'],
+  );
+  const found = Object.fromEntries(
+    libModules()
+      .filter((path) => !path.startsWith('lib/state-database/'))
+      .map((path) => [path, directCalls(sourceOf(path))] as const)
+      .filter(([, calls]) => calls.length > 0),
+  );
+  assert.deepEqual(found, TAKES_NO_DEPENDENCY);
 });

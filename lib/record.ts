@@ -381,8 +381,37 @@ export function createStateDatabase({
     return append(record, writeAhead.entryOf('complete', actionMarker, effect), event);
   }
 
-  return { save, intent, evidence, complete, beforeAppend };
+  return { save, intent, evidence, complete, beforeAppend, ...READS_STUB };
 }
+
+// Stub (#367): the reads and writes that join database, each returning a wrong value.
+const READS_STUB: {
+  load: typeof load;
+  loadAll: typeof loadAll;
+  removeRecord: typeof removeRecord;
+  appendEvent: (commonDir: string, event: events.Event) => void;
+  readEvents: (commonDir: string) => events.Event[];
+  executionEvents: (commonDir: string, execution: string, onRefused?: (err: Error) => void) => events.Event[];
+  rowsNaming: (commonDir: string, execution: string, onRefused: (err: Error) => void) => events.Event[];
+  hasTicketEnd: (commonDir: string, execution: string) => boolean;
+  savePinnedConfiguration: typeof stateDatabase.savePinnedConfiguration;
+  loadPinnedConfiguration: typeof stateDatabase.loadPinnedConfiguration;
+  saveCheckResult: typeof stateDatabase.saveCheckResult;
+  reusablePass: typeof stateDatabase.reusablePass;
+} = {
+  load: () => null,
+  loadAll: () => [],
+  removeRecord: () => false,
+  appendEvent: () => {},
+  readEvents: () => [],
+  executionEvents: () => [],
+  rowsNaming: () => [],
+  hasTicketEnd: () => false,
+  savePinnedConfiguration: () => {},
+  loadPinnedConfiguration: () => null,
+  saveCheckResult: () => {},
+  reusablePass: () => null,
+};
 
 // The State Database the entry point builds and passes down as `database` (ADR 0019).
 export type StateDatabase = ReturnType<typeof createStateDatabase>;

@@ -117,6 +117,8 @@ export const markIdle = async (
 export async function readActivity(
   commonDir: string,
   worktreePath: string,
+  // Stub (#367): the database the Activity is read through.
+  _database: Pick<record.StateDatabase, 'loadAll'>,
 ): Promise<record.ExecutionRecord['activity']> {
   const owner = record
     .loadAll(commonDir, 'ticket')
@@ -131,7 +133,7 @@ async function idleSnapshot(
   git: IntegrityGit,
   locks?: RepoLocks,
 ): Promise<IdleSnapshot | null> {
-  const first = await readActivity(commonDir, worktree);
+  const first = await readActivity(commonDir, worktree, record);
   if (first.busy) return null;
   const stable = (second: record.ExecutionRecord['activity']) => !second.busy && second.generation === first.generation;
   let worktreeSnapshot;
@@ -140,10 +142,10 @@ async function idleSnapshot(
   } catch (err) {
     // A worktree that turned busy mid-snapshot may be in a state git cannot fingerprint; only a stable idle failure is
     // ours.
-    if (!stable(await readActivity(commonDir, worktree))) return null;
+    if (!stable(await readActivity(commonDir, worktree, record))) return null;
     throw err;
   }
-  return stable(await readActivity(commonDir, worktree))
+  return stable(await readActivity(commonDir, worktree, record))
     ? { generation: first.generation, snapshot: worktreeSnapshot }
     : null;
 }
