@@ -262,6 +262,37 @@ test('a second interruption exhausts the crash budget and holds', async (t) => {
   assert.equal(interruptedCall.redCalls(fixture).length, 2);
 });
 
+test('a crash retry counts toward the Action Cap', async (t) => {
+  const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job' });
+  golden.configure(fixture, (configured) => {
+    configured.flows.golden!.actionCap = 1;
+  });
+  await interruptedCall.crashed(fixture);
+  const result = await interruptedCall.resumed(fixture);
+
+  assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
+  assert.equal(interruptedCall.redCalls(fixture).length, 1, 'the retry did not launch past the cap');
+  assert.equal(executionReads.loadTicket(fixture).attempts, 2, 'the retry was counted');
+});
+
+test('a second interruption whose reset fails names both Rescue Refs', async (t) => {
+  const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job', 2: 'job' });
+  await interruptedCall.crashed(fixture);
+  await interruptedCall.crashed(fixture);
+  fixture.options.deps.git = {
+    ...fixture.options.deps.git,
+    resetTo: async () => {
+      throw new exec.CommandError('git reset failed', { code: 1, stdout: '', stderr: 'Permission denied' });
+    },
+  };
+  const result = await interruptedCall.resumed(fixture);
+
+  assert.equal(result.held, true, JSON.stringify(result));
+  for (const ref of [interruptedCall.refOf(fixture, 1), interruptedCall.refOf(fixture, 2)])
+    assert.ok(terminalText(fixture).includes(ref), `the hold names ${ref}`);
+  assert.equal(executionReads.loadTicket(fixture).terminalReason?.decidedBy?.hold, 'interrupted-attempt');
+});
+
 test("an interrupted attempt's rescue is not a vertex rescue output", async (t) => {
   const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job' });
   await interruptedCall.crashed(fixture);

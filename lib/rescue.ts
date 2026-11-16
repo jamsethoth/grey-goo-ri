@@ -211,10 +211,20 @@ export async function recoverInterrupted(runContext: RunContext): Promise<void> 
     `Attempt ${number} of ${action} at ${vertex}, Action Marker ${interrupted.actionMarker}, ` + 'was interrupted';
   // Only a job's kill-on-close proves the call's processes gone; a missing kind is a crash before it was saved (N1).
   const contained = containment?.kind === 'job';
-  await rescueAndReset(runContext, { actionIdentity, baseline, failure }, { reset: contained });
-  const kept = interruptedRefs(runContext, actionIdentity)
-    .map((ref) => ` Rescue Ref ${ref} keeps an interrupted Attempt's work.`)
-    .join('');
+  // Every hold names each Rescue Ref of the Action's interrupted Attempts that its reason does not already name.
+  const named = (reason: string) =>
+    reason +
+    interruptedRefs(runContext, actionIdentity)
+      .filter((ref) => !reason.includes(ref))
+      .map((ref) => ` Rescue Ref ${ref} keeps an interrupted Attempt's work.`)
+      .join('');
+  try {
+    await rescueAndReset(runContext, { actionIdentity, baseline, failure }, { reset: contained });
+  } catch (err) {
+    if (!(err instanceof effectErrors.EarlyTerminalError) || err.ending.next !== 'hold') throw err;
+    throw interruptedHold(named(err.ending.reason));
+  }
+  const kept = named('');
   if (!contained)
     throw interruptedHold(
       `${failure} outside a job that ends its processes, so one may still write; nothing was reset.${kept}`,
@@ -223,8 +233,10 @@ export async function recoverInterrupted(runContext: RunContext): Promise<void> 
   const spent = executionRecord.retries[key]?.crash ?? 0;
   if (spent >= CRASH_BUDGET)
     throw interruptedHold(`${failure} again after its crash retry, and the worktree was reset to its baseline.${kept}`);
-  // Spent before the retry launches, in the save that completes the intent and moves the cursor to the next Attempt.
+  // Spent and counted toward the Action Cap before the retry launches, in the save that completes the intent and moves
+  // the cursor to the next Attempt: `enter` counts no Attempt the cursor already names.
   (executionRecord.retries[key] ??= {}).crash = spent + 1;
+  executionRecord.attempts += 1;
   executionRecord.cursor = { ...executionRecord.cursor, attempt: (actionIdentity.attempt ?? 1) + 1 };
   attempt.endInterrupted(runContext, interrupted.actionMarker);
 }
