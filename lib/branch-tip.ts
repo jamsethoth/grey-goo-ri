@@ -23,6 +23,9 @@ export function provenTip(executionRecord: record.ExecutionRecord): { sha: strin
     executionRecord.writeAheadLog.findLast(
       (entry) => entry.step === 'evidence' && entry.actionMarker === last.actionMarker,
     )?.time;
+  // A resume's head is the baseline: null would leave Reconciliation no tip to hold the branch to (D10).
+  if (resumed?.type === 'ticket_resumed' && typeof resumed.head !== 'string')
+    throw new eventRead.EventCorruptError('?', 'ticket_resumed', 'its head is null', JSON.stringify(resumed));
   if (resumed?.type === 'ticket_resumed' && (!committedAt || resumed.time >= committedAt))
     return { sha: resumed.head, what: `${resumed.head}, the tip gg work resume took as the baseline` };
   return last ? { sha: last.sha, what: `commit ${last.sha} of Action Marker ${last.actionMarker}` } : null;

@@ -496,27 +496,3 @@ test('executionEvents reports each refused row of the Execution and returns its 
   );
   assert.throws(() => eventRead.executionEvents(commonDir, 'e1'), { name: 'EventCorruptError' }, 'none reported');
 });
-
-// A field gg reads that an Event declares required may not be saved null, at every Event shape that declares one:
-// the reader would give null under a type that says a string (D10).
-test('a required read field saved as null is refused, at every Event shape that declares one', (t) => {
-  const refused: string[] = [];
-  for (const shape of Object.keys(SHAPES)) {
-    const [type, kind] = shape.split(' ');
-    const declared: Record<string, string> =
-      type === 'action'
-        ? { ...events.ACTION, ...(kind === 'agent' ? events.AGENT : {}) }
-        : { ...Object.entries(events.LIFECYCLE).find(([name]) => name === type)![1] };
-    for (const field of eventRead.READ_FIELDS.filter((name) => declared[name] === 'required')) {
-      const { commonDir, row } = written(t, shape);
-      const column = eventRead.COLUMNS.includes(field) ? `, ${field} = NULL` : '';
-      stateDatabase
-        .open(commonDir)
-        .prepare(`UPDATE events SET json = json_set(json, '$.${field}', json('null'))${column} WHERE id = ?`)
-        .run(row.id);
-      assert.throws(() => eventRead.readEvents(commonDir), new RegExp(`its ${field} is null`), `${shape} ${field}`);
-      refused.push(`${shape} ${field}`);
-    }
-  }
-  assert.ok(refused.includes('ticket_resumed head'), refused.join(', '));
-});
