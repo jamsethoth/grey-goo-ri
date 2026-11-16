@@ -93,10 +93,11 @@ async function closesIssue(executionRecord: record.ExecutionRecord, { deps, cwd,
 // The branch and the worktree stay as they are.
 export async function done(options: DoneOptions): Promise<string> {
   const { ticket, commonDir, cwd, labelPrefix, deps, log } = options;
+  const database = deps.database ?? stateDatabase;
   // Before the lock, which would leave its file in a repository gg init never set up (#150).
-  stateDatabase.open(commonDir);
+  database.open(commonDir);
   return underTicketLock({ commonDir, ticket, locks: deps.locks, verb: 'resolve' }, async () => {
-    const executionRecord = (deps.database ?? stateDatabase).load(commonDir, 'ticket', ticket);
+    const executionRecord = database.load(commonDir, 'ticket', ticket);
     if (!executionRecord) throw new Error(`Ticket ${ticket} has no Execution Record to resolve`);
     if (!STOPPED_STATES.includes(executionRecord.state) && !isPending(executionRecord))
       throw new Error(

@@ -116,6 +116,25 @@ test('gg work abandon keeps the record when its in-progress label cannot be remo
   assert.ok(fake.labels.has(IN_PROGRESS), 'the label is kept');
 });
 
+// gg work done is handed a database, so its check that the State Database is there, before the ticket lock, goes
+// through it like every read it makes (#367).
+test('gg work done checks the State Database through the database it is handed, before it starts', async (t) => {
+  const fixture = await faulted(t);
+  const before = loaded(fixture).state;
+  const options = doneOptions(fixture, true);
+  options.deps = {
+    ...options.deps,
+    database: {
+      ...options.deps.database!,
+      open: () => {
+        throw new Error('the handed database refused');
+      },
+    },
+  };
+  await assert.rejects(work.done(options), { message: 'the handed database refused' });
+  assert.equal(loaded(fixture).state, before, 'nothing resolved');
+});
+
 // Only gg init creates the State Database (#150), so abandon refuses a repository without one before it takes the
 // ticket lock, which would leave a lock file behind.
 test('gg work abandon refuses a missing State Database before it takes the ticket lock', async (t) => {

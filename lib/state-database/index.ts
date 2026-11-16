@@ -207,8 +207,10 @@ export const reusablePass = (
 ): Pick<checkResults.CheckResult, 'marker' | 'output'> | null =>
   checkResults.reusablePass(open(commonDir), tree, command);
 
-// The reads and writes no hook sees.
+// The reads and writes no hook sees, and the check that the State Database is there, which keeps no handle: no
+// connection leaves this directory.
 const UNHOOKED = {
+  open: (commonDir: string): void => void open(commonDir),
   load,
   loadAll,
   removeRecord,

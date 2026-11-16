@@ -233,11 +233,10 @@ const directCalls = (text: string): string[] =>
     )
     .sort();
 // Only the commands that take no dependency read or write it by commonDir: gg doctor and gg init (lib/doctor.ts) and gg
-// work abandon (lib/work.ts), the owner's decision 2. gg work done also opens it before taking the ticket lock, which
-// would otherwise leave its file in a repository gg init never set up (#150), and reads nothing there.
+// work abandon (lib/work.ts), the owner's decision 2.
 const TAKES_NO_DEPENDENCY: Record<string, string[]> = {
   'lib/doctor.ts': ['stateDatabase.open'],
-  'lib/work.ts': ['stateDatabase.load', 'stateDatabase.open', 'stateDatabase.open', 'stateDatabase.removeRecord'],
+  'lib/work.ts': ['stateDatabase.load', 'stateDatabase.open', 'stateDatabase.removeRecord'],
 };
 
 test("no lib module on a Run's path reaches the State Database by commonDir: each goes through database (#367)", () => {

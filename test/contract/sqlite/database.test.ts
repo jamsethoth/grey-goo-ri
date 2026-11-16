@@ -32,6 +32,15 @@ const ticketRecord = (commonDir: string, ticket: number) =>
 const typesOf = (found: events.Event[]) => found.map((event) => event.type);
 
 for (const [name, databaseOf] of ADAPTERS) {
+  test(`${name}: open passes a State Database gg init made, and refuses a missing one by name`, (t) => {
+    const database = databaseOf(t);
+    database.open(tempDirectory.stateDatabaseDirectory(t, 'gg-database-'));
+    const missing = tempDirectory.tempDirectory(t, 'gg-database-');
+    assert.throws(() => database.open(missing), {
+      message: `no State Database at ${join(missing, 'gg', 'gg.db')}: run gg init`,
+    });
+  });
+
   test(`${name}: a Pinned Configuration reads back by its hash, and a second save of the hash keeps the first`, (t) => {
     const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-database-');
     const database = databaseOf(t);
