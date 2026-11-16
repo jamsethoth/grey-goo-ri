@@ -88,6 +88,8 @@ function previousAttempt(
   const previousMarker = runContext.markerOf({ ...actionIdentity, attempt: attempt - 1 });
   const evidence = writeAhead.findEntry(executionRecord, previousMarker, 'evidence')?.evidence;
   if (evidence?.usageDelta !== undefined) return evidence;
+  // An Interrupted Attempt, completed by its recovery with nothing found: its retry starts a fresh Session (ADR 0011).
+  if (writeAhead.findEntry(executionRecord, previousMarker, 'complete')) return { sessionId: null };
   if (!saved) return { sessionId: resume };
   return { sessionId: resumable(saved) ? saved.sessionId : null };
 }

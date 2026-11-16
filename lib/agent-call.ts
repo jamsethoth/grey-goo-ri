@@ -7,9 +7,10 @@ import type * as integrity from './integrity.ts';
 import type * as jsonValue from './json-value.ts';
 import * as record from './record.ts';
 import * as referencePaths from './reference-paths.ts';
-import type { Harness, HarnessResult, RunContext } from './run-context.ts';
+import type { Harness, HarnessResult, HarnessStarted, RunContext } from './run-context.ts';
 import type * as visit from './visit.ts';
 import * as visitScope from './visit-scope.ts';
+import * as writeAhead from './write-ahead.ts';
 
 // One Attempt of the agent Action: `resume` and `nudge` come from the Attempt before it, if any.
 export interface Attempt extends visitScope.Running {
@@ -34,8 +35,9 @@ const UNREPORTED: commandCleanup.CleanupReport = {
   containment: { kind: 'none' },
 };
 
-// While an agent call runs its heartbeat is saved about every 60 s on the clock: a file modified after the last one is
-// not the agent's (ADR 0011). A heartbeat that cannot be saved stops and fails the call.
+// While an agent call runs its heartbeat is saved about every 60 s on the clock, the call's liveness signal. It proves
+// no file the agent's: an Interrupted Attempt's rescue keeps every change, before the last heartbeat or after (V9). A
+// heartbeat that cannot be saved stops and fails the call.
 async function withHeartbeat<Result>(runContext: RunContext, run: () => Promise<Result>): Promise<Result> {
   const executionRecord = runContext.record;
   let failed: unknown = null;
@@ -89,7 +91,7 @@ async function changedTests(
 // The call under the Integrity Assertions. The snapshots are git processes in this worktree, so they run inside the
 // busy interval too (request 3.6). The other worktrees are read once per Attempt, so takeBaseline and findViolations
 // guard the same worktrees, including any created since admission. The intent is written ahead with its baseline: an
-// Attempt whose intent is open at resume is an Interrupted Attempt, held rather than run again on a new baseline.
+// Attempt whose intent is open at resume is an Interrupted Attempt, rescued to that baseline before any retry.
 export async function guardedCall(
   runContext: RunContext,
   attempt: Attempt,
@@ -106,7 +108,9 @@ export async function guardedCall(
   runContext.database.intent(executionRecord, call.marker as string, 'call', { baseline });
   // Neither side keeps an object the other may change: the Harness gets a copy of the call, and gg keeps a copy of the
   // answer, taken before anything reads or keeps it, since every save writes the whole record again.
-  const answered = await withHeartbeat(runContext, () => harness.run(structuredClone(call)));
+  const answered = await withHeartbeat(runContext, () =>
+    harness.run(structuredClone(call), { started: savedContainment(runContext, call.marker as string) }),
+  );
   // The job handle is no data, and a copy throws on a function it can see, so it comes off the report by name, however
   // the Harness attached it, and is carried over to close the call's processes.
   const reported = answered.result.cleanup as commandCleanup.CleanupReport | undefined;
@@ -123,6 +127,16 @@ export async function guardedCall(
   }
   const violations = await callViolations(runContext, attempt, { baseline, others, access, response: called.response });
   return { ...called, violations, baseline };
+}
+
+// The Harness's started report, saved into the call's intent by a second write: the intent is saved before launch, and
+// the containment is known only once the call has started (N1). Unsaved, the Interrupted Attempt is held, never reset.
+function savedContainment(runContext: RunContext, actionMarker: string) {
+  return ({ kind }: HarnessStarted) => {
+    const intended = writeAhead.findEntry(runContext.record, actionMarker, 'intent')!;
+    intended.payload = { ...(intended.payload as writeAhead.CallPayload), containment: { kind } };
+    runContext.database.save(runContext.record);
+  };
 }
 
 const othersOf = async ({ others: listed }: RunContext) =>

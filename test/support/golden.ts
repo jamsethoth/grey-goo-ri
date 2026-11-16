@@ -343,9 +343,9 @@ function observedExecution(repos: Repos, planned: Planned) {
   const observe = (what: string) => activity.push({ what, ...record.load(commonDir, 'ticket', TICKET)!.activity });
   const harness = goldenHarness(join(root, 'transcripts'), planned.responses);
   const run = harness.run;
-  harness.run = (call) => {
+  harness.run = (call, hooks) => {
     observe('harness');
-    return run(call);
+    return run(call, hooks);
   };
   const shells: { command: string; cwd: string | undefined }[] = [];
   const onRun = (command: string, cwd: string | undefined) => {

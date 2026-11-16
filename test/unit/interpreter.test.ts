@@ -360,7 +360,8 @@ test("a hold's label is set after its comment, each under its own marker", async
     admission: {
       kind: 'hold',
       name: 'dirty-worktree',
-      terminalReasonText: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
+      terminalReasonText:
+        'The worktree has uncommitted changes the Execution Record does not account for, so the Ticket is held.',
     },
   });
 

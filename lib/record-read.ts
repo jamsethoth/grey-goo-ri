@@ -122,6 +122,7 @@ const retries = object((field, has) => ({
   ...(has('timeout') && { timeout: count(field('timeout')) }),
   ...(has('transient') && { transient: count(field('transient')) }),
   ...(has('rateLimited') && { rateLimited: count(field('rateLimited')) }),
+  ...(has('crash') && { crash: count(field('crash')) }),
   ...(has('remote') && { remote: remoteRetry(field('remote')) }),
 }));
 
@@ -249,7 +250,16 @@ const payload = variant('a write-ahead payload', [
       }),
     })),
   },
-  { required: ['baseline'], read: object((field) => ({ baseline: integrityBaseline(field('baseline')) })) },
+  {
+    required: ['baseline'],
+    optional: ['containment'],
+    read: object((field, has) => ({
+      baseline: integrityBaseline(field('baseline')),
+      ...(has('containment') && {
+        containment: object((kind) => ({ kind: text(kind('kind')) }))(field('containment')),
+      }),
+    })),
+  },
 ]);
 
 // What an Effect leaves as Evidence, one form per Effect told apart by its keys (effects.Evidence), or an agent call's,

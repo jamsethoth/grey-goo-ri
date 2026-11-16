@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import type { TestContext } from 'node:test';
 import * as interpreter from '../../lib/interpreter.ts';
+import * as marker from '../../lib/marker.ts';
 import * as rescue from '../../lib/rescue.ts';
 import type * as commandCleanup from '../../lib/command-cleanup.ts';
 import * as executionReads from './execution-reads.ts';
@@ -79,5 +80,7 @@ export const redCalls = (fixture: golden.GoldenFixture) =>
   fixture.harness.calls.filter((call) => call.marker?.includes(':red:') ?? false);
 
 // The crash budget spent on red's Action, as saved.
-export const crashBudget = (fixture: golden.GoldenFixture): (number | undefined)[] =>
-  Object.values(executionReads.loadTicket(fixture).retries).map((spent) => (spent as { crash?: number }).crash);
+export const crashBudget = (fixture: golden.GoldenFixture): number | undefined =>
+  executionReads.loadTicket(fixture).retries[
+    marker.actionKeyOf({ vertex: 'red', visit: 1, action: 'red', recovery: 0 })
+  ]?.crash;

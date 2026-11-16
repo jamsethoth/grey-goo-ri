@@ -342,7 +342,8 @@ test('a pending report waiting out a sibling cooldown checks the human override 
     admission: {
       kind: 'hold',
       name: 'dirty-worktree',
-      terminalReasonText: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
+      terminalReasonText:
+        'The worktree has uncommitted changes the Execution Record does not account for, so the Ticket is held.',
     },
   });
   assert.equal(first.fault, true, JSON.stringify(first));

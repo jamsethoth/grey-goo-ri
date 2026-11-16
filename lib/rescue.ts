@@ -11,6 +11,7 @@ import * as resetEffect from './effects/reset.ts';
 import * as sideEffect from './effects/side-effect.ts';
 import * as integrity from './integrity.ts';
 import * as marker from './marker.ts';
+import * as reconcile from './reconcile.ts';
 import type { RunContext } from './run-context.ts';
 import type * as visit from './visit.ts';
 import * as writeAhead from './write-ahead.ts';
@@ -132,10 +133,12 @@ async function resetRescued(
 
 // Rescues the worktree to a Rescue Ref and resets it to `baseline`, or does nothing and returns null when it already
 // equals it (N4). The caller must first have confirmed the work's writers gone (N1, L6): a surviving writer could write
-// after the ref's verification. Anything that cannot be proven or done holds the Ticket, naming the ref.
+// after the ref's verification. Without that, `reset: false` only rescues. Anything that cannot be proven or done holds
+// the Ticket, naming the ref.
 export async function rescueAndReset(
   runContext: RunContext,
   rescuing: Rescuing,
+  { reset: resetting = true }: { reset?: boolean } = {},
 ): Promise<{ ref: string; commit: string } | null> {
   const { actionIdentity, baseline } = rescuing;
   const { record: executionRecord, protectedPaths } = runContext;
@@ -156,6 +159,7 @@ export async function rescueAndReset(
       await attempt.whileBusy(runContext, () =>
         sideEffect.sideEffect(runContext, { actionMarker, effect: rescueEffect.effect, payload, deferred: true }),
       );
+      if (!resetting) return;
       if (!writeAhead.findEntry(executionRecord, resetMarker, 'intent')) {
         await attempt.whileBusy(runContext, () => verifyRef(runContext, payload, untracked));
         effectErrors.crashPoint(runContext, resetMarker, 'before-intent');
@@ -165,4 +169,62 @@ export async function rescueAndReset(
     finish: () => ({ resolution: attempt.EFFECT_COMPLETED }),
   });
   return { ref: payload.ref, commit: payload.commit };
+}
+
+// An Interrupted Attempt is retried once; a second interruption of the same Action holds (ADR 0011).
+const CRASH_BUDGET = 1;
+
+const interruptedHold = (reason: string) =>
+  new effectErrors.EarlyTerminalError({
+    next: 'hold',
+    name: 'interrupted-attempt',
+    reason,
+    advice: reconcile.INTERRUPTED_ADVICE,
+  });
+
+// The Attempt an Action Marker names, in the Visit at the cursor, whose Procedure its Events name.
+function attemptOf(executionRecord: RunContext['record'], actionMarker: string): marker.ActionIdentity {
+  const { vertex, visit, action, recovery, attempt } = marker.partsOf(actionMarker);
+  const procedure = executionRecord.configurationSnapshot?.procedure.name ?? null;
+  return { vertex, visit: Number(visit), procedure, action, recovery: Number(recovery), attempt: Number(attempt) };
+}
+
+// The Rescue Refs of the Action's interrupted Attempts up to this one, each rescued under its own Attempt's marker.
+const interruptedRefs = (runContext: RunContext, actionIdentity: marker.ActionIdentity): string[] =>
+  Array.from({ length: actionIdentity.attempt ?? 1 }, (_, index) =>
+    runContext.markerOf({ ...actionIdentity, action: 'rescue', attempt: index + 1 }),
+  )
+    .filter((actionMarker) => writeAhead.findEntry(runContext.record, actionMarker, 'intent'))
+    .map(rescueRef);
+
+// An Interrupted Attempt at resume (ADR 0011, N1): its work, whoever wrote it (V9), is rescued to a Rescue Ref and,
+// once its processes are known gone, reset to the Attempt's baseline and retried in a fresh Session, once. Each step is
+// write-ahead, so a crash resumes at the next. Anything else holds the Ticket, naming the Rescue Refs.
+export async function recoverInterrupted(runContext: RunContext): Promise<void> {
+  const executionRecord = runContext.record;
+  const interrupted = writeAhead.openIntents(executionRecord).find((entry) => entry.effect === 'call');
+  if (!interrupted) return;
+  const actionIdentity = attemptOf(executionRecord, interrupted.actionMarker);
+  const { baseline, containment } = interrupted.payload as writeAhead.CallPayload;
+  const { action, vertex, attempt: number } = actionIdentity;
+  const failure =
+    `Attempt ${number} of ${action} at ${vertex}, Action Marker ${interrupted.actionMarker}, ` + 'was interrupted';
+  // Only a job's kill-on-close proves the call's processes gone; a missing kind is a crash before it was saved (N1).
+  const contained = containment?.kind === 'job';
+  await rescueAndReset(runContext, { actionIdentity, baseline, failure }, { reset: contained });
+  const kept = interruptedRefs(runContext, actionIdentity)
+    .map((ref) => ` Rescue Ref ${ref} keeps an interrupted Attempt's work.`)
+    .join('');
+  if (!contained)
+    throw interruptedHold(
+      `${failure} outside a job that ends its processes, so one may still write; nothing was reset.${kept}`,
+    );
+  const key = marker.actionKeyOf(actionIdentity);
+  const spent = executionRecord.retries[key]?.crash ?? 0;
+  if (spent >= CRASH_BUDGET)
+    throw interruptedHold(`${failure} again after its crash retry, and the worktree was reset to its baseline.${kept}`);
+  // Spent before the retry launches, in the save that completes the intent and moves the cursor to the next Attempt.
+  (executionRecord.retries[key] ??= {}).crash = spent + 1;
+  executionRecord.cursor = { ...executionRecord.cursor, attempt: (actionIdentity.attempt ?? 1) + 1 };
+  runContext.database.complete(executionRecord, interrupted.actionMarker);
 }

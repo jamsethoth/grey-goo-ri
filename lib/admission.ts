@@ -242,7 +242,7 @@ function advise(admitting: Admitting, fresh: boolean, next: string | undefined):
   return `Execution Record ticket-${ticket} is held and cannot resume. ${next ? `${next}. ` : ''}${recovery}`;
 }
 
-// A worktree with a merge conflict, or with changes gg did not make, holds the Ticket.
+// A merge conflict, or changes the Execution Record does not account for (whoever made them, #68), holds the Ticket.
 function dirtyHold(
   admitting: Admitting,
   fresh: boolean,
@@ -251,7 +251,7 @@ function dirtyHold(
   const conflicted = held.conflicts.length > 0;
   const found = conflicted
     ? 'The worktree has a merge conflict'
-    : 'The worktree has uncommitted changes gg did not make';
+    : 'The worktree has uncommitted changes the Execution Record does not account for';
   admitting.context.log(`#${admitting.ticket} hold: ${found}`);
   const next = conflicted
     ? 'Resolve and commit the conflicted paths in the worktree'

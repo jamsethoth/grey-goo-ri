@@ -177,8 +177,9 @@ test('an interrupted attempt is rescued, reset and retried once', async (t) => {
     'one retry, a new Attempt of the same Action',
   );
   assert.equal(calls[1]?.resume, null, 'the retry starts a fresh Session');
-  assert.equal(calls[1]?.brief, calls[0]?.brief, 'with the full Brief');
-  assert.deepEqual(interruptedCall.crashBudget(fixture), [1]);
+  assert.ok(calls[1]?.brief?.startsWith(calls[0]!.brief!.split('\n\n## ')[0]!), 'with the full Brief');
+  assert.ok(calls[1]?.brief?.includes(ref), 'whose History names the Rescue Ref');
+  assert.equal(interruptedCall.crashBudget(fixture), 1);
   const rescued = executionReads.loadTicket(fixture).history.filter((item) => item.kind === 'rescued');
   assert.equal(rescued.length, 1);
   assert.ok(rescued[0]?.text.includes(ref), 'the History names the Rescue Ref');
@@ -206,7 +207,7 @@ test('a crash before the retry launches resumes at the retry', async (t) => {
   assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
   assert.deepEqual(rescueFlow.rescueRefs(fixture), [interruptedCall.refOf(fixture, 1)], 'no second Rescue Ref');
   assert.equal(executionReads.intents(executionReads.loadTicket(fixture), 'reset').length, 1, 'no repeated reset');
-  assert.deepEqual(interruptedCall.crashBudget(fixture), [1], 'no second budget charge');
+  assert.equal(interruptedCall.crashBudget(fixture), 1, 'no second budget charge');
   assert.equal(interruptedCall.redCalls(fixture).length, 2, 'the retry launched once');
 });
 
@@ -257,7 +258,7 @@ test('a second interruption exhausts the crash budget and holds', async (t) => {
   assert.deepEqual(rescueFlow.rescueRefs(fixture).sort(), [...refs].sort());
   for (const ref of refs) assert.ok(terminalText(fixture).includes(ref), `the hold names ${ref}`);
   assert.equal(inWorktree(fixture, 'notes.txt'), false, 'the second Attempt was reset before the hold');
-  assert.deepEqual(interruptedCall.crashBudget(fixture), [1]);
+  assert.equal(interruptedCall.crashBudget(fixture), 1);
   assert.equal(interruptedCall.redCalls(fixture).length, 2);
 });
 

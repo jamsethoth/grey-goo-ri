@@ -133,7 +133,11 @@ export interface ExecutionRecord {
   traversals: Map<string, number>;
   retries: Record<
     string,
-    Partial<Record<NonNullable<visit.TableResolution['retryKind']>, number>> & { remote?: sideEffect.RemoteRetry }
+    Partial<Record<NonNullable<visit.TableResolution['retryKind']>, number>> & {
+      remote?: sideEffect.RemoteRetry;
+      // An Interrupted Attempt's retry, spent before the retried Attempt launches (ADR 0011).
+      crash?: number;
+    }
   >;
   sessions: Record<string, SessionEntry>;
   attempts: number;

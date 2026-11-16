@@ -16,7 +16,7 @@ code.
 | `protectedPaths` | the paths that configure the Harness, each a directory with a trailing `/` or a file |
 | `validate(agent)` | checks an Agent against the matrix; returns a typed result, never throws |
 | `resolveTools(agent, ctx)` | the tools the Harness will pass for this Agent, hint fields marked |
-| `run(call)` | runs one Attempt; resolves `{ response, result, failure }` |
+| `run(call, hooks)` | runs one Attempt; reports it has started through `hooks.started`; resolves `{ response, result, failure }` |
 | `interactiveArgs(agent, opening, opts)` | argv for an interactive session opened with `opening` |
 | `metrics(session)` | cumulative Usage of a Session |
 | `doctor(cfg)` | behaviour probes for `gg doctor` |
@@ -78,7 +78,7 @@ backgroundWork
 | `peakContextReporting`, `costReporting`, `turnCountReporting`, `toolCallReporting`, `reasoningTokenReporting` | whether the Harness reports that Usage figure (`peakContextTokens`, `costUsd`, `turns`, `toolCalls`, `reasoningTokens`) |
 | `backgroundWork` | `reported`, `none` or `unobserved` |
 
-## `run(call)`
+## `run(call, hooks)`
 
 The call gg passes is `SentCall` (`lib/agent-action.ts`): `{ marker, vertex, visit, phase, attempt?, agent, persona:
 { name, bytes, hash }, brief, schema, cwd, resume, access, network?, tools, timeouts, env }`. `agent` is the pinned Agent
@@ -134,6 +134,15 @@ network?: boolean
 tools: JsonValue
 timeouts: JsonValue
 env: JsonValue
+```
+
+`hooks` is `{ started(report) }` (`HarnessHooks`, `lib/run-context.ts`). Once the Attempt's processes have started, and
+before `run` resolves, the Harness calls `started` with what contains them (#68, N1): `kind` is `job` when a Windows job
+ends them all with gg (ADR 0021), else `none`, an open string. gg saves it into the call's intent by a second write, so
+at resume an Interrupted Attempt is reset and retried only under a `job`; a Harness that never calls it is uncontained.
+
+```text paths:HarnessStarted
+kind: string (runContext.HarnessStarted)
 ```
 
 It resolves:
@@ -319,9 +328,8 @@ hang?: boolean (fakeHarness.ScriptedResponse)
 
 Shapes later tickets land without a version bump; the landing ticket moves each into the contract.
 
-- **#68, an Interrupted Attempt retried (N1).** The Harness's report that it has started, given before `run` resolves,
-  carrying the containment kind (`job`, `none`; `cgroup` later, #128) and an optional identity, so gg saves the kind in
-  the call intent by a second write (`record.md`).
+- **#128, a cgroup's identity (N1).** The started report gains the kind `cgroup` and an optional `identity` beside
+  `kind`, the cgroup path gg saves with it (`record.md`).
 - **#135, cost and quota reports (J13).** The Harness Result's `quota`: `null` or `{ plan, windows: [{ limit,
   windowMinutes, resetsAt, usedPercent: { first, last } }], credits: { balance, unit } | null }`, the snapshots the
   Harness saw during the Attempt; the Capability `quotaReporting` (`reported`, `partial` or `none`); and the fake

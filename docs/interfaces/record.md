@@ -213,6 +213,7 @@ cursor.recovery: number (record.Cursor)
 cursor.attempt: number (record.Cursor)
 retries: keyed (recordJson.ExecutionRecordJson)
 retries.*: object
+retries.*.crash?: number
 retries.*.parse?: number
 retries.*.timeout?: number
 retries.*.transient?: number
@@ -445,6 +446,8 @@ writeAheadLog[].payload<writeAhead.CallPayload>.baseline.tests.*: integrity.Untr
 writeAheadLog[].payload<writeAhead.CallPayload>.baseline.tests.*<integrity.UntrackedLink>.link: string (integrity.UntrackedLink)
 writeAheadLog[].payload<writeAhead.CallPayload>.baseline.tests.*<integrity.UntrackedLink>.directory: boolean (integrity.UntrackedLink)
 writeAheadLog[].payload<writeAhead.CallPayload>.baseline.tests.*<integrity.UntrackedBytes>.base64: string (integrity.UntrackedBytes)
+writeAheadLog[].payload<writeAhead.CallPayload>.containment?: object (writeAhead.CallPayload)
+writeAheadLog[].payload<writeAhead.CallPayload>.containment.kind: string (writeAhead.CallContainment)
 writeAheadLog[].evidence: commit.Evidence | push.Evidence | comment.Evidence | prUpsert.Evidence | prReady.Evidence | label.Evidence | close.Evidence | rescue.Evidence | reset.Evidence | visit.TableResolution | visit.EffectResolution | visit.ActionCapResolution | visit.RunStoppedResolution | visit.DecisionResolution | null (writeAhead.WriteAheadEntry)
 writeAheadLog[].evidence<commit.Evidence>.sha: string | null
 writeAheadLog[].evidence<push.Evidence>.remoteSha: string
@@ -885,11 +888,8 @@ Shapes later tickets land without a version bump. Each sits inside an existing f
 because `record.save` refuses a row missing a declared field; the landing ticket moves it into the declarations and
 treats it as optional when absent.
 
-- **#68, an Interrupted Attempt retried (ADR 0011, N1).** Its persisted `crash` retry budget lives under
-  `retries.<key>.crash`, beside `parse`, `timeout`, `transient` and `rateLimited`; the retried Attempt's fields live in
-  `visitState.call`. The containment kind of a call, an open string (`job`, `none`; `cgroup` later, #128) with an
-  optional identity beside it for #128's cgroup path, lives in the call intent's payload: it is saved by a second write
-  once the Harness reports it has started, since the intent is saved before launch, and a missing kind reads as `none`.
+- **#128, a cgroup's identity (N1).** A call's containment (`writeAheadLog[].payload.containment`, landed by #68) gains
+  the kind `cgroup` and, beside `kind`, an optional `identity`, the cgroup path a later Run confirms empty.
 - **#89, a merge Action (option 3).** The end `merged` with the State Label `gg:state:merged`.
 - **Option 3, user Actions as executables (Q8, S6).** A write-ahead intent's `effect` stays an open string; a `confirm`
   evidence is a new form of `writeAheadLog[].evidence`; an Action may carry `onInterrupt`, saved in its Procedure inside

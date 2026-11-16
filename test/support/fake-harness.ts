@@ -199,12 +199,14 @@ export function fakeHarness({
   const hung: (() => void)[] = [];
   const calls: ReturnType<typeof recordedCall>[] = [];
 
-  async function run(call: HarnessCall) {
+  async function run(call: HarnessCall, hooks?: runContext.HarnessHooks) {
     calls.push(recordedCall(call));
     const key = keys.responseKey(call.vertex, call.visit, call.phase, call.attempt);
     const script = responses[key];
     if (!script) throw new Error(`fake harness has no scripted response for ${key}`);
     if (script.throw) throw script.throw;
+    // Its started report names the containment its cleanup reports, as gg's command runner does: a job or none.
+    hooks?.started({ kind: (script.cleanup ?? CONFIRMED).containment.kind === 'job' ? 'job' : 'none' });
     // Register before the first await so a cancel() during setup is not lost.
     const cancelled = script.hang ? new Promise<void>((resolve) => hung.push(resolve)) : null;
     await writeFiles(call.cwd, script.files ?? {});
@@ -225,7 +227,7 @@ export function fakeHarness({
     protectedPaths,
     validate,
     resolveTools,
-    run: run as (call: Record<string, unknown>) => ReturnType<typeof run>,
+    run: run as (call: Record<string, unknown>, hooks?: runContext.HarnessHooks) => ReturnType<typeof run>,
     interactiveArgs: () => [],
     metrics: sessions.metrics,
     doctor: () => ({ ok: true, checks: [] }),

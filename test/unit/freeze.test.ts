@@ -122,6 +122,7 @@ test('every Execution-scoped Event and the Execution Record name the owner', () 
 const HARNESS_SHAPES = [
   ['lib/agent-action.ts', 'SentCall'],
   ['lib/run-context.ts', 'HarnessResult'],
+  ['lib/run-context.ts', 'HarnessStarted'],
   ['lib/visit.ts', 'HarnessFailure'],
 ] as const;
 

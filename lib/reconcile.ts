@@ -89,7 +89,7 @@ export async function dirtyState(
   if (!unmerged && executionRecord && heldForCleanup(executionRecord)) return null;
   if (!unmerged && (await integrity.isCleanAt(worktree))) return null;
   for (const entry of !unmerged && executionRecord ? writeAhead.openIntents(executionRecord) : [])
-    if (await effects.proves(entry, worktree, { git, integrity })) return null;
+    if (await proves(entry, worktree, { git, integrity })) return null;
   const untracked = await git.untrackedPaths(worktree);
   const intended = executionRecord && rescue.openRescue(executionRecord);
   return {
@@ -97,6 +97,19 @@ export async function dirtyState(
     rescueRef: intended && (await git.refTarget(worktree, intended.ref)) === intended.commit ? intended.ref : null,
     stat: (await git.diffSummary(worktree)) + untracked.map((path) => ` ${path} (untracked)\n`).join(''),
   };
+}
+
+// An open agent call proves the worktree its Interrupted Attempt's while HEAD and the index are its baseline's, which
+// the agent cannot move without an Integrity Violation; its rescue then keeps whatever else changed (ADR 0011, V9).
+async function proves(
+  entry: writeAhead.WriteAheadEntry,
+  worktree: string,
+  context: { git: ReconcileGit; integrity: integrityModule.Integrity },
+): Promise<boolean> {
+  if (entry.effect !== 'call') return effects.proves(entry, worktree, context);
+  const { baseline } = entry.payload as writeAhead.CallPayload;
+  const now = await context.integrity.snapshot(worktree);
+  return now.head === baseline.head && now.index === baseline.own.index;
 }
 
 // A needs-human label a human set overrides the Execution Record, which the abandonment Terminal keeps but marks
@@ -203,8 +216,7 @@ export async function terminalEffects(
 export const INTERRUPTED_ADVICE =
   'The agent may have changed files before gg stopped, including ignored Protected Files. Check ' +
   "them, and restore any it changed, before deleting the record: the Attempt's intent in " +
-  'the record saves the baseline, with the bytes of each untracked Protected File. ' +
-  'Or keep the Ticket held until gg can recover Interrupted Attempts (#68).';
+  'the record saves the baseline, with the bytes of each untracked Protected File.';
 
 // A Ticket's row as admission loads it: its Execution Record (null when it has none), or the error that makes the row
 // unreadable, which Reconciliation holds for a human.
@@ -251,8 +263,9 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
         (rescued ? ` Rescue Ref ${rescued.ref} keeps the work rescued before it.` : ''),
     );
   }
+  // An agent call is no Effect to look for: an open one is an Interrupted Attempt, which the interpreter recovers.
   const conflict = await findEffects(
-    writeAhead.openIntents(executionRecord),
+    writeAhead.openIntents(executionRecord).filter((entry) => entry.effect !== 'call'),
     { executionRecord, git, gh, cwd, issueLabels, database },
     find,
   );
@@ -273,24 +286,11 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
 export const interruptedAttempt = (executionRecord: record.ExecutionRecord): writeAhead.WriteAheadEntry | undefined =>
   writeAhead.openIntents(executionRecord).find((entry) => entry.effect === 'call');
 
-// The holds that need no git: an Interrupted Attempt, a Vertex the Flow no longer has, or a Visit whose Procedure
-// changed since it entered.
+// The holds that need no git: a Vertex the Flow no longer has, or a Visit whose Procedure changed since it entered. An
+// Interrupted Attempt gives way to its recovery once Reconciliation continues (lib/rescue.ts).
 function configurationHold(executionRecord: record.ExecutionRecord, flow: ReconciledFlow): Hold | null {
   const { vertex } = executionRecord.cursor;
   const hold = (reason: string): Hold => ({ next: 'hold', cursor: executionRecord.cursor, reason });
-  // An Interrupted Attempt is held however clean the worktree looks: what its agent changed is not known (ADR 0011).
-  // Deleting the record would drop the baseline its intent saved, so the advice says to check the files first.
-  const interrupted = interruptedAttempt(executionRecord);
-  if (interrupted) {
-    return {
-      ...hold(
-        `The agent Attempt of Action Marker ${interrupted.actionMarker} was interrupted, ` +
-          'so the Ticket is held; nothing was discarded.',
-      ),
-      name: 'interrupted-attempt',
-      advice: INTERRUPTED_ADVICE,
-    };
-  }
   if (!(labels.END_STATES as string[]).includes(vertex) && !flow.ticket.vertices.has(vertex))
     return hold(`The record continues at Vertex ${vertex}, which the Flow no longer has.`);
   // A Visit in progress runs on the Procedure it entered with, so one whose Procedure has changed is held, not resumed
