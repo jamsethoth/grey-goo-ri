@@ -81,7 +81,7 @@ export function openRescue(
 // An Interrupted Attempt's rescue Action id, which no Procedure may declare (lib/validate/actions.ts, #68).
 export const INTERRUPTED_RESCUE = 'interrupted-rescue';
 
-// Names, after `reason`, each Rescue Ref the interrupted Attempts of the call `callMarker`'s Action left, Attempts 1 to
+// Names, after `reason`, each Rescue Ref the interrupted Attempts of the call `callMarker`'s Action made, Attempts 1 to
 // its own, with the Attempt and Action it keeps, since a ref's name is a digest (D5, D6). A ref `reason` already names
 // is not repeated, and no other rescue is named: each is found by its own marker.
 export function namingInterrupted(executionRecord: record.ExecutionRecord, callMarker: string, reason: string): string {
@@ -91,9 +91,10 @@ export function namingInterrupted(executionRecord: record.ExecutionRecord, callM
     Array.from({ length: Number(parts.attempt) }, (_, index) => index + 1)
       .map((number) => {
         const rescueMarker = marker.formatMarker({ ...parts, action: INTERRUPTED_RESCUE, attempt: number });
-        const intended = writeAhead.findEntry(executionRecord, rescueMarker, 'intent')?.payload as Payload | undefined;
+        // Its evidence, not its intent: the intent comes before the ref, which a crash can leave unmade (D8).
+        const made = writeAhead.evidenceOf(executionRecord, rescueMarker)?.evidence as Evidence | undefined;
         const keeps = `the work of Attempt ${number} of ${parts.action} at ${parts.vertex}`;
-        return intended && !reason.includes(intended.ref) ? ` Rescue Ref ${intended.ref} keeps ${keeps}.` : '';
+        return made && !reason.includes(made.ref) ? ` Rescue Ref ${made.ref} keeps ${keeps}.` : '';
       })
       .join('')
   );
