@@ -56,7 +56,16 @@ interface Rescuing {
   baseline: integrity.IntegrityBaseline;
   // The sentence the History item starts with: what failed.
   failure: string;
+  // The rescue's and the reset's own Action ids, which keep one caller's markers and refs apart from another's.
+  ids?: RescueIds;
 }
+interface RescueIds {
+  rescue: string;
+  reset: string;
+}
+const ROUTED: RescueIds = { rescue: 'rescue', reset: 'reset' };
+// An Interrupted Attempt's: no Procedure may declare them (lib/validate/actions.ts), nor collide with a routed rescue.
+const INTERRUPTED: RescueIds = { rescue: 'interrupted-rescue', reset: 'interrupted-reset' };
 type RollbackSet = integrity.RollbackSet;
 
 // The worktree is the baseline's: its HEAD, its index, its tree, and the untracked files a restore would put back.
@@ -77,7 +86,7 @@ async function atBaseline(
 // it, or, once a rescue has begun, the ref's verification or the reset's own snapshot holds.
 async function planRescue(
   runContext: RunContext,
-  { actionIdentity, baseline, failure }: Rescuing,
+  { actionIdentity, baseline, failure, ids = ROUTED }: Rescuing,
   untracked: RollbackSet,
 ): Promise<rescueEffect.Payload | null> {
   const { record: executionRecord, git } = runContext;
@@ -89,7 +98,7 @@ async function planRescue(
       `HEAD or the index moved since the Visit's baseline when ${failure}, so it cannot be proven the agent's; no ` +
         'Rescue Ref was made and nothing was reset.',
     );
-  const actionMarker = runContext.markerOf({ ...actionIdentity, action: 'rescue' });
+  const actionMarker = runContext.markerOf({ ...actionIdentity, action: ids.rescue });
   const tree = await git.rescueTree(worktree, { within: untracked.within });
   const message = `gg rescue: ${failure}\n\n${marker.markerTrailer(actionMarker)}`;
   const commit = await git.rescueCommit(worktree, { tree, parent: left.head, message });
@@ -108,14 +117,14 @@ async function verifyRef(runContext: RunContext, { ref }: rescueEffect.Payload, 
 // The reset once its ref holds the work, checked against the baseline. A reset that fails holds with the state rescued.
 async function resetRescued(
   runContext: RunContext,
-  { actionIdentity, baseline, failure }: Rescuing,
+  { actionIdentity, baseline, failure, ids = ROUTED }: Rescuing,
   { ref }: rescueEffect.Payload,
   untracked: RollbackSet,
 ) {
   const named = `Rescue Ref ${ref} keeps the work`;
   try {
     await reset(runContext, {
-      actionIdentity: { ...actionIdentity, action: 'reset' },
+      actionIdentity: { ...actionIdentity, action: ids.reset },
       baseline: baseline.head,
       history: {
         kind: 'rescued',
@@ -140,10 +149,10 @@ export async function rescueAndReset(
   rescuing: Rescuing,
   { reset: resetting = true }: { reset?: boolean } = {},
 ): Promise<{ ref: string; commit: string } | null> {
-  const { actionIdentity, baseline } = rescuing;
+  const { actionIdentity, baseline, ids = ROUTED } = rescuing;
   const { record: executionRecord, protectedPaths } = runContext;
-  const actionMarker = runContext.markerOf({ ...actionIdentity, action: 'rescue' });
-  const resetMarker = runContext.markerOf({ ...actionIdentity, action: 'reset' });
+  const actionMarker = runContext.markerOf({ ...actionIdentity, action: ids.rescue });
+  const resetMarker = runContext.markerOf({ ...actionIdentity, action: ids.reset });
   const { testPaths } = executionRecord.configurationSnapshot!;
   const untracked = integrity.rollbackSet(baseline, protectedPaths, checks.testPathSet(testPaths));
 
@@ -153,7 +162,7 @@ export async function rescueAndReset(
   if (!payload) return null;
   // Not busy as a whole: its Effects are bracketed one by one, the reset's by the reset, and the brackets do not nest.
   await attempt.run(runContext, {
-    actionIdentity: { ...actionIdentity, action: 'rescue' },
+    actionIdentity: { ...actionIdentity, action: ids.rescue },
     busy: false,
     work: async () => {
       await attempt.whileBusy(runContext, () =>
@@ -192,7 +201,7 @@ function attemptOf(executionRecord: RunContext['record'], actionMarker: string):
 // The Rescue Refs of the Action's interrupted Attempts up to this one, each rescued under its own Attempt's marker.
 const interruptedRefs = (runContext: RunContext, actionIdentity: marker.ActionIdentity): string[] =>
   Array.from({ length: actionIdentity.attempt ?? 1 }, (_, index) =>
-    runContext.markerOf({ ...actionIdentity, action: 'rescue', attempt: index + 1 }),
+    runContext.markerOf({ ...actionIdentity, action: INTERRUPTED.rescue, attempt: index + 1 }),
   )
     .filter((actionMarker) => writeAhead.findEntry(runContext.record, actionMarker, 'intent'))
     .map(rescueRef);
@@ -222,7 +231,7 @@ export async function recoverInterrupted(runContext: RunContext): Promise<void> 
       .map((ref) => ` Rescue Ref ${ref} keeps an interrupted Attempt's work.`)
       .join('');
   try {
-    await rescueAndReset(runContext, { actionIdentity, baseline, failure }, { reset: contained });
+    await rescueAndReset(runContext, { actionIdentity, baseline, failure, ids: INTERRUPTED }, { reset: contained });
   } catch (err) {
     if (!(err instanceof effectErrors.EarlyTerminalError) || err.ending.next !== 'hold') throw err;
     throw interruptedHold(named(err.ending.reason));

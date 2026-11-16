@@ -74,7 +74,7 @@ export const resumed = (fixture: golden.GoldenFixture) =>
 
 // The Rescue Ref of red's interrupted Attempt `attempt`.
 export const refOf = (fixture: golden.GoldenFixture, attempt: number) =>
-  rescue.rescueRef(golden.markerOf(fixture.executionRecord, 'red', 1, 'rescue', 0, attempt));
+  rescue.rescueRef(golden.markerOf(fixture.executionRecord, 'red', 1, 'interrupted-rescue', 0, attempt));
 
 // The red Attempts the Harness was called for, with the Session each resumed.
 export const redCalls = (fixture: golden.GoldenFixture) =>
