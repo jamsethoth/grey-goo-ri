@@ -83,7 +83,7 @@ export const INTERRUPTED_RESCUE = 'interrupted-rescue';
 
 // Names, after `reason`, each Rescue Ref the interrupted Attempts of the call `callMarker`'s Action made, Attempts 1 to
 // its own, with the Attempt and Action it keeps, since a ref's name is a digest (D5, D6). A ref `reason` already names
-// is not repeated, and no other rescue is named: each is found by its own marker.
+// is given its Attempt alone (D9), and no other rescue is named: each is found by its own marker.
 export function namingInterrupted(executionRecord: record.ExecutionRecord, callMarker: string, reason: string): string {
   const parts = marker.partsOf(callMarker);
   return (
@@ -93,8 +93,11 @@ export function namingInterrupted(executionRecord: record.ExecutionRecord, callM
         const rescueMarker = marker.formatMarker({ ...parts, action: INTERRUPTED_RESCUE, attempt: number });
         // Its evidence, not its intent: the intent comes before the ref, which a crash can leave unmade (D8).
         const made = writeAhead.evidenceOf(executionRecord, rescueMarker)?.evidence as Evidence | undefined;
-        const keeps = `the work of Attempt ${number} of ${parts.action} at ${parts.vertex}`;
-        return made && !reason.includes(made.ref) ? ` Rescue Ref ${made.ref} keeps ${keeps}.` : '';
+        const attempt = `Attempt ${number} of ${parts.action} at ${parts.vertex}`;
+        // A ref the reason names, made or not, is its intent's: the reason says what became of it, this whose it is.
+        const planned = writeAhead.findEntry(executionRecord, rescueMarker, 'intent')?.payload as Payload | undefined;
+        if (planned && reason.includes(planned.ref)) return ` ${planned.ref} is the Rescue Ref of ${attempt}.`;
+        return made ? ` Rescue Ref ${made.ref} keeps the work of ${attempt}.` : '';
       })
       .join('')
   );

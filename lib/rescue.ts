@@ -183,13 +183,11 @@ export async function rescueAndReset(
 // An Interrupted Attempt is retried once; a second interruption of the same Action holds (ADR 0011).
 const CRASH_BUDGET = 1;
 
-const interruptedHold = (reason: string) =>
-  new effectErrors.EarlyTerminalError({
-    next: 'hold',
-    name: 'interrupted-attempt',
-    reason,
-    advice: reconcile.INTERRUPTED_ADVICE,
-  });
+const interruptedHold = (reason: string, advice = reconcile.INTERRUPTED_ADVICE) =>
+  new effectErrors.EarlyTerminalError({ next: 'hold', name: 'interrupted-attempt', reason, advice });
+
+// After the reset nothing in the worktree is left to restore: the Rescue Refs keep the work.
+const RESET_ADVICE = "The worktree is at the Visit's baseline; `git show` a Rescue Ref above to see the work it keeps.";
 
 // The Attempt an Action Marker names, in the Visit at the cursor, whose Procedure its Events name.
 function attemptOf(executionRecord: RunContext['record'], actionMarker: string): marker.ActionIdentity {
@@ -199,8 +197,9 @@ function attemptOf(executionRecord: RunContext['record'], actionMarker: string):
 }
 
 // An Interrupted Attempt at resume (ADR 0011, N1): its work, whoever wrote it (V9), is rescued to a Rescue Ref and,
-// once its processes are known gone, reset to the Attempt's baseline and retried in a fresh Session, once. Each step is
-// write-ahead, so a crash resumes at the next. Anything else holds the Ticket, naming the Rescue Refs.
+// once its processes are known gone, reset to the Attempt's baseline and retried in a fresh Session, once. The rescue
+// and the reset are each write-ahead, so a crash resumes at the next. Anything else holds the Ticket, naming the Rescue
+// Refs.
 export async function recoverInterrupted(runContext: RunContext): Promise<void> {
   const executionRecord = runContext.record;
   const interrupted = writeAhead.openIntents(executionRecord).find((entry) => entry.effect === 'call');
@@ -231,7 +230,10 @@ export async function recoverInterrupted(runContext: RunContext): Promise<void> 
   const key = marker.actionKeyOf(actionIdentity);
   const spent = executionRecord.retries[key]?.crash ?? 0;
   if (spent >= CRASH_BUDGET)
-    throw interruptedHold(`${failure} again after its crash retry, and the worktree was reset to its baseline.${kept}`);
+    throw interruptedHold(
+      `${failure} again after its crash retry, and the worktree was reset to its baseline.${kept}`,
+      RESET_ADVICE,
+    );
   // Spent and counted toward the Action Cap before the retry launches, in the save that completes the intent and moves
   // the cursor to the next Attempt: `enter` counts no Attempt the cursor already names.
   (executionRecord.retries[key] ??= {}).crash = spent + 1;

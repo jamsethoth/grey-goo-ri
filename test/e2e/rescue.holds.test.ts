@@ -121,6 +121,15 @@ function assertNamesRefs({ text, executionRecord, worktree, named, unrelated }: 
   for (const [index, ref] of named.entries())
     assert.ok(text.includes(`${ref} keeps the work of Attempt ${index + 1} of red at red`), text);
   for (const ref of unrelated) assert.ok(!text.includes(ref), `${ref} is not red's Action's: ${text}`);
+  // Every ref the hold names, the reason's own among them, says which Attempt it keeps (D6, D9).
+  for (const ref of new Set(text.match(/refs\/gg\/rescue\/[0-9a-f]+/g))) {
+    const attempt = `Attempt ${[1, 2, 3].find((number) => refAt(executionRecord, number) === ref)} of red at red`;
+    const sentences = [`${ref} keeps the work of ${attempt}`, `${ref} is the Rescue Ref of ${attempt}`];
+    assert.ok(
+      sentences.some((sentence) => text.includes(sentence)),
+      `${ref} is named with its Attempt: ${text}`,
+    );
+  }
 }
 
 // Admission, through gg run: the Ticket's worktree changed by `hand` after the Executions `state` names.
@@ -355,6 +364,12 @@ const ROWS: Row[] = [
       const own = made.filter((ref) => ref && !held.unrelated.includes(ref));
       assert.deepEqual(own.sort(), [...held.named].sort(), 'git holds one Rescue Ref per interrupted Attempt');
       assert.equal(existsSync(join(held.worktree, 'notes.txt')), false, 'the second Attempt was reset before the hold');
+      const advice = held.executionRecord.terminalStop?.advice ?? '';
+      assert.match(
+        advice,
+        /The worktree is at the Visit's baseline; .*Rescue Ref/,
+        'it points at the refs, not a restore',
+      );
       assert.equal(interruptedCall.crashBudget(ran.fixture!), 1);
       assert.equal(interruptedCall.redCalls(ran.fixture!).length, 2);
       return held;
