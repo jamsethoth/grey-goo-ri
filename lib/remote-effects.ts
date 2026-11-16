@@ -236,7 +236,7 @@ async function recheck(
   const issueLabels = gh.labelNames(await gh.viewIssue(executionRecord.ticket, cwd));
   context.labelsStale = false;
   const overridden = reconcile.humanOverride(executionRecord, issueLabels, context.labelPrefix);
-  if (overridden) throw new effectErrors.EarlyTerminalError(overridden);
+  if (overridden && !context.resolving) throw new effectErrors.EarlyTerminalError(overridden);
   // A finder reads only the entry's marker, effect and payload.
   const found = await effects.findEffect(entry as writeAhead.WriteAheadEntry, {
     executionRecord,
@@ -292,7 +292,8 @@ export async function remoteEffect<Payload>(
         continue;
       }
       await cooldown(context, entry.actionMarker);
-      if ((retry && !retry.started) || context.labelsStale) {
+      // A started launch delivered once more is looked for first: it may have landed before its call failed.
+      if (retry || context.labelsStale) {
         const rechecked = await recheck(context, entry);
         if (rechecked === 'again') continue;
         if (rechecked !== 'launch') return rechecked.found;

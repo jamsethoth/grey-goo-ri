@@ -17,6 +17,7 @@ import * as record from './record.ts';
 import type * as runContext from './run-context.ts';
 import * as report from './validate/report.ts';
 import * as stateDatabase from './state-database.ts';
+import * as work from './work.ts';
 
 // A Ticket's result: its Outcome, the State Label it ends with, and whether a label update or a fault failed it.
 export interface TicketResult {
@@ -114,6 +115,8 @@ export interface RunOptions {
   cwd: string;
   log: (line: string) => void;
   testImmutability?: runContext.TestImmutability;
+  // gg work resume: the target Ticket re-enters its Execution at a new Visit of this Vertex first (#133).
+  resume?: { vertex: string };
 }
 
 // A declared Flow as it runs, pinned with what its Config Hash covers (config.Pinned), and its source.
@@ -309,6 +312,7 @@ async function runRepo(repo: admission.Repo, admitted: Admitted, options: RunOpt
   const { flow, hash, source } = selected;
   const declared = [...flows.values()];
   const { issue, subIssues, tickets } = await readTickets(gh, target, repo, settings);
+  if (options.resume && subIssues.length) throw new Error(`#${target} has sub-issues; gg work resume takes one Ticket`);
   const { runId, runLog } = startRun(repo, { flows: declared, selected, clock }, { named, log });
   const eventLog = events.eventLog(repo.gitCommonDir, {}, database);
   eventLog('run_start', { run: runId });
@@ -346,6 +350,7 @@ async function runRepo(repo: admission.Repo, admitted: Admitted, options: RunOpt
     events: eventLog,
     runState,
     epic: subIssues.length ? issue.number : null,
+    ...(options.resume && { resume: { ticket: target, vertex: options.resume.vertex } }),
   };
   try {
     results.push(...(await mapConcurrently(tickets, settings.maxParallel, (ticket) => runTicket(ticket, context))));
@@ -379,7 +384,8 @@ async function runTicket(issue: github.Issue, context: admission.AdmissionContex
   try {
     lock = await locks.tryAcquire(context.repo.gitCommonDir, `ticket-${ticket}`);
     if (!lock) return admission.skip({ context, issue }, `another process holds the ticket-${ticket} lock`);
-    result = await admission.admit(issue, context);
+    const admitted = context.resume?.ticket === ticket ? await work.resume(context, ticket) : issue;
+    result = await admission.admit(admitted, context);
   } catch (err) {
     result = fault(err);
   }

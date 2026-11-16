@@ -5,6 +5,7 @@ import type * as integrityModule from '../integrity.ts';
 import * as marker from '../marker.ts';
 import type * as record from '../record.ts';
 import * as writeAhead from '../write-ahead.ts';
+import * as close from './close.ts';
 import * as comment from './comment.ts';
 import * as commit from './commit.ts';
 import * as label from './label.ts';
@@ -85,6 +86,7 @@ export type Payload =
   | prUpsert.Payload
   | prReady.Payload
   | label.Payload
+  | close.Payload
   | rescue.Payload
   | reset.Payload;
 
@@ -97,6 +99,7 @@ export type Evidence = (
   | prUpsert.Evidence
   | prReady.Evidence
   | label.Evidence
+  | close.Evidence
   | rescue.Evidence
   | reset.Evidence
 ) & { usageDelta?: never };
@@ -111,7 +114,7 @@ export const found = (evidence: Evidence): FindResult => ({ status: 'found', evi
 export const conflicting = (reason: string): FindResult => ({ status: 'conflicting', reason });
 export const ABSENT: FindResult = { status: 'absent' };
 
-// The eight Effects. A function, so an Effect module that imports this one is read before the list is built.
+// The nine Effects. A function, so an Effect module that imports this one is read before the list is built.
 export const all = (): Resumable[] => [
   commit.effect,
   push.effect,
@@ -119,6 +122,7 @@ export const all = (): Resumable[] => [
   prUpsert.effect,
   prReady.effect,
   label.recordAndGoOn,
+  close.effect,
   rescue.effect,
   reset.effect,
 ];
@@ -150,7 +154,7 @@ export async function findEffect(entry: writeAhead.WriteAheadEntry, context: Evi
 }
 
 // True when the worktree is in the state an open intent proves the agent's, for Reconciliation to finish the intent.
-// push, pr-upsert, pr-ready, comment and label leave the worktree alone and prove no uncommitted change.
+// push, pr-upsert, pr-ready, comment, label and close leave the worktree alone and prove no uncommitted change.
 export async function proves(
   entry: writeAhead.WriteAheadEntry,
   worktree: string,

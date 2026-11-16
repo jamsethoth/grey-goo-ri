@@ -127,6 +127,18 @@ const SHAPES: Record<string, (log: ReturnType<typeof events.eventLog>) => void> 
       from: 'a'.repeat(64),
       to: 'b'.repeat(64),
     }),
+  ticket_resolved: (log) =>
+    log('ticket_resolved', { execution: 'e1', ticket: 7, owner: { kind: 'ticket', number: 7 }, human: 'octo-human' }),
+  ticket_resumed: (log) =>
+    log('ticket_resumed', {
+      execution: 'e1',
+      ticket: 7,
+      owner: { kind: 'ticket', number: 7 },
+      human: 'octo-human',
+      vertex: 'publish',
+      head: 'c'.repeat(40),
+      superseded: ['gg:e1:r1:green:1:recover:0:1'],
+    }),
 };
 
 const rowsOf = (commonDir: string): EventRow[] =>

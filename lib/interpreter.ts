@@ -104,6 +104,7 @@ type AbandonDecision = Parameters<typeof terminal.abandon>[1];
 // A decided needs-human or abandonment report is a comment and a label: only their own intents are looked for.
 async function finishReport(runContext: RunContext): Promise<TerminalResult> {
   const { record: executionRecord } = runContext;
+  if (executionRecord.terminalReason?.decidedBy.human !== undefined) return await unfinishedDone(runContext);
   const terminalStop = executionRecord.terminalStop!;
   const name = terminalStop.abandoned ? 'abandoned' : labels.NEEDS_HUMAN;
   const markers = ['comment', 'label'].map((effect) =>
@@ -120,6 +121,23 @@ async function finishReport(runContext: RunContext): Promise<TerminalResult> {
   if (decided.next === 'abandon')
     return await terminal.abandon(runContext, { terminalReasonText: decided.reason, inProgress: decided.inProgress });
   return await terminal.terminal(runContext, name);
+}
+
+// A Pending Ticket whose gg work done did not finish (D5 D): a human override still wins (request 3.5); else it
+// waits for that verb to run again, since only it posts the done report.
+async function unfinishedDone(runContext: RunContext): Promise<TerminalResult> {
+  const { record: executionRecord } = runContext;
+  const decided = await pendingRun.keepPendingIfUnread(runContext, `#${executionRecord.ticket}`, () =>
+    reconcile.terminalEffects(executionRecord, {
+      gh: runContext.gh,
+      labelPrefix: runContext.labelPrefix,
+      cwd: runContext.cwd,
+      markers: [],
+    }),
+  );
+  if (decided.next === 'abandon')
+    return await terminal.abandon(runContext, { terminalReasonText: decided.reason, inProgress: decided.inProgress });
+  throw pendingRun.pending(`its gg work done did not finish; rerun gg work done ${executionRecord.ticket}`);
 }
 
 // Reconciliation of a resumed record: a hold or abandonment it decides ends the Execution here, else it continues.
@@ -227,8 +245,12 @@ async function endCaught(runContext: RunContext, caught: unknown): Promise<Termi
   }
   if (effectErrors.fatal(err)) throw err;
   if (runContext.laterRunReport || executionRecord.terminalStop?.held || executionRecord.terminalStop?.abandoned) {
+    const stop = executionRecord.terminalStop;
+    // An unfinished gg work done saves no stop: its Ticket stays Pending.
+    let outcome = 'pending';
+    if (stop) outcome = stop.abandoned ? 'abandoned' : labels.NEEDS_HUMAN;
     const result: TerminalResult & { error: string } = {
-      outcome: executionRecord.terminalStop!.abandoned ? 'abandoned' : labels.NEEDS_HUMAN,
+      outcome,
       fault: true,
       error: effectErrors.errorText(err),
     };

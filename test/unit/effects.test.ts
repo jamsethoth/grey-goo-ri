@@ -68,9 +68,9 @@ test('an open intent is redone with its intended payload, not the one given now'
   assert.equal(executionRecord.writeAheadLog.filter((entry) => entry.step === 'intent').length, 1);
 });
 
-const EFFECT_NAMES = ['commit', 'push', 'comment', 'pr-upsert', 'pr-ready', 'label', 'rescue', 'reset'];
+const EFFECT_NAMES = ['commit', 'push', 'comment', 'pr-upsert', 'pr-ready', 'label', 'close', 'rescue', 'reset'];
 
-test('the lookup holds the eight Effects by the names their intents persist, and nothing else', () => {
+test('the lookup holds the nine Effects by the names their intents persist, and nothing else', () => {
   assert.deepEqual(
     effects.all().map((effect) => effect.name),
     EFFECT_NAMES,
@@ -83,7 +83,7 @@ test('the lookup holds the eight Effects by the names their intents persist, and
   }
 });
 
-test('the remote Actions are the comment, PR upsert, push and PR ready', () => {
+test('the remote Actions are the comment, PR upsert, push, PR ready and issue close', () => {
   assert.deepEqual(
     effects.all().map((effect) => [effect.name, effect.remote]),
     [
@@ -93,6 +93,7 @@ test('the remote Actions are the comment, PR upsert, push and PR ready', () => {
       ['pr-upsert', 'GitHub'],
       ['pr-ready', 'GitHub'],
       ['label', null],
+      ['close', 'GitHub'],
       ['rescue', null],
       ['reset', null],
     ],
@@ -113,6 +114,7 @@ test('an open intent is settled by its finder, as safe to repeat, or from the wo
       ['pr-upsert', 'find', false],
       ['pr-ready', 'repeat', false],
       ['label', 'find', false],
+      ['close', 'repeat', false],
       ['rescue', 'find', true],
       ['reset', 'worktree', true],
     ],

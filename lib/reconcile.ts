@@ -1,3 +1,4 @@
+import * as branchTip from './branch-tip.ts';
 import * as record from './record.ts';
 import * as writeAhead from './write-ahead.ts';
 import * as integrityModule from './integrity.ts';
@@ -141,6 +142,31 @@ async function findEffects(
   return null;
 }
 
+// gg work resume (Q1 A): each open write-ahead intent is looked for as Reconciliation looks, and completed with what
+// is found; the rest the person's resume overrides, so they are completed with nothing found. The entries are added to
+// the record in memory only, for the save that writes ticket_resumed. Gives the overridden Action Markers.
+export async function supersedeOpenIntents(
+  executionRecord: record.ExecutionRecord,
+  { gh, git, cwd }: { gh: ReconcileGh; git: ReconcileGit; cwd?: string },
+): Promise<string[]> {
+  const issueLabels = gh.labelNames(await gh.viewIssue(executionRecord.ticket, cwd));
+  const superseded: string[] = [];
+  for (const entry of writeAhead.openIntents(executionRecord)) {
+    const { actionMarker, effect } = entry;
+    const found = writeAhead.evidenceOf(executionRecord, actionMarker)
+      ? null
+      : await effects.findEffect(entry, { executionRecord, git, gh, cwd, issueLabels });
+    if (found?.status === 'unknown') throw found.error;
+    if (found?.status === 'found')
+      executionRecord.writeAheadLog.push(
+        writeAhead.entryOf('evidence', actionMarker, effect, { evidence: found.evidence }),
+      );
+    else if (found) superseded.push(actionMarker);
+    executionRecord.writeAheadLog.push(writeAhead.entryOf('complete', actionMarker, effect));
+  }
+  return superseded;
+}
+
 // A decided hold, fault or abandonment only finishes its report: a human override still wins, and only the intents of
 // its own Terminal Actions (`markers`) are looked for, so no older Action's effect is redone, checked or read.
 export async function terminalEffects(
@@ -233,16 +259,19 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
   if (conflict) return hold(conflict);
   // A completed commit has no open intent to check, and an amend keeps its marker: only the branch tip shows the
   // change.
-  const last = commit.lastCommit(executionRecord);
-  const head = last && (await git.headSha(executionRecord.worktree));
-  if (last && head !== last.sha) {
+  const expected = branchTip.provenTip(executionRecord);
+  const head = expected && (await git.headSha(executionRecord.worktree));
+  if (expected && head !== expected.sha)
     return hold(
-      `The branch is at ${head}, not at commit ${last.sha} of Action Marker ${last.actionMarker}, ` +
-        'so it was changed by hand; nothing was committed, pushed or discarded.',
+      `The branch is at ${head}, not at ${expected.what}, so it was changed by hand; nothing was committed, ` +
+        'pushed or discarded.',
     );
-  }
   return { next: 'continue', cursor: executionRecord.cursor, reason: null };
 }
+
+// The open intent of an agent call that never completed: an Interrupted Attempt (ADR 0011).
+export const interruptedAttempt = (executionRecord: record.ExecutionRecord): writeAhead.WriteAheadEntry | undefined =>
+  writeAhead.openIntents(executionRecord).find((entry) => entry.effect === 'call');
 
 // The holds that need no git: an Interrupted Attempt, a Vertex the Flow no longer has, or a Visit whose Procedure
 // changed since it entered.
@@ -251,7 +280,7 @@ function configurationHold(executionRecord: record.ExecutionRecord, flow: Reconc
   const hold = (reason: string): Hold => ({ next: 'hold', cursor: executionRecord.cursor, reason });
   // An Interrupted Attempt is held however clean the worktree looks: what its agent changed is not known (ADR 0011).
   // Deleting the record would drop the baseline its intent saved, so the advice says to check the files first.
-  const interrupted = writeAhead.openIntents(executionRecord).find((entry) => entry.effect === 'call');
+  const interrupted = interruptedAttempt(executionRecord);
   if (interrupted) {
     return {
       ...hold(

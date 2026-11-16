@@ -42,6 +42,8 @@ export interface FakeEvent {
 
 // The login gg's own label edits are made under.
 export const GG_LOGIN = 'gg-bot';
+// The login gh is signed in as when a person runs a gg work verb.
+export const HUMAN_LOGIN = 'octo-human';
 
 export interface FakePullRequest {
   number: number;
@@ -109,6 +111,8 @@ function ghState(branch: string, repoLabels: string[], repository: string) {
     });
   };
   const permissions = new Map<string, string>();
+  // The issues closed on GitHub; every other issue is open.
+  const closed = new Set<number>();
   const comments: FakeComment[] = [];
   const failures: (GhFailure & { spent?: boolean })[] = [];
   // Each issue's labels on GitHub, as issue edits leave them and issue view reports them.
@@ -143,6 +147,7 @@ function ghState(branch: string, repoLabels: string[], repository: string) {
     eventsOf,
     recordEvent,
     permissions,
+    closed,
   };
 }
 type GhState = ReturnType<typeof ghState>;
@@ -188,6 +193,7 @@ function answerApi(state: GhState, args: string[], input: string | undefined) {
       { id, html_url: `https://github.com/o/r/issues/${issue}#issuecomment-${id}` },
     );
   }
+  if (args[1] === 'user') return JSON.stringify({ login: HUMAN_LOGIN });
   const eventsAt = args.join(' ').match(/issues\/(\d+)\/events/);
   if (eventsAt) return JSON.stringify([state.eventsOf(Number(eventsAt[1]))]);
   const permissionOf = args.join(' ').match(/collaborators\/([^/\s]+)\/permission/);
@@ -205,7 +211,20 @@ function answerIssue(state: GhState, args: string[]) {
   const issue = numberArg(args);
   if (args[1] === 'view') {
     const labels = [...state.labelsOf(issue)].map((name) => ({ name }));
-    return JSON.stringify({ number: issue, title: '', body: '', state: 'OPEN', labels, blockedBy: [], subIssues: [] });
+    const issueState = state.closed.has(issue) ? 'CLOSED' : 'OPEN';
+    return JSON.stringify({
+      number: issue,
+      title: '',
+      body: '',
+      state: issueState,
+      labels,
+      blockedBy: [],
+      subIssues: [],
+    });
+  }
+  if (args[1] === 'close') {
+    state.closed.add(issue);
+    return '';
   }
   if (args[1] !== 'edit') return null;
   const labels = state.labelsOf(issue);
@@ -283,6 +302,10 @@ export function fakeGh({
     labelsOf: state.labelsOf,
     repoLabels: state.available,
     pr: () => state.prs.get(branch) ?? null,
+    // The pull requests by head branch, which a case may seed as a person left them.
+    prs: state.prs,
+    // The issues closed on GitHub.
+    closed: state.closed,
     fail: (failure: GhFailure) => state.failures.push({ ...failure }),
     // Each actor's collaborator permission; one it does not hold reads as a 404, as GitHub answers a non-collaborator.
     permissions: state.permissions,

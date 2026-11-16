@@ -53,6 +53,8 @@ export interface EffectContext {
   labelsStale?: boolean;
   // A report a later Run delivers once more (#60).
   laterRunReport?: boolean;
+  // gg work done's own Actions: the person who ran it decided the end, so a needs-human label is not an override.
+  resolving?: boolean;
 }
 
 export interface SideEffect<Payload, Context> {

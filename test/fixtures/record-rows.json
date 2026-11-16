@@ -330,6 +330,14 @@
       },
       {
         "step": "intent",
+        "actionMarker": "m-close",
+        "effect": "close",
+        "payload": { "issue": 7 },
+        "evidence": null,
+        "time": "2026-11-13T00:00:07Z"
+      },
+      {
+        "step": "intent",
         "actionMarker": "m-label",
         "effect": "label",
         "payload": { "ticket": 8, "add": ["gg:active"], "remove": ["gg:queued"] },
@@ -419,13 +427,15 @@
       { "label": "gg:state:needs-human" },
       { "vertex": "green", "visit": null, "action": null, "recovery": 0 },
       { "hold": "dirty-worktree", "vertex": "green", "visit": 1, "action": null, "recovery": 0 },
-      { "label": "gg:state:needs-human", "vertex": "green", "visit": 1, "action": "push", "recovery": 1 }
+      { "label": "gg:state:needs-human", "vertex": "green", "visit": 1, "action": "push", "recovery": 1 },
+      { "human": "octo-human" }
     ],
     "terminalStop.interrupted.terminalReason.decidedBy": [
       { "hold": null },
       { "label": "gg:state:needs-human" },
       { "hold": "dirty-worktree", "vertex": "green", "visit": 1, "action": null, "recovery": 0 },
-      { "label": "gg:state:needs-human", "vertex": "green", "visit": 1, "action": "push", "recovery": 1 }
+      { "label": "gg:state:needs-human", "vertex": "green", "visit": 1, "action": "push", "recovery": 1 },
+      { "human": "octo-human" }
     ],
     "visitState.settled.resolution": [
       {

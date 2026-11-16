@@ -160,7 +160,9 @@ export const reportDecided = (executionRecord: record.ExecutionRecord): boolean 
   !!(
     executionRecord.terminalStop?.held ||
     executionRecord.terminalStop?.error ||
-    executionRecord.terminalStop?.abandoned
+    executionRecord.terminalStop?.abandoned ||
+    // A person's gg work done, saved before its report: only a rerun of that verb finishes it (D5 D).
+    (executionRecord.state === 'active' && executionRecord.terminalReason?.decidedBy.human !== undefined)
   ) && !eventRead.hasTicketEnd(executionRecord.commonDir, executionRecord.execution);
 
 // The deps and options as one context; `integrity` and `testImmutability` default to the real ones over the git given.

@@ -15,12 +15,14 @@ import * as effectErrors from '../../lib/effect-errors.ts';
 import * as effects from '../../lib/effects/index.ts';
 import * as contract from '../../lib/harnesses/contract.ts';
 import * as interpreter from '../../lib/interpreter.ts';
+import * as locks from '../../lib/locks.ts';
 import * as marker from '../../lib/marker.ts';
 import * as pendingReport from '../../lib/pending-report.ts';
 import * as procedures from '../../lib/procedures.ts';
 import * as record from '../../lib/record.ts';
 import type * as visit from '../../lib/visit.ts';
 import type * as visitScope from '../../lib/visit-scope.ts';
+import * as work from '../../lib/work.ts';
 import type * as writeAhead from '../../lib/write-ahead.ts';
 import * as approvalFlow from '../support/approval-flow.ts';
 import * as caseDatabase from '../support/case-database.ts';
@@ -99,7 +101,15 @@ const DECLARED: Declared[] = [
   {
     site: 'lib/terminal-report.ts terminalAction',
     busy: true,
-    seen: ['needs-human/end-comment', 'needs-human/end-label', 'ready-for-qa/end-comment', 'ready-for-qa/end-label'],
+    seen: [
+      'needs-human/end-comment',
+      'needs-human/end-label',
+      'ready-for-qa/end-comment',
+      'ready-for-qa/end-label',
+      'done/resolve-comment',
+      'done/resolve-label',
+      'done/resolve-close',
+    ],
   },
 ];
 
@@ -196,7 +206,27 @@ test("every Attempt's intent is written inside one bracket, its kind's or its st
   golden.configure(rescued, rescueFlow.routeRedFailureToSenior);
   const rescuing = observeBrackets(t, rescued);
   await interpreter.runExecution(rescued.options);
-  const intents = [...observed.intents, ...approving.intents, ...reapproving.intents, ...rescuing.intents];
+  // gg work done's report, on a Ticket an earlier Run left at needs-human, with --close.
+  const resolved = await golden.fixture(t);
+  resolved.executionRecord.state = 'needs-human';
+  resolved.options.deps.database!.save(resolved.executionRecord);
+  const resolving = observeBrackets(t, resolved);
+  await work.done({
+    ticket: golden.TICKET,
+    commonDir: resolved.commonDir,
+    cwd: resolved.mainRoot,
+    labelPrefix: 'gg',
+    deps: { ...resolved.options.deps, locks },
+    close: true,
+    log: () => {},
+  });
+  const intents = [
+    ...observed.intents,
+    ...approving.intents,
+    ...reapproving.intents,
+    ...rescuing.intents,
+    ...resolving.intents,
+  ];
 
   assert.deepEqual(
     intents.filter(({ bracket }) => bracket !== 'one'),

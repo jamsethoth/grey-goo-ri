@@ -40,6 +40,8 @@ export interface AdmissionContext {
   events: ReturnType<typeof events.eventLog>;
   runState: sideEffect.RunState;
   epic: number | null;
+  // gg work resume: the Ticket that re-enters its Execution at a new Visit of the Vertex before admission (#133).
+  resume?: { ticket: number; vertex: string };
 }
 
 type TicketResult = run.TicketResult;
@@ -340,7 +342,7 @@ async function decide(admitting: Admitting, decided: Decided): Promise<TicketRes
 // The Flow an Execution runs: the one its record pins, whatever `--flow` says (X2). Admission runs a record whose Flow
 // is no longer declared only to finish a decided report, which runs no Vertex, so it runs under an empty Flow of that
 // name, with no Vertex to enter, no files, commands or test paths, and the Config Hash the caller gives, the record's.
-function pinnedFlow(flows: ReadonlyMap<string, run.PinnedFlow>, name: string, hash: string): run.PinnedFlow {
+export function pinnedFlow(flows: ReadonlyMap<string, run.PinnedFlow>, name: string, hash: string): run.PinnedFlow {
   const pinned = flows.get(name);
   if (pinned) return pinned;
   const flow = { name, actionCap: 0, procedures: {}, ticket: { entry: '', routes: {}, vertices: {} } };

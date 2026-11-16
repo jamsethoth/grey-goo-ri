@@ -44,8 +44,12 @@ function repositoryPath(parsed: options.ParsedOptions) {
   return path;
 }
 
-async function runCommand(parsed: options.ParsedOptions, gh: github.Gh) {
-  const target = options.positiveInteger(parsed._[0], 'ticket');
+function runCommand(parsed: options.ParsedOptions, gh: github.Gh) {
+  return runTickets(parsed, gh, options.positiveInteger(parsed._[0], 'ticket'));
+}
+
+// gg run over `target`, and gg work resume, which re-enters its Ticket first (Q3 A).
+async function runTickets(parsed: options.ParsedOptions, gh: github.Gh, target: number, resume?: { vertex: string }) {
   const deps = realDeps(gh);
   const { mainRoot } = await deps.git.repoInfo(repositoryPath(parsed));
   const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.ts');
@@ -58,6 +62,7 @@ async function runCommand(parsed: options.ParsedOptions, gh: github.Gh) {
     protectedPaths: interpreter.protectedFiles(harnesses),
     cwd: mainRoot,
     log: (line) => process.stdout.write(`${line}\n`),
+    ...(resume && { resume }),
   });
   process.exitCode = run.runExitCode(results);
 }
@@ -83,31 +88,45 @@ async function doctorCommand(parsed: options.ParsedOptions, gh: github.Gh) {
   process.exitCode = exitCode;
 }
 
-// gg work's verbs: abandon forgets a Ticket's position and keeps its worktree (request 3.5); the rest wait for gg work.
+// gg work's verbs: abandon forgets a Ticket's position and keeps its worktree (request 3.5); done and resume let a
+// person resolve or hand back a stopped Ticket (L12); the rest wait for gg work.
 const WORK_VERBS = ['list', 'resume', 'done', 'abandon', 'reset', 'approve'];
 
 async function workCommand(parsed: options.ParsedOptions, gh: github.Gh) {
   const [verb, ticket] = parsed._;
   if (!WORK_VERBS.includes(verb as string))
     throw new options.UsageError(`work takes a verb, one of ${WORK_VERBS.join(', ')}`);
-  if (verb !== 'abandon') {
+  if (!['abandon', 'done', 'resume'].includes(verb as string)) {
     process.stderr.write(`gg work ${verb}: not implemented\n`);
     process.exitCode = 1;
     return;
   }
+  if (parsed.close !== undefined && verb !== 'done') throw new options.UsageError('--close is for work done only');
+  if (parsed.at !== undefined && verb !== 'resume') throw new options.UsageError('--at is for work resume only');
   const target = options.positiveInteger(ticket, 'ticket');
-  const { mainRoot, gitCommonDir } = await git.repoInfo(process.cwd());
+  if (verb === 'resume') {
+    if (typeof parsed.at !== 'string') throw new options.UsageError('work resume takes --at <vertex>');
+    return runTickets(parsed, gh, target, { vertex: parsed.at });
+  }
+  const { mainRoot, gitCommonDir } = await git.repoInfo(repositoryPath(parsed));
   const { repository, repositoryFile } = config.loadSources(mainRoot);
   const problems = settingsModule.labelPrefixProblems(repository.labelPrefix, repositoryFile);
   if (problems.length) throw new Error(problems.map((problem) => report.line('error', problem)).join('\n'));
-  const text = await work.abandon({
+  const where = {
     ticket: target,
     commonDir: gitCommonDir,
     cwd: mainRoot,
     labelPrefix: repository.labelPrefix as string,
-    gh,
-    locks: locks.createLocks(),
-  });
+  };
+  const text =
+    verb === 'done'
+      ? await work.done({
+          ...where,
+          deps: { ...realDeps(gh), locks: locks.createLocks() },
+          close: parsed.close === true,
+          log: (line) => process.stdout.write(`${line}\n`),
+        })
+      : await work.abandon({ ...where, gh, locks: locks.createLocks() });
   process.stdout.write(text);
 }
 
@@ -132,7 +151,13 @@ const COMMANDS: Record<string, Command> = {
     flags: { values: ['flow', 'repo'] },
     run: runCommand,
   },
-  work: { summary: 'abandon <ticket> forgets its Execution Record; list, resume, reset, approve', run: workCommand },
+  work: {
+    summary:
+      'abandon <ticket> forgets its Execution Record; done <ticket> [--close] resolves it by hand; resume <ticket> ' +
+      '--at <vertex> hands it back; list, reset, approve',
+    flags: { bools: ['close'], values: ['at', 'repo'] },
+    run: workCommand,
+  },
   trace: { summary: 'export a Trajectory' },
   stats: {
     summary: 'show usage and outcome statistics',
@@ -146,7 +171,7 @@ Commands:
 ${Object.entries(COMMANDS)
   .map(([name, { summary, run: runs }]) => `  ${name.padEnd(10)}${summary}${runs ? '' : ' (not implemented)'}\n`)
   .join('')}
-init, doctor and run act on the repository holding the current directory, or the one --repo <path> names.
+init, doctor, run and work act on the repository holding the current directory, or the one --repo <path> names.
 `;
 
 // gg with `argv` after its own path, over `gh`: the entry point passes the real gh, and the tests that spawn gg pass

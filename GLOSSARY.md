@@ -134,8 +134,8 @@ _Avoid_: release, ship
 
 **Action id**:
 An Action's name, unique within its Procedure, with no `:` and no whitespace, such as `green`, `test` or `commit`. A
-Terminal's reporting Actions have the ids `<report>-<effect>`: `<report>` is `end`, `hold`, `fault` or `abandon`, and
-`<effect>` is `comment`, `epic-comment` or `label`.
+Terminal's reporting Actions have the ids `<report>-<effect>`: `<report>` is `end`, `hold`, `fault`, `abandon` or `resolve` (`gg work
+done`'s), and `<effect>` is `comment`, `epic-comment`, `label` or `close`.
 _Avoid_: step id
 
 **Action identity**:
@@ -158,8 +158,8 @@ The identity of an Attempt, carried into the side effects it produces so recover
 _Avoid_: correlation id, tag
 
 **Effect**:
-A kind of write outside the Execution Record that an Action makes (commit, push, comment, label, pr-upsert,
-pr-ready, rescue, reset), with its payload, how it is made, and how it is found again at resume.
+A kind of write outside the Execution Record that an Action makes (commit, push, comment, label, close,
+pr-upsert, pr-ready, rescue, reset), with its payload, how it is made, and how it is found again at resume.
 _Avoid_: side-effect type, effect handler
 
 **Interrupted Attempt**:

@@ -8,11 +8,13 @@ import * as stateDatabase from './state-database.ts';
 
 export class EventCorruptError extends Error {
   declare id: number | string;
+  declare type: string;
   declare raw: string;
   constructor(id: number | string, type: string, reason: string, raw: string) {
     super(`corrupt event ${id} (${type}): ${reason}`);
     this.name = 'EventCorruptError';
     this.id = id;
+    this.type = type;
     this.raw = raw;
   }
 }
@@ -26,9 +28,9 @@ const safeNumber = (column: string) =>
   `9007199254740991 THEN CAST(${column} AS TEXT) ELSE ${column} END AS ${column}`;
 const SELECT = `SELECT ${safeNumber('id')}, type, run, execution, ${safeNumber('ticket')}, json FROM events`;
 // eventLog copies these fields to indexed columns, and a filtered read trusts the column, so each must equal its field.
-const COLUMNS = ['type', 'run', 'execution', 'ticket'];
+export const COLUMNS = ['type', 'run', 'execution', 'ticket'];
 // The fields gg's own readers use hold a string or null (#350); the declaration gives names, not value types.
-const READ_FIELDS = ['failureClass', 'execution', 'run'];
+const READ_FIELDS = ['failureClass', 'execution', 'run', 'head'];
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -117,6 +119,21 @@ export const executionEvents = (
     stateDatabase.open(commonDir).prepare(`${SELECT} WHERE execution = ? ORDER BY events.id`).all(execution),
     onRefused,
   );
+
+// Every row that may be `execution`'s: by its execution column, or naming it in its JSON, since a refused row's
+// columns may be what is corrupt.
+export const rowsNaming = (
+  commonDir: string,
+  execution: string,
+  onRefused: (err: EventCorruptError) => void,
+): events.Event[] =>
+  checkedRows(
+    stateDatabase
+      .open(commonDir)
+      .prepare(`${SELECT} WHERE execution = ? OR instr(json, ?) > 0 ORDER BY events.id`)
+      .all(execution, JSON.stringify(execution)),
+    onRefused,
+  ).filter((event) => ('execution' in event ? event.execution : null) === execution);
 
 // An Execution's Terminal has landed once a ticket_end of it passes the check. A refused one does not count, so the
 // next Run finishes the report again, and that report's run-stop read names the row in the log.

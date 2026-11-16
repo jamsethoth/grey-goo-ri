@@ -238,9 +238,13 @@ test('reporting Actions carry their <report>-<effect> ids', async (t) => {
     'fault-label',
     'hold-comment',
     'hold-label',
+    'resolve-close',
+    'resolve-comment',
+    'resolve-label',
   ]);
   const flags = { end: {}, hold: { held: true }, abandon: { abandoned: true }, fault: { error: 'broke' } };
-  for (const id of documented) {
+  // gg work done's resolve Actions are checked where it runs (test/unit/work.test.ts).
+  for (const id of documented.filter((name) => !name.startsWith('resolve-'))) {
     const [, report, effect] = /^(\w+)-(.+)$/.exec(id)!;
     const flagged = new Map(Object.entries(flags)).get(report!);
     assert.equal(terminalReport.terminalActionIdentity('needs-human', flagged)(effect!).action, id, id);

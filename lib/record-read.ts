@@ -38,6 +38,7 @@ const decidedBy = variant('one form of decidedBy', [
     read: object((field) => ({ label: text(field('label')), ...actionKeys(field) })),
   },
   { required: ACTION_KEYS, read: object(actionKeys) },
+  { required: ['human'], read: object((field) => ({ human: text(field('human')) })) },
 ]);
 
 const terminalReason = object((field) => ({
@@ -205,6 +206,7 @@ const payload = variant('a write-ahead payload', [
     })),
   },
   { required: ['ticket', 'add', 'remove'], read: object(label) },
+  { required: ['issue'], read: object((field) => ({ issue: count(field('issue')) })) },
   {
     required: ['ticket', 'add', 'remove', 'decision'],
     read: object((field) => ({
