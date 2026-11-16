@@ -106,6 +106,7 @@ for (const scenario of SCENARIOS) {
     const fake = fakeIntegrityModule.fakeIntegrity({ git: gitModule });
     const attempt = async (implementation: Integrity, act: () => void) => {
       const call = {
+        database: stateDatabase,
         record: pair.ownRecord,
         others: [pair.other],
         access: scenario.access,
@@ -116,10 +117,7 @@ for (const scenario of SCENARIOS) {
       // The baseline is saved in the call intent, so its fields are part of the shape.
       return {
         fields: Object.keys(baseline).sort(),
-        violations: shapeOf(
-          (await implementation.findViolations({ database: stateDatabase, ...call, baseline })).violations,
-          names,
-        ),
+        violations: shapeOf((await implementation.findViolations({ ...call, baseline })).violations, names),
       };
     };
     const real = await attempt(integrity.createIntegrity(gitModule), () => scenario.real(pair));
