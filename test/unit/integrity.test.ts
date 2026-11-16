@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import { fakeGit } from '../support/fake-git.ts';
 import * as integrityWorktrees from '../support/integrity-worktrees.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
@@ -39,16 +39,28 @@ test('markBusy and markIdle bump the generation and save', async (t) => {
 
 test("readActivity reads another ticket's record from disk", async (t) => {
   const { root, other, commonDir } = await twoRecords(t);
-  assert.deepEqual(await integrity.readActivity(commonDir, other), { busy: false, generation: 0 });
+  assert.deepEqual(await integrity.readActivity(commonDir, other, record), { busy: false, generation: 0 });
   await integrity.markBusy(await otherProcessRecord(commonDir));
-  assert.deepEqual(await integrity.readActivity(commonDir, other), { busy: true, generation: 1 });
-  assert.deepEqual(await integrity.readActivity(commonDir, join(root, 'nobody')), { busy: false, generation: 0 });
+  assert.deepEqual(await integrity.readActivity(commonDir, other, record), { busy: true, generation: 1 });
+  assert.deepEqual(await integrity.readActivity(commonDir, join(root, 'nobody'), record), {
+    busy: false,
+    generation: 0,
+  });
+});
+
+test("readActivity reads another ticket's Activity through the database it is given", async (t) => {
+  const { other, commonDir } = await twoRecords(t);
+  const busy = { ...otherProcessRecord(commonDir), activity: { busy: true, generation: 7 } };
+  const database = {
+    loadAll: ((_commonDir, kind) => (kind === 'ticket' ? [busy] : [])) as record.StateDatabase['loadAll'],
+  };
+  assert.deepEqual(await integrity.readActivity(commonDir, other, database), { busy: true, generation: 7 });
 });
 
 test('readActivity matches a differently cased path on Windows', { skip: process.platform !== 'win32' }, async (t) => {
   const { other, commonDir } = await twoRecords(t);
   await integrity.markBusy(await otherProcessRecord(commonDir));
-  assert.deepEqual(await integrity.readActivity(commonDir, other.toUpperCase()), { busy: true, generation: 1 });
+  assert.deepEqual(await integrity.readActivity(commonDir, other.toUpperCase(), record), { busy: true, generation: 1 });
 });
 
 test('sameFile never takes an absent file for the same', () => {
@@ -72,7 +84,8 @@ async function protectedRootFile(t: TestContext, name: string) {
   const real = integrity.createIntegrity(fake.git);
   const executionRecord = integrityWorktrees.worktreeRecord(commonDir, 1, mainRoot);
   const protectedPaths = [name];
-  const takeBaseline = () => real.takeBaseline({ record: executionRecord, others: [], protectedPaths });
+  const takeBaseline = () =>
+    real.takeBaseline({ database: stateDatabase, record: executionRecord, others: [], protectedPaths });
   const rollBack = (baseline: integrity.IntegrityBaseline) =>
     real.restoreUntracked(mainRoot, integrity.rollbackSet(baseline, protectedPaths, {}));
   return { mainRoot, takeBaseline, rollBack };
@@ -122,6 +135,7 @@ test('a workflow file change is an integrity violation', async (t) => {
   const real = integrity.createIntegrity(fake.git);
   const executionRecord = integrityWorktrees.worktreeRecord(commonDir, 1, mainRoot);
   const baseline = await real.takeBaseline({
+    database: stateDatabase,
     record: executionRecord,
     others: [],
     protectedPaths: interpreter.protectedFiles({}),
@@ -131,6 +145,7 @@ test('a workflow file change is an integrity violation', async (t) => {
   writeFileSync(join(mainRoot, '.github', 'actions', 'setup', 'action.yml'), 'runs: {}\n');
 
   const { violations } = await real.findViolations({
+    database: stateDatabase,
     baseline,
     record: executionRecord,
     others: [],

@@ -15,7 +15,7 @@ import * as model from '../../lib/model.ts';
 import type * as runModule from '../../lib/run.ts';
 import type * as runContext from '../../lib/run-context.ts';
 import * as record from '../../lib/record.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as validate from '../../lib/validate/index.ts';
 import * as addSuite from './add-suite.ts';
 import * as caseDatabase from './case-database.ts';

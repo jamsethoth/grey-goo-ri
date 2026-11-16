@@ -13,7 +13,7 @@ import * as labels from './labels.ts';
 import type * as model from './model.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as rules from './rules.ts';
-import * as stateDatabase from './state-database.ts';
+import * as stateDatabase from './state-database/index.ts';
 import * as report from './validate/report.ts';
 
 type JsonValue = jsonValue.JsonValue;

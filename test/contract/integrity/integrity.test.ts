@@ -13,6 +13,7 @@ import * as exampleLayer from '../../support/example-layer.ts';
 import * as fakeGitModule from '../../support/fake-git.ts';
 import * as fakeIntegrityModule from '../../support/fake-integrity.ts';
 import * as gitShell from '../../support/git-shell.ts';
+import * as stateDatabase from '../../../lib/state-database/index.ts';
 import * as worktrees from '../../support/integrity-worktrees.ts';
 
 type Fake = ReturnType<typeof fakeIntegrityModule.fakeIntegrity>;
@@ -105,6 +106,7 @@ for (const scenario of SCENARIOS) {
     const fake = fakeIntegrityModule.fakeIntegrity({ git: gitModule });
     const attempt = async (implementation: Integrity, act: () => void) => {
       const call = {
+        database: stateDatabase,
         record: pair.ownRecord,
         others: [pair.other],
         access: scenario.access,
@@ -138,6 +140,7 @@ test('the fake integrity records the untracked tests the real one records', asyn
   writeFileSync(join(own, 'test', 'cache', 'out.json'), '{}\n');
   writeFileSync(join(own, 'notes.txt'), 'notes\n');
   const beginArguments = {
+    database: stateDatabase,
     record: ownRecord,
     others: [],
     access: 'workspace-write',

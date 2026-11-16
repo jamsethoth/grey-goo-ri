@@ -10,7 +10,6 @@ import type * as procedures from './procedures.ts';
 import type * as record from './record.ts';
 import * as referencePaths from './reference-paths.ts';
 import type { RunContext } from './run-context.ts';
-import * as stateDatabase from './state-database.ts';
 import type * as visit from './visit.ts';
 import * as visitScope from './visit-scope.ts';
 
@@ -47,7 +46,8 @@ const commandLine = (runContext: RunContext, action: procedures.Action) =>
 // stands in for the run, and its output says which run (L8, L13); a failure is never reused.
 async function commandCheck(runContext: RunContext, { action, tree }: Checking): Promise<Checked> {
   const line = commandLine(runContext, action);
-  const reused = action.reuse === 'tree' ? stateDatabase.reusablePass(runContext.record.commonDir, tree!, line) : null;
+  const reused =
+    action.reuse === 'tree' ? runContext.database.reusablePass(runContext.record.commonDir, tree!, line) : null;
   if (reused) {
     const output = `Reused the passing run of ${reused.marker} on this tree.\n${reused.output}`;
     return {
@@ -198,7 +198,7 @@ function keepResult(runContext: RunContext, { actionIdentity, action, state }: v
   };
   // A pass whose command may still be writing is not a pass of the tree it read.
   if (action.reuse === 'tree' && checked.ran && checked.cleanup?.confirmed !== false) {
-    stateDatabase.saveCheckResult(executionRecord.commonDir, {
+    runContext.database.saveCheckResult(executionRecord.commonDir, {
       tree: signal.tree!,
       command: checked.evidence!.command,
       state: signal.state,

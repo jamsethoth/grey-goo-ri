@@ -1,10 +1,9 @@
 // The event log read back: each row of the events table parsed and checked against the declaration its Event was
 // written from (lib/events.ts), so a corrupt row, or one another gg version wrote, is refused by name, never read as an
 // Event. RecordCorruptError is the precedent for a record's row.
-import type { SQLOutputValue } from 'node:sqlite';
 import * as effectErrors from './effect-errors.ts';
 import * as events from './events.ts';
-import * as stateDatabase from './state-database.ts';
+import type * as eventsTable from './state-database/events.ts';
 
 export class EventCorruptError extends Error {
   declare id: number | string;
@@ -19,14 +18,8 @@ export class EventCorruptError extends Error {
   }
 }
 
-type EventRow = Record<string, SQLOutputValue>;
+type EventRow = eventsTable.EventRow;
 
-// node:sqlite throws for the whole read on an integer beyond 2^53, before any check, so a number outside the safe range
-// in id or ticket is read as text: the check then refuses its row by name.
-const safeNumber = (column: string) =>
-  `CASE WHEN typeof(${column}) IN ('integer', 'real') AND ${column} NOT BETWEEN -9007199254740991 AND ` +
-  `9007199254740991 THEN CAST(${column} AS TEXT) ELSE ${column} END AS ${column}`;
-const SELECT = `SELECT ${safeNumber('id')}, type, run, execution, ${safeNumber('ticket')}, json FROM events`;
 // eventLog copies these fields to indexed columns, and a filtered read trusts the column, so each must equal its field.
 export const COLUMNS = ['type', 'run', 'execution', 'ticket'];
 // The fields gg's own readers use hold a string or null (#350); the declaration gives names, not value types.
@@ -93,8 +86,9 @@ function checked(row: EventRow): events.Event {
   }
 }
 
-// The one read of the events table: each row checked, a refused one thrown, or handed to `onRefused` and left out.
-function checkedRows(rows: EventRow[], onRefused?: (err: EventCorruptError) => void): events.Event[] {
+// The one read of the events table (lib/state-database/events.ts): each row checked, a refused one thrown, or handed to
+// `onRefused` and left out.
+export function checkedRows(rows: EventRow[], onRefused?: (err: EventCorruptError) => void): events.Event[] {
   return rows.flatMap((row) => {
     try {
       return [checked(row)];
@@ -106,42 +100,14 @@ function checkedRows(rows: EventRow[], onRefused?: (err: EventCorruptError) => v
   });
 }
 
-export const readEvents = (commonDir: string): events.Event[] =>
-  checkedRows(stateDatabase.open(commonDir).prepare(`${SELECT} ORDER BY events.id`).all());
-
-// One Execution's Events, in the order they were appended.
-export const executionEvents = (
-  commonDir: string,
-  execution: string,
-  onRefused?: (err: EventCorruptError) => void,
-): events.Event[] =>
-  checkedRows(
-    stateDatabase.open(commonDir).prepare(`${SELECT} WHERE execution = ? ORDER BY events.id`).all(execution),
-    onRefused,
-  );
-
-// Every row that may be `execution`'s: by its execution column, or naming it in its JSON, since a refused row's
-// columns may be what is corrupt.
-export const rowsNaming = (
-  commonDir: string,
+// `execution`'s Events among rows that may be its own: a row whose columns are corrupt may still name it in its JSON.
+export const ofExecution = (
+  rows: EventRow[],
   execution: string,
   onRefused: (err: EventCorruptError) => void,
 ): events.Event[] =>
-  checkedRows(
-    stateDatabase
-      .open(commonDir)
-      .prepare(`${SELECT} WHERE execution = ? OR instr(json, ?) > 0 ORDER BY events.id`)
-      .all(execution, JSON.stringify(execution)),
-    onRefused,
-  ).filter((event) => ('execution' in event ? event.execution : null) === execution);
+  checkedRows(rows, onRefused).filter((event) => ('execution' in event ? event.execution : null) === execution);
 
-// An Execution's Terminal has landed once a ticket_end of it passes the check. A refused one does not count, so the
-// next Run finishes the report again, and that report's run-stop read names the row in the log.
-export const hasTicketEnd = (commonDir: string, execution: string): boolean =>
-  checkedRows(
-    stateDatabase
-      .open(commonDir)
-      .prepare(`${SELECT} WHERE execution = ? AND type = 'ticket_end' ORDER BY events.id`)
-      .all(execution),
-    () => {},
-  ).length > 0;
+// The real State Database's Event reads, for callers that take no seam; a Run's path reaches them through the database
+// it is handed (#367).
+export { executionEvents, hasTicketEnd, readEvents, rowsNaming } from './state-database/index.ts';

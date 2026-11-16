@@ -1,7 +1,7 @@
 // Spawned by the events tests: another gg process appending `count` run_start Events for run `run`.
 // The test runner also loads this file with no arguments, where it does nothing.
 import * as events from '../../lib/events.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 
 const [commonDir, run, count] = process.argv.slice(2);
 if (commonDir) {

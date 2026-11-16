@@ -8,7 +8,7 @@ import * as interpreter from '../../lib/interpreter.ts';
 import type * as model from '../../lib/model.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.ts';
 import * as goldenRun from '../support/golden-run.ts';

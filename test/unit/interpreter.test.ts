@@ -13,6 +13,7 @@ import * as publicText from '../../lib/public-text.ts';
 import * as record from '../../lib/record.ts';
 import type * as runContext from '../../lib/run-context.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as addSuite from '../support/add-suite.ts';
 import * as approvalFlow from '../support/approval-flow.ts';
 import * as caseDatabase from '../support/case-database.ts';
@@ -762,7 +763,7 @@ test('a Run resumes, restarts, finishes the report of, or leaves each Execution 
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-resumption-');
   const found = seededRecords.SHAPES.map((shape, index) => ({
     shape: shape.name,
-    resumption: interpreter.resumption(seededRecords.seed(commonDir, index + 1, 'default', shape)),
+    resumption: interpreter.resumption(seededRecords.seed(commonDir, index + 1, 'default', shape), stateDatabase),
   }));
   assert.deepEqual(
     found,

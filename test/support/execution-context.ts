@@ -10,6 +10,7 @@ import * as events from '../../lib/events.ts';
 import * as github from '../../lib/github.ts';
 import * as marker from '../../lib/marker.ts';
 import * as record from '../../lib/record.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as remoteEffects from '../../lib/remote-effects.ts';
 import * as publicText from '../../lib/public-text.ts';
 import * as runContextModule from '../../lib/run-context.ts';
@@ -58,7 +59,7 @@ export async function executionContext(t: TestContext) {
       // No case here reaches a git verb: the effects take git from their caller, and no Terminal here is ready-for-qa.
       git: {} as runContextModule.RunGit,
       exec: {} as runContextModule.Deps['exec'],
-      database: record.createStateDatabase(),
+      database: stateDatabase.createStateDatabase(),
       clock,
     },
     pinned: pinnedValue.pinnedOf(NOTHING_CONFIGURED, golden.resolve(golden.goldenConfig()), executionRecord.configHash),

@@ -4,9 +4,8 @@ import type * as sideEffect from './effects/side-effect.ts';
 import type * as events from './events.ts';
 import * as jsonValue from './json-value.ts';
 import type * as marker from './marker.ts';
-import * as stateDatabase from './state-database.ts';
 import type * as visit from './visit.ts';
-import * as writeAhead from './write-ahead.ts';
+import type * as writeAhead from './write-ahead.ts';
 import * as recordJson from './record-json.ts';
 
 export { RECORD_SCHEMA_VERSION, RecordCorruptError, fromJson, toJson } from './record-json.ts';
@@ -261,135 +260,22 @@ function assertDeclared(kind: RecordKind, record: ExecutionRecord | EpicRecord):
 }
 
 type AnyRecord = ExecutionRecord | EpicRecord;
-// Inserts the Event that commits with a record's row; see saveRecord.
-type WriteEvent = (() => void) | null;
 
-// With `writeEvent`, the row and the Event it inserts on the same connection commit together or not at all. It must be
-// synchronous: nothing awaited may run inside the transaction. Any failed save is a RecordSaveError, after which the
-// caller saves nothing more of the record.
-function saveRecord(record: AnyRecord, writeEvent: WriteEvent, beforeSave: (record: AnyRecord) => void): void {
-  const kind: RecordKind = 'execution' in record ? 'ticket' : 'epic';
-  const connection = stateDatabase.open(record.commonDir);
-  const upsert = () => {
-    assertDeclared(kind, record);
-    beforeSave(record);
-    const row =
-      'execution' in record
-        ? jsonValue.text(recordJson.toJson(record), "the Execution Record's row", 2)
-        : jsonValue.text(recordJson.epicJson(record), "the Epic Record's row", 2);
-    connection
-      .prepare(
-        'INSERT INTO records (kind, n, json) VALUES (?, ?, ?) ON CONFLICT(kind, n) DO UPDATE SET json = excluded.json',
-      )
-      .run(kind, kind === 'ticket' ? (record as ExecutionRecord).ticket : record.epic, `${row}\n`);
-  };
-  if (!writeEvent) {
-    try {
-      return void upsert();
-    } catch (err) {
-      throw new RecordSaveError(err);
-    }
-  }
-  try {
-    connection.exec('BEGIN IMMEDIATE');
-    upsert();
-    writeEvent();
-    connection.exec('COMMIT');
-  } catch (err) {
-    if (connection.isTransaction) connection.exec('ROLLBACK');
-    throw new RecordSaveError(err);
-  }
+// The row a record saves as (lib/state-database/): checked against its declared fields, seen by `beforeSave`, which may
+// throw to fail the write, then serialized.
+export function rowOf(saved: AnyRecord, beforeSave: (record: AnyRecord) => void): recordJson.RecordRow {
+  const kind: RecordKind = 'execution' in saved ? 'ticket' : 'epic';
+  assertDeclared(kind, saved);
+  beforeSave(saved);
+  const row =
+    'execution' in saved
+      ? jsonValue.text(recordJson.toJson(saved), "the Execution Record's row", 2)
+      : jsonValue.text(recordJson.epicJson(saved), "the Epic Record's row", 2);
+  // eslint-disable-next-line id-length -- n is the records table's column
+  return { kind, n: 'execution' in saved ? saved.ticket : saved.epic, json: `${row}\n` };
 }
 
-// Each kind's row reads back as its own record: the row's kind is the one asked for, and parseRow reads it by kind.
-export function load(commonDir: string, kind: 'ticket', recordNumber: number): ExecutionRecord | null;
-export function load(commonDir: string, kind: 'epic', recordNumber: number): EpicRecord | null;
-export function load(commonDir: string, kind: RecordKind, recordNumber: number): AnyRecord | null {
-  const row = stateDatabase
-    .open(commonDir)
-    .prepare('SELECT kind, n, json FROM records WHERE kind = ? AND n = ?')
-    .get(kind, recordNumber) as recordJson.RecordRow | undefined;
-  return row ? recordJson.parseRow(commonDir, row) : null;
-}
-
-// A record's row deleted, as gg work abandon forgets a Ticket's position; its Events stay. Says whether one was.
-export function removeRecord(commonDir: string, kind: RecordKind, recordNumber: number): boolean {
-  const deleted = stateDatabase
-    .open(commonDir)
-    .prepare('DELETE FROM records WHERE kind = ? AND n = ?')
-    .run(kind, recordNumber);
-  return Number(deleted.changes) > 0;
-}
-
-// One corrupt record must not hide every other worktree's activity: it is reported, not fatal.
-interface LoadAllOptions {
-  onCorrupt?: (err: recordJson.RecordCorruptError) => void;
-}
-export function loadAll(commonDir: string, kind: 'ticket', options?: LoadAllOptions): ExecutionRecord[];
-export function loadAll(commonDir: string, kind: 'epic', options?: LoadAllOptions): EpicRecord[];
-export function loadAll(
-  commonDir: string,
-  kind: RecordKind,
-  { onCorrupt = () => {} }: LoadAllOptions = {},
-): AnyRecord[] {
-  const rows = stateDatabase
-    .open(commonDir)
-    .prepare('SELECT kind, n, json FROM records WHERE kind = ? ORDER BY n')
-    .all(kind) as unknown as recordJson.RecordRow[];
-  return rows.flatMap((row) => {
-    try {
-      return [recordJson.parseRow(commonDir, row)];
-    } catch (err) {
-      if (!(err instanceof recordJson.RecordCorruptError)) throw err;
-      onCorrupt(err);
-      return [];
-    }
-  });
-}
-
-// The State Database's writes. `beforeSave` sees each record about to be written, and `beforeAppend` each Event about
-// to be inserted (events.eventLog), and either throws to fail that write, as a disk error would. The entry point passes
-// neither; a test passes them to see or fail chosen writes.
-export function createStateDatabase({
-  beforeSave = () => {},
-  beforeAppend = () => {},
-}: {
-  beforeSave?: (record: AnyRecord) => void;
-  beforeAppend?: (event: events.Event) => void;
-} = {}) {
-  const save = (record: AnyRecord, writeEvent: WriteEvent = null) => saveRecord(record, writeEvent, beforeSave);
-
-  function append(record: ExecutionRecord, entry: writeAhead.WriteAheadEntry, writeEvent?: WriteEvent) {
-    record.writeAheadLog.push(entry);
-    return save(record, writeEvent);
-  }
-
-  const intent = (record: ExecutionRecord, actionMarker: string, effect: string, payload: writeAhead.Payload) =>
-    append(record, writeAhead.entryOf('intent', actionMarker, effect, { payload }));
-
-  const evidence = (record: ExecutionRecord, actionMarker: string, evidence: writeAhead.WriteAheadEntry['evidence']) =>
-    append(
-      record,
-      writeAhead.entryOf('evidence', actionMarker, writeAhead.effectOf(record, actionMarker), { evidence }),
-    );
-
-  // `evidence`, when given, is saved in the same write as the completion, and `event` commits with both.
-  function complete(
-    record: ExecutionRecord,
-    actionMarker: string,
-    { evidence: found, event = null }: { evidence?: writeAhead.WriteAheadEntry['evidence']; event?: WriteEvent } = {},
-  ) {
-    const effect = writeAhead.effectOf(record, actionMarker);
-    if (found !== undefined)
-      record.writeAheadLog.push(writeAhead.entryOf('evidence', actionMarker, effect, { evidence: found }));
-    return append(record, writeAhead.entryOf('complete', actionMarker, effect), event);
-  }
-
-  return { save, intent, evidence, complete, beforeAppend };
-}
-
-// The State Database the entry point builds and passes down as `database` (ADR 0019).
-export type StateDatabase = ReturnType<typeof createStateDatabase>;
-
-// The real State Database, for callers that take no seam: this module is itself one, so it can stand for a `database`.
-export const { save, intent, evidence, complete, beforeAppend } = createStateDatabase();
+// The real State Database's record reads and writes, for callers that take no seam; a Run's path reaches them through
+// the database it is handed (#367).
+export { complete, evidence, intent, load, loadAll, removeRecord, save } from './state-database/index.ts';
+export type { StateDatabase } from './state-database/index.ts';

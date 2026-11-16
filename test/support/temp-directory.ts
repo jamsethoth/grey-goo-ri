@@ -2,7 +2,7 @@ import type { TestContext } from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 
 // A temp directory removed when the case ends. The State Database at `commonDirOf(directory)` is closed first, since
 // Windows will not remove an open database file. GG_KEEP_TEMP keeps the directory and names it, for debugging a case.

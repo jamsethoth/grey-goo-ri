@@ -10,7 +10,7 @@ import * as events from '../../lib/events.ts';
 import * as flow from '../../lib/flow.ts';
 import * as jsonValue from '../../lib/json-value.ts';
 import * as record from '../../lib/record.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
 // What a save must not lose: the value read back from its JSON is the value.

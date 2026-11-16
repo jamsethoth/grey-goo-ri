@@ -3,7 +3,8 @@ import { lstat, readFile, readlink, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import * as locksModule from './locks.ts';
 import * as paths from './paths.ts';
-import * as record from './record.ts';
+import type * as record from './record.ts';
+import * as stateDatabase from './state-database/index.ts';
 
 // A worktree's checked surfaces: HEAD, the index's tree, and the flag-aware tree of everything in it (git.fingerprint).
 export interface WorktreeSnapshot {
@@ -89,7 +90,7 @@ export async function snapshot(
 async function flip(
   executionRecord: record.ExecutionRecord,
   busy: boolean,
-  database: Pick<record.StateDatabase, 'save'> = record,
+  database: Pick<record.StateDatabase, 'save'> = stateDatabase,
 ): Promise<void> {
   executionRecord.activity = { busy, generation: executionRecord.activity.generation + 1 };
   database.save(executionRecord);
@@ -114,11 +115,15 @@ export const markIdle = async (
   if (!executionRecord.visitState?.unconfirmedCleanup) await flip(executionRecord, false, database);
 };
 
+// Other Tickets' Activity is read through the database the caller is handed, as its writes go (#367).
+type Activities = Pick<record.StateDatabase, 'loadAll'>;
+
 export async function readActivity(
   commonDir: string,
   worktreePath: string,
+  database: Activities,
 ): Promise<record.ExecutionRecord['activity']> {
-  const owner = record
+  const owner = database
     .loadAll(commonDir, 'ticket')
     .find((executionRecord) => paths.pathKey(executionRecord.worktree) === paths.pathKey(worktreePath));
   return owner?.activity ?? { busy: false, generation: 0 };
@@ -128,10 +133,9 @@ export async function readActivity(
 async function idleSnapshot(
   commonDir: string,
   worktree: string,
-  git: IntegrityGit,
-  locks?: RepoLocks,
+  { git, locks, database }: { git: IntegrityGit; locks?: RepoLocks; database: Activities },
 ): Promise<IdleSnapshot | null> {
-  const first = await readActivity(commonDir, worktree);
+  const first = await readActivity(commonDir, worktree, database);
   if (first.busy) return null;
   const stable = (second: record.ExecutionRecord['activity']) => !second.busy && second.generation === first.generation;
   let worktreeSnapshot;
@@ -140,10 +144,10 @@ async function idleSnapshot(
   } catch (err) {
     // A worktree that turned busy mid-snapshot may be in a state git cannot fingerprint; only a stable idle failure is
     // ours.
-    if (!stable(await readActivity(commonDir, worktree))) return null;
+    if (!stable(await readActivity(commonDir, worktree, database))) return null;
     throw err;
   }
-  return stable(await readActivity(commonDir, worktree))
+  return stable(await readActivity(commonDir, worktree, database))
     ? { generation: first.generation, snapshot: worktreeSnapshot }
     : null;
 }
@@ -218,6 +222,7 @@ export async function takeBaseline({
   testPaths,
   git,
   locks,
+  database,
 }: {
   record: AttemptWorktree;
   others: string[];
@@ -225,11 +230,12 @@ export async function takeBaseline({
   testPaths?: Within;
   git: IntegrityGit;
   locks?: RepoLocks;
+  database: Activities;
 }): Promise<IntegrityBaseline> {
   const own = await snapshot(executionRecord.worktree, git, locks);
   const idle: Record<string, IdleSnapshot> = {};
   for (const worktree of others) {
-    const otherSnapshot = await idleSnapshot(executionRecord.commonDir, worktree, git, locks);
+    const otherSnapshot = await idleSnapshot(executionRecord.commonDir, worktree, { git, locks, database });
     if (otherSnapshot) idle[worktree] = otherSnapshot;
   }
   return {
@@ -344,6 +350,7 @@ export async function findViolations({
   protectedPaths,
   git,
   locks,
+  database,
 }: {
   baseline: IntegrityBaseline;
   record: AttemptWorktree;
@@ -352,6 +359,7 @@ export async function findViolations({
   protectedPaths: string[];
   git: IntegrityGit;
   locks?: RepoLocks;
+  database: Activities;
 }): Promise<{ violations: IntegrityViolation[] }> {
   const worktree = executionRecord.worktree;
   const own = await snapshot(worktree, git, locks);
@@ -374,7 +382,7 @@ export async function findViolations({
   for (const other of others) {
     const start = baseline.idle[other];
     if (!start) continue;
-    const otherNow = await idleSnapshot(executionRecord.commonDir, other, git, locks);
+    const otherNow = await idleSnapshot(executionRecord.commonDir, other, { git, locks, database });
     if (!otherNow || otherNow.generation !== start.generation) continue;
     violations.push(...diffSurfaces(other, start.snapshot, otherNow.snapshot, ['head', 'index', 'tree']));
   }

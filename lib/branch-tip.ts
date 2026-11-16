@@ -8,12 +8,15 @@ import type * as record from './record.ts';
 // that came later or in the same millisecond (Q2 A): a resume stamps a commit it recovers just before it saves its
 // own Event. Reconciliation holds a branch elsewhere as changed by hand, and publishing pushes and marks
 // ready this commit, never HEAD. Null before either.
-export function provenTip(executionRecord: record.ExecutionRecord): { sha: string; what: string } | null {
+export function provenTip(
+  executionRecord: record.ExecutionRecord,
+  database: Pick<record.StateDatabase, 'rowsNaming'>,
+): { sha: string; what: string } | null {
   const last = commit.lastCommit(executionRecord);
   // A refused resume stops the read: without its baseline, a record with no commit of gg's would check no tip at all.
   // Its columns may be the corrupt part, so a row naming this Execution or a resume anywhere counts; any other refused
   // row is passed over.
-  const resumed = eventRead
+  const resumed = database
     .rowsNaming(executionRecord.commonDir, executionRecord.execution, (err) => {
       if (err.type === 'ticket_resumed' || err.raw.includes('"ticket_resumed"')) throw err;
     })

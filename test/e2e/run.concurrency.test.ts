@@ -11,7 +11,7 @@ import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
 import type * as runContext from '../../lib/run-context.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as epicRun from '../support/epic-run.ts';
 import * as executionContext from '../support/execution-context.ts';
 import * as gitShell from '../support/git-shell.ts';

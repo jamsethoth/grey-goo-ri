@@ -14,7 +14,7 @@ import * as marker from '../../lib/marker.ts';
 import * as model from '../../lib/model.ts';
 import * as record from '../../lib/record.ts';
 import type * as runContext from '../../lib/run-context.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as validate from '../../lib/validate/index.ts';
 import * as addSuiteModule from './add-suite.ts';
 import * as caseDatabase from './case-database.ts';

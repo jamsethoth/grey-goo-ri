@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.ts';
 import { actionMarker, attemptMarker, attemptsOf, loadTicket, writeAheadSteps } from '../support/execution-reads.ts';
@@ -378,7 +378,11 @@ for (const [kind, stopOptions, state] of stops) {
     assert.equal(err?.name, 'RecordSaveError', String(err));
     const mid = loadTicket(fixture);
     assert.equal(mid.state, 'active', 'no finished state without its ticket_end');
-    assert.equal(interpreter.resumption(mid), 'finish-report', 'the decided report waits for the next Run');
+    assert.equal(
+      interpreter.resumption(mid, stateDatabase),
+      'finish-report',
+      'the decided report waits for the next Run',
+    );
 
     restore();
     await interpreter.runExecution({ ...fixture.options, record: mid });
@@ -415,7 +419,7 @@ for (const [name, json] of REFUSED_TICKET_ENDS) {
         "INSERT INTO events (ts, type, run, execution, ticket, json) VALUES ('t', 'ticket_end', 'run-1', ?, ?, ?)",
       )
       .run(mid.execution, golden.TICKET, json);
-    assert.equal(interpreter.resumption(mid), 'finish-report', 'a refused row is no ticket_end');
+    assert.equal(interpreter.resumption(mid, stateDatabase), 'finish-report', 'a refused row is no ticket_end');
 
     await interpreter.runExecution({ ...fixture.options, record: mid });
     assert.equal(loadTicket(fixture).state, 'fault');

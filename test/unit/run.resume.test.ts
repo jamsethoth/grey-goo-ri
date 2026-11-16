@@ -7,7 +7,7 @@ import * as marker from '../../lib/marker.ts';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as work from '../../lib/work.ts';
 import * as executionReads from '../support/execution-reads.ts';
 import * as golden from '../support/golden.ts';

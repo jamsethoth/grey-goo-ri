@@ -122,9 +122,9 @@ async function openAdmission(issue: github.Issue, context: AdmissionContext) {
     // The check above says which Event this is, which tsc cannot read from a type parameter.
     context.events('label_failed', { run: runId, ...(data as events.EventInput<'label_failed'>) });
   };
-  const loaded = reconcile.loadExecutionRecord(repo.gitCommonDir, ticket);
+  const loaded = reconcile.loadExecutionRecord(repo.gitCommonDir, ticket, deps.database);
   const { corrupt } = loaded;
-  const resumption = loaded.executionRecord && interpreter.resumption(loaded.executionRecord);
+  const resumption = loaded.executionRecord && interpreter.resumption(loaded.executionRecord, deps.database);
   const executionRecord = resumption === 'restart' ? null : loaded.executionRecord;
   const worktreeRoot = settings.worktreeRoot.replace(/^~(?=$|[\\/])/, homedir());
   admitting.executionRecord = executionRecord;

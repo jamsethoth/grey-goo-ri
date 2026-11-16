@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as effects from '../../lib/effects/index.ts';
 import * as recordJson from '../../lib/record-json.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as typeShape from '../support/type-shape.ts';
 
 // parseRow checks the whole row (#357): each case below walks every node of a full row, so a field the read leaves

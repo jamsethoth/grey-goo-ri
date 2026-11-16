@@ -8,7 +8,7 @@ import { join, sep } from 'node:path';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as record from '../../lib/record.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as recordRow from '../support/record-row.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
@@ -367,7 +367,7 @@ test('a record transition and its event commit together', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   // Every Event insert fails while `appends.failing` is set, as a disk error would.
   const appends = { failing: true };
-  const database = record.createStateDatabase({
+  const database = stateDatabase.createStateDatabase({
     beforeAppend: () => {
       if (appends.failing) throw new Error('disk I/O error');
     },

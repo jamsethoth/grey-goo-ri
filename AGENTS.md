@@ -82,10 +82,12 @@ leverage and a change lands in one place (locality).
   Harness's output); `unknown` there fails tsc at the save (#342).
 - Seams: the deps (`gh`, `git`, `exec`, `locks`, `database`, `clock`, and `integrity` built from git and locks) are
   built once in `bin/gg.ts` and passed down as one `deps` key typed `Deps` (ADR 0019): `run.runTarget` takes it and
-  passes it on to `interpreter.runExecution`. New code takes what it needs from its caller as a parameter; ESLint fails
-  a module-level `let` or an exported `set*` function. A new key in `Deps` needs a second adapter beside the real one:
-  the double `docs/testing.md` (Test doubles) lists for it, held to the real module by a contract suite where the
-  boundary allows one.
+  passes it on to `interpreter.runExecution`. `database` is every read and write a Run makes to the State Database
+  (#367): the record rows with their write-ahead log, the Event append and reads, Pinned Configurations, Check results,
+  and the other Tickets' Activity the Integrity Assertions read, which their caller passes them. New code takes what it
+  needs from its caller as a parameter; ESLint fails a module-level `let` or an exported `set*` function. A new key in
+  `Deps` needs a second adapter beside the real one: the double `docs/testing.md` (Test doubles) lists for it, held to
+  the real module by a contract suite where the boundary allows one.
 
 ## Layout
 
@@ -132,21 +134,21 @@ leverage and a change lands in one place (locality).
 | `lib/rule-domain.ts` | a Rule Table's finite domain for that analysis: each field's partition, the row masks per value, and the passes over every point |
 | `lib/checks.ts` | Red Check, Green Check, Test Immutability, Findings Hash, the `response` Check's conditions, Check Evidence |
 | `lib/integrity.ts` | Integrity Assertions (worktree snapshots, busy flag, generation, Protected Files) and their types: the snapshot, the Attempt baseline, Integrity Violations |
-| `lib/record.ts` | Execution Record and Epic Record: their types, creation, persistence in the State Database and its writes (`StateDatabase`) |
+| `lib/record.ts` | Execution Record and Epic Record: their types, creation, and the row each saves as, checked against its declared fields (`rowOf`) |
 | `lib/record-json.ts` | a record's row: the Execution Record's JSON type (`ExecutionRecordJson`), the Epic Record's (`EpicRecordJson`), and the Execution Record's only Map conversion (`toJson`, `fromJson`), the parse that tells a corrupt row (`RecordCorruptError`); `lib/record.ts` re-exports what callers use |
 | `lib/record-read.ts` | a record's row read whole, field by field, into the types `lib/record-json.ts` saves: a wrong type, a key left out or undeclared, or a string outside its closed set is a `RowFieldError` naming its path |
 | `lib/record-read-visit.ts` | what an Execution Record's row nests for its Visits, read for `lib/record-read.ts`: the Configuration Snapshot, the Visit's progress and Resolution, each Action's outputs |
 | `lib/record-read-node.ts` | the node readers the two record read modules build from: a typed value of one node, or a `RowFieldError` naming its path |
 | `lib/json-value.ts` | the JSON gg saves: its type (`JsonValue`), the typed gate (`JsonChecked`) and `text`, the one function every save path serializes through: it writes a copy checked at run time (`checked`), which refuses what JSON cannot hold, by its path, and `checkedObject`, that copy of an object typed as a JSON object; `fullySeen`, whether a check of an object's own keys saw all a reader of it reads, which `briefs.assertStrict` asks of each object in a schema |
 | `lib/json-parse.d.ts` | the overload that makes `JSON.parse` give `unknown` in gg, so tsc refuses its result wherever no check has narrowed it |
-| `lib/state-database.ts` | the State Database file: its creation, which only `gg init` makes (ADR 0023), one connection per repository that refuses a missing or unknown database, Pinned Configurations and reusable Check results |
+| `lib/state-database/` | the State Database and all its SQL: `index.ts`, the file, its creation, which only `gg init` makes (ADR 0023), one connection per repository that refuses a missing or unknown database, and the `database` a Run is handed (`createStateDatabase`, `StateDatabase`), every read and write a Run makes to it, whose real instance the module itself is; one module per table group, each taking a connection: `records.ts`, `events.ts`, `pinned-configurations.ts` and `check-results.ts` |
 | `lib/write-ahead.ts` | the write-ahead log's entries, what an intent and its evidence hold (`Payload`, `Evidence`), and what reads them: open intents, evidence |
 | `lib/visit.ts` | types only: the Visit's saved shapes (Configuration Snapshot, Vertex inputs, `VisitState`, the `Resolution` union, an Action's outputs, a History item) |
 | `lib/marker.ts` | Action Marker format and parse |
 | `lib/reconcile.ts` | Reconciliation of a record against git and GitHub at resume, and admission's load of a record or its corrupt row |
-| `lib/events.ts` | event schema 2 (`EVENT_SCHEMA_VERSION`, frozen in `docs/interfaces/events.md`): each Event's declaration, its builders and its append to the State Database |
+| `lib/events.ts` | event schema 2 (`EVENT_SCHEMA_VERSION`, frozen in `docs/interfaces/events.md`): each Event's declaration, its builders and the Event log that appends each through `database` |
 | `lib/event-declaration.ts` | how lib/events.ts declares and checks an Event's fields: required or optional, in their saved order, and a closed Usage; only lib/events.ts imports it |
-| `lib/event-read.ts` | the event log read back: each row checked against its Event's declaration, its fields gg reads and its indexed columns, a refused row an `EventCorruptError` naming it; whether an Execution's ticket_end has landed |
+| `lib/event-read.ts` | the event log read back: each row `lib/state-database/` reads checked against its Event's declaration, its fields gg reads and its indexed columns, a refused row an `EventCorruptError` naming it |
 | `lib/labels.ts` | State, Await and Decide Label names and prefix, and the end states |
 | `lib/approval.ts` | Pending Instance, Approval Digest, timeline read, consumption |
 | `lib/locks.ts` | ticket, epic and repo locks as `node:sqlite` exclusive transactions |
@@ -161,7 +163,7 @@ leverage and a change lands in one place (locality).
 | `lib/git.ts` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
 | `lib/git-default-branch.ts` | the branch a repository's Tickets start from by default, which `gg init` writes as `baseBranch`: origin's HEAD, else the checked-out branch |
 | `lib/git-temp-index.ts` | what `lib/git.ts` reads through a copy of the index: a worktree's fingerprint and a rescue's tree |
-| `lib/paths.ts` | canonical local paths and the path key every path comparison uses |
+| `lib/paths.ts` | canonical local paths, the path key every path comparison uses, and the State Database's file in a common dir |
 | `lib/github.ts` | gh verbs, and the label writes and the read of the repository's `owner/name` that never throw; a failed gh process is a `GhError` carrying its HTTP status and rate limit (ported) |
 | `lib/gh-answer.ts` | gh's JSON answers read field by field into the types `lib/github.ts` declares: a field of the wrong type fails the verb, naming its path (#354) |
 | `lib/render.ts` | the template renderer, commit messages, PR body, comments, provenance |
@@ -184,8 +186,10 @@ leverage and a change lands in one place (locality).
   changes what a new repository gets. `test/fixtures/shipped-flow/` keeps the Flow the defaults shipped until #121 for
   the golden traces; gg ships no Flow now.
 - `.agents/feature-flow/` belongs to feature-flow until #97; it is not gg's configuration.
-- `git.ts`, `locks.ts` and `record.ts` also export the functions of their real instance, for callers that take no
-  seam (`gg doctor`, contract suites, helper processes); code on a Run's path uses the deps it was passed instead.
+- `git.ts`, `locks.ts` and `lib/state-database/index.ts` also export the functions of their real instance, for callers
+  that take no seam (`gg doctor`, `gg init`, `gg work abandon`, contract suites, helper processes); `record.ts` and
+  `event-read.ts` re-export its record and Event reads and writes for them. Code on a Run's path uses the deps it was
+  passed instead, which `test/unit/state-database.test.ts` holds.
 
 ## Examples to copy
 

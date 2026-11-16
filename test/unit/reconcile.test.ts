@@ -7,7 +7,7 @@ import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as golden from '../support/golden.ts';
 import * as crashResume from '../support/crash-resume.ts';
 import * as effectFixture from '../support/effect-fixture.ts';
@@ -46,7 +46,7 @@ test('a record the State Database cannot open fails with its error, not as a cor
   const commonDir = tempDirectory.tempDirectory(t, 'gg-reconcile-');
   mkdirSync(join(commonDir, 'gg', 'gg.db'), { recursive: true });
   assert.throws(
-    () => reconcile.loadExecutionRecord(commonDir, 1),
+    () => reconcile.loadExecutionRecord(commonDir, 1, stateDatabase),
     (err: Error) => !(err instanceof record.RecordCorruptError) && /unable to open database file/.test(err.message),
   );
 });
@@ -54,7 +54,7 @@ test('a record the State Database cannot open fails with its error, not as a cor
 test('a corrupt row loads as corrupt, not as an error', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-reconcile-');
   stateDatabase.open(commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', 1, '{')").run();
-  const loaded = reconcile.loadExecutionRecord(commonDir, 1);
+  const loaded = reconcile.loadExecutionRecord(commonDir, 1, stateDatabase);
   assert.equal(loaded.executionRecord, null);
   assert.ok(loaded.corrupt instanceof record.RecordCorruptError);
   assert.equal(loaded.corrupt.raw, '{', 'the error keeps the row');
