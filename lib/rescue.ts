@@ -226,5 +226,5 @@ export async function recoverInterrupted(runContext: RunContext): Promise<void> 
   // Spent before the retry launches, in the save that completes the intent and moves the cursor to the next Attempt.
   (executionRecord.retries[key] ??= {}).crash = spent + 1;
   executionRecord.cursor = { ...executionRecord.cursor, attempt: (actionIdentity.attempt ?? 1) + 1 };
-  runContext.database.complete(executionRecord, interrupted.actionMarker);
+  attempt.endInterrupted(runContext, interrupted.actionMarker);
 }

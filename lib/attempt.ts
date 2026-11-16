@@ -74,6 +74,11 @@ const completed = (executionRecord: record.ExecutionRecord, actionMarker: string
 export const complete = (context: Pick<Context, 'record' | 'markerOf'>, actionIdentity: marker.ActionIdentity) =>
   completed(context.record, context.markerOf(actionIdentity));
 
+// An Interrupted Attempt ends with no result once its recovery has rescued its work (ADR 0011): what the caller set on
+// the record, its crash retry and the cursor at the next Attempt, is saved with the completion.
+export const endInterrupted = (context: Pick<Context, 'record' | 'database'>, actionMarker: string) =>
+  context.database.complete(context.record, actionMarker);
+
 // The worktree is busy while `work` runs, so other Tickets' Integrity Assertions leave it alone.
 export async function whileBusy<Result>(
   context: Pick<Context, 'record' | 'database'>,

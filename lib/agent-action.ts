@@ -80,16 +80,16 @@ function firstResume(runContext: RunContext, { actionIdentity, action }: visitSc
 function previousAttempt(
   runContext: RunContext,
   actionIdentity: visitScope.Running['actionIdentity'],
-  attempt: number,
+  attemptNumber: number,
   resume: string | null,
 ): { sessionId?: string | null; row?: visit.Resolution['row']; reason?: string | null } {
   const executionRecord = runContext.record;
   const saved = executionRecord.sessions[sessionKey(actionIdentity)];
-  const previousMarker = runContext.markerOf({ ...actionIdentity, attempt: attempt - 1 });
+  const previousMarker = runContext.markerOf({ ...actionIdentity, attempt: attemptNumber - 1 });
   const evidence = writeAhead.findEntry(executionRecord, previousMarker, 'evidence')?.evidence;
   if (evidence?.usageDelta !== undefined) return evidence;
   // An Interrupted Attempt, completed by its recovery with nothing found: its retry starts a fresh Session (ADR 0011).
-  if (writeAhead.findEntry(executionRecord, previousMarker, 'complete')) return { sessionId: null };
+  if (attempt.complete(runContext, { ...actionIdentity, attempt: attemptNumber - 1 })) return { sessionId: null };
   if (!saved) return { sessionId: resume };
   return { sessionId: resumable(saved) ? saved.sessionId : null };
 }
