@@ -65,7 +65,7 @@ interface RescueIds {
 }
 const ROUTED: RescueIds = { rescue: 'rescue', reset: 'reset' };
 // An Interrupted Attempt's: no Procedure may declare them (lib/validate/actions.ts), nor collide with a routed rescue.
-const INTERRUPTED: RescueIds = { rescue: 'interrupted-rescue', reset: 'interrupted-reset' };
+const INTERRUPTED: RescueIds = { rescue: rescueEffect.INTERRUPTED_RESCUE, reset: 'interrupted-reset' };
 type RollbackSet = integrity.RollbackSet;
 
 // The worktree is the baseline's: its HEAD, its index, its tree, and the untracked files a restore would put back.
@@ -198,20 +198,6 @@ function attemptOf(executionRecord: RunContext['record'], actionMarker: string):
   return { vertex, visit: Number(visit), procedure, action, recovery: Number(recovery), attempt: Number(attempt) };
 }
 
-// The Rescue Refs of the Action's interrupted Attempts up to this one, each rescued under its own Attempt's marker.
-// Each says which Attempt of which Action it keeps, since a ref's name is a digest (D6).
-const interruptedRefs = (runContext: RunContext, actionIdentity: marker.ActionIdentity) =>
-  Array.from({ length: actionIdentity.attempt ?? 1 }, (_, index) => index + 1)
-    .map((number) => ({
-      number,
-      actionMarker: runContext.markerOf({ ...actionIdentity, action: INTERRUPTED.rescue, attempt: number }),
-    }))
-    .filter(({ actionMarker }) => writeAhead.findEntry(runContext.record, actionMarker, 'intent'))
-    .map(({ number, actionMarker }) => ({
-      ref: rescueRef(actionMarker),
-      keeps: `the work of Attempt ${number} of ${actionIdentity.action} at ${actionIdentity.vertex}`,
-    }));
-
 // An Interrupted Attempt at resume (ADR 0011, N1): its work, whoever wrote it (V9), is rescued to a Rescue Ref and,
 // once its processes are known gone, reset to the Attempt's baseline and retried in a fresh Session, once. Each step is
 // write-ahead, so a crash resumes at the next. Anything else holds the Ticket, naming the Rescue Refs.
@@ -230,12 +216,7 @@ export async function recoverInterrupted(runContext: RunContext): Promise<void> 
   // Only a job's kill-on-close proves the call's processes gone; a missing kind is a crash before it was saved (N1).
   const contained = containment?.kind === 'job';
   // Every hold names each Rescue Ref of the Action's interrupted Attempts that its reason does not already name.
-  const named = (reason: string) =>
-    reason +
-    interruptedRefs(runContext, actionIdentity)
-      .filter(({ ref }) => !reason.includes(ref))
-      .map(({ ref, keeps }) => ` Rescue Ref ${ref} keeps ${keeps}.`)
-      .join('');
+  const named = (reason: string) => rescueEffect.namingInterrupted(executionRecord, interrupted.actionMarker, reason);
   try {
     await rescueAndReset(runContext, { actionIdentity, baseline, failure, ids: INTERRUPTED }, { reset: contained });
   } catch (err) {

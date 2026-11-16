@@ -314,6 +314,25 @@ test('a second interruption whose reset fails names both Rescue Refs', async (t)
   assert.equal(executionReads.loadTicket(fixture).terminalReason?.decidedBy?.hold, 'interrupted-attempt');
 });
 
+test("a hold before the recovery names the Action's earlier Rescue Refs, and no other", async (t) => {
+  const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job', 2: 'job' });
+  await interruptedCall.crashed(fixture);
+  await interruptedCall.crashed(fixture);
+  // The Procedure changes before the next run, so Reconciliation holds before the recovery starts.
+  const flow = {
+    ...fixture.flow,
+    procedures: new Map([...fixture.flow.procedures].map(([name, procedure]) => [name, { ...procedure, hash: 'new' }])),
+  };
+  const decided = await reconcile.reconcile(
+    crashResume.reconcileOptions(fixture, executionReads.loadTicket(fixture), flow),
+  );
+
+  assert.equal(decided.next, 'hold');
+  const first = interruptedCall.refOf(fixture, 1);
+  assert.ok(decided.reason.includes(`${first} keeps the work of Attempt 1 of red at red`), decided.reason);
+  assert.equal(decided.reason.match(/Rescue Ref /g)?.length, 1, 'only the rescue Attempt 2 left before it');
+});
+
 test("an interrupted attempt's rescue is not a vertex rescue output", async (t) => {
   const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job' });
   await interruptedCall.crashed(fixture);

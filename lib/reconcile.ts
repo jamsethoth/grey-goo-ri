@@ -254,7 +254,11 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
   if (overridden) return overridden;
   const held = configurationHold(executionRecord, flow);
   if (held) return held;
-  const hold = (reason: string): Hold => ({ next: 'hold', cursor: executionRecord.cursor, reason });
+  const hold = (reason: string): Hold => ({
+    next: 'hold',
+    cursor: executionRecord.cursor,
+    reason: namingInterrupted(executionRecord, reason),
+  });
   if ((await resets(executionRecord, { git, integrity, database })) === 'held') {
     // A rescue's reset is intended only once its ref holds the work.
     const rescued = rescue.openRescue(executionRecord);
@@ -282,6 +286,12 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
   return { next: 'continue', cursor: executionRecord.cursor, reason: null };
 }
 
+// A hold before an Interrupted Attempt's recovery names the Rescue Refs its Action's earlier Attempts left (D5).
+export function namingInterrupted(executionRecord: record.ExecutionRecord | null, reason: string): string {
+  const open = executionRecord && interruptedAttempt(executionRecord);
+  return open ? rescue.namingInterrupted(executionRecord!, open.actionMarker, reason) : reason;
+}
+
 // The open intent of an agent call that never completed: an Interrupted Attempt (ADR 0011).
 export const interruptedAttempt = (executionRecord: record.ExecutionRecord): writeAhead.WriteAheadEntry | undefined =>
   writeAhead.openIntents(executionRecord).find((entry) => entry.effect === 'call');
@@ -290,7 +300,11 @@ export const interruptedAttempt = (executionRecord: record.ExecutionRecord): wri
 // Interrupted Attempt gives way to its recovery once Reconciliation continues (lib/rescue.ts).
 function configurationHold(executionRecord: record.ExecutionRecord, flow: ReconciledFlow): Hold | null {
   const { vertex } = executionRecord.cursor;
-  const hold = (reason: string): Hold => ({ next: 'hold', cursor: executionRecord.cursor, reason });
+  const hold = (reason: string): Hold => ({
+    next: 'hold',
+    cursor: executionRecord.cursor,
+    reason: namingInterrupted(executionRecord, reason),
+  });
   if (!(labels.END_STATES as string[]).includes(vertex) && !flow.ticket.vertices.has(vertex))
     return hold(`The record continues at Vertex ${vertex}, which the Flow no longer has.`);
   // A Visit in progress runs on the Procedure it entered with, so one whose Procedure has changed is held, not resumed
