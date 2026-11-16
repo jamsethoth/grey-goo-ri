@@ -7,13 +7,16 @@ import * as interpreter from '../../lib/interpreter.ts';
 import type * as integrity from '../../lib/integrity.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
+import * as rescue from '../../lib/rescue.ts';
 import * as executionReads from '../support/execution-reads.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as afterPhase from '../support/after-phase.ts';
 import * as golden from '../support/golden.ts';
 import * as crashResume from '../support/crash-resume.ts';
 import * as gitShell from '../support/git-shell.ts';
+import * as goldenRun from '../support/golden-run.ts';
 import * as interruptedCall from '../support/interrupted-call.ts';
+import * as keys from '../support/keys.ts';
 import * as rescueFlow from '../support/rescue-flow.ts';
 import * as resetInterruption from '../support/reset-interruption.ts';
 
@@ -262,6 +265,41 @@ test("an interrupted later attempt is reset to the visit's first baseline and re
   const ref = interruptedCall.refOf(fixture, 2);
   assert.equal(rescueFlow.inRef(fixture, ref, 'first.txt'), 'what attempt 1 left', 'the earlier work is rescued');
   assert.equal(interruptedCall.redCalls(fixture).length, 3, 'and Attempt 3 retried it');
+  assert.equal(interruptedCall.redCalls(fixture)[2]?.resume, null, 'Attempt 3 starts a fresh Session');
+});
+
+// The interrupted rescue and reset take Action ids of their own (D3 B), so the routed rescue after the retry's failure
+// makes a second ref instead of finding the first.
+test('an interrupted recovery pass and the routed failure after its retry keep their rescues apart', async (t) => {
+  const responses = rescueFlow.failingRed({ 'notes.txt': 'first pass\n' });
+  for (const [attempt, file] of [
+    [1, 'interrupted.txt'],
+    [2, 'retry.txt'],
+  ] as const)
+    responses[keys.responseKey('red', 1, 'recover', attempt)] = {
+      files: { 'lib/add.mjs': goldenRun.RIGHT_ADD, [file]: `${file}\n` },
+      response: golden.redResponse,
+    };
+  const fixture = await goldenRun.greenFixture(t, { responses, integrity: 'real', git: 'real' });
+  golden.configure(fixture, rescueFlow.routeRedFailureToSenior);
+  const run = fixture.harness.run as (...args: unknown[]) => Promise<unknown>;
+  // gg dies during the recovery pass's first call, once the Harness has written its files.
+  fixture.harness.run = (async (call: Record<string, unknown>, ...hooks: unknown[]) => {
+    const result = await run(call, ...hooks);
+    if (String(call.marker).includes(':red:1:red:1:') && call.attempt === 1)
+      throw new interpreter.CrashError(`gg was killed during ${call.marker as string}`);
+    return result;
+  }) as typeof fixture.harness.run;
+  await interruptedCall.crashed(fixture);
+  await interruptedCall.resumed(fixture);
+
+  const executionRecord = executionReads.loadTicket(fixture);
+  const interrupted = rescue.rescueRef(golden.markerOf(executionRecord, 'red', 1, 'interrupted-rescue', 1, 1));
+  const refs = rescueFlow.rescueRefs(fixture);
+  assert.equal(refs.length, 2, `the interrupted and the routed rescue each made a ref: ${refs.join(', ')}`);
+  assert.equal(rescueFlow.inRef(fixture, interrupted, 'interrupted.txt'), 'interrupted.txt');
+  const routed = refs.find((ref) => ref !== interrupted)!;
+  assert.equal(rescueFlow.inRef(fixture, routed, 'retry.txt'), 'retry.txt', "the routed ref keeps the retry's work");
 });
 
 test('a crash retry counts toward the Action Cap', async (t) => {

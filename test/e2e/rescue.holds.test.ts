@@ -119,8 +119,7 @@ function assertNamesRefs({ text, executionRecord, worktree, named, unrelated }: 
   for (const [, ref] of text.matchAll(/(refs\/gg\/rescue\/[0-9a-f]+) keeps/g))
     assert.equal(target(worktree, ref!), intended.get(ref!), `${ref} is in git at its rescue's commit: ${text}`);
   for (const [index, ref] of named.entries())
-    if (target(worktree, ref))
-      assert.ok(text.includes(`${ref} keeps the work of Attempt ${index + 1} of red at red`), text);
+    assert.ok(text.includes(`${ref} keeps the work of Attempt ${index + 1} of red at red`), text);
   for (const ref of unrelated) assert.ok(!text.includes(ref), `${ref} is not red's Action's: ${text}`);
 }
 
@@ -352,7 +351,9 @@ const ROWS: Row[] = [
         ran.fixture = fixture;
       };
       const held = await recoveryHold(t, { hand, namesCurrent: true });
-      for (const ref of held.named) assert.notEqual(target(held.worktree, ref), '', `${ref} was made`);
+      const made = gitShell.sh(held.worktree, 'for-each-ref', '--format=%(refname)', 'refs/gg/rescue').split('\n');
+      const own = made.filter((ref) => ref && !held.unrelated.includes(ref));
+      assert.deepEqual(own.sort(), [...held.named].sort(), 'git holds one Rescue Ref per interrupted Attempt');
       assert.equal(existsSync(join(held.worktree, 'notes.txt')), false, 'the second Attempt was reset before the hold');
       assert.equal(interruptedCall.crashBudget(ran.fixture!), 1);
       assert.equal(interruptedCall.redCalls(ran.fixture!).length, 2);
