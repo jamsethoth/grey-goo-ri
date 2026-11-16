@@ -616,8 +616,8 @@ human: string (events.TicketResolvedEvent)
 
 A person handed the Ticket back with `gg work resume --at <vertex>` (L12, #133): `human` their gh login, `vertex` the
 Vertex it re-enters at a new Visit, `head` the branch tip it took as the baseline Reconciliation checks from, and
-`superseded` the Action Markers of the open write-ahead intents it marked finished with nothing found. It is saved
-before the Run that resumes the Ticket starts it, so `run` is absent.
+`superseded` the Action Markers of the open write-ahead intents it marked finished with nothing found. The Run that
+resumes the Ticket saves it before admission, so `run` names that Run.
 
 ```text presence:ticket_resumed
 run: optional
