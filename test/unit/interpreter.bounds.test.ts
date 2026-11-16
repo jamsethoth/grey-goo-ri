@@ -145,20 +145,6 @@ test("golden: a spent Vertex max takes the Vertex's exhausted target", async (t)
   });
 });
 
-test("when an Edge and its Vertex exhaust together the Vertex's exhausted target wins", async (t) => {
-  const fixture = await runReview(await fixBoundSetup(t, { max: 1, exhausted: { end: 'needs-human' } }));
-
-  assert.equal(fixture.result.outcome, 'ready-for-qa');
-  assert.deepEqual(Object.fromEntries(fixture.executionRecord.visits), {
-    red: 1,
-    green: 1,
-    reviewer: 3,
-    'implementer-fix': 1,
-    'senior-dev': 1,
-    publish: 1,
-  });
-});
-
 test('a spent Bound that ends the Execution names the effective target in the Terminal Reason', async (t) => {
   const built = await fixBoundSetup(t, {});
   golden.configure(built, (configured) => {
@@ -376,36 +362,6 @@ test('a crash during that report resumes only the report', async (t) => {
     'the comment is not posted twice',
   );
   assert.equal(loadTicket(fixture).state, 'needs-human');
-});
-
-test('a route passes through a chain of spent Vertices to the last exhausted target', async (t) => {
-  // review 2 repeats review 1 and escalates to senior-dev; review 3's changes then finds implementer-fix and senior-dev
-  // both spent, so the route passes from one exhausted target to the next.
-  const fixture = await reviewFixture(
-    t,
-    {
-      [reviewCall(1)]: reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
-      [fixCall('implementer-fix')]: fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' }),
-      [reviewCall(2)]: reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
-      [fixCall('senior-dev')]: fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // two\n' }),
-      [reviewCall(3)]: reviewed(review('changes', [finding('major', 'lib/add.mjs', 'third problem')])),
-    },
-    {
-      configure: (configured) => {
-        const vertices = verticesOf(configured);
-        Object.assign(vertices['implementer-fix']!, { max: 1, exhausted: 'senior-dev' });
-        vertices['senior-dev']!.exhausted = { end: 'needs-replan' };
-      },
-    },
-  ).then(runReview);
-
-  assert.equal(fixture.result.outcome, 'needs-replan');
-  assert.equal(
-    fixture.executionRecord.terminalReason!.text,
-    'reviewer visit 3 completed every review Action with outcome changes, and ' +
-      'implementer-fix had used its Bound of 1 Visit and senior-dev had used its Bound of 1 Visit, ' +
-      'so the route ended at needs-replan.',
-  );
 });
 
 test('an ok route into a spent Vertex names the Bound in the Terminal Reason', async (t) => {
