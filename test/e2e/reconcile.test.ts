@@ -1,7 +1,8 @@
 import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as exec from '../../lib/exec.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import type * as integrity from '../../lib/integrity.ts';
 import * as reconcile from '../../lib/reconcile.ts';
@@ -12,6 +13,8 @@ import * as afterPhase from '../support/after-phase.ts';
 import * as golden from '../support/golden.ts';
 import * as crashResume from '../support/crash-resume.ts';
 import * as gitShell from '../support/git-shell.ts';
+import * as interruptedCall from '../support/interrupted-call.ts';
+import * as rescueFlow from '../support/rescue-flow.ts';
 import * as resetInterruption from '../support/reset-interruption.ts';
 
 // red's Attempt writes a Protected File, an Integrity Violation whose reset is interrupted by a crash at `when`: before
@@ -150,4 +153,146 @@ test('Reconciliation uses an injected integrity', async (t) => {
     { conflicts: [], stat: '', rescueRef: null },
   );
   assert.equal(await reconcile.resets(crashed.loaded, { git: crashed.options.deps.git }), 'continue');
+});
+
+// Interrupted Attempts (#68, ADR 0011): red's call is cut short by gg's death, and the next Execution recovers it.
+const terminalText = (fixture: golden.GoldenFixture) => executionReads.loadTicket(fixture).terminalReason?.text ?? '';
+const inWorktree = (fixture: golden.GoldenFixture, path: string) => existsSync(join(fixture.worktree, path));
+
+test('an interrupted attempt is rescued, reset and retried once', async (t) => {
+  const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job' });
+  await interruptedCall.crashed(fixture);
+  const result = await interruptedCall.resumed(fixture);
+
+  assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
+  const ref = interruptedCall.refOf(fixture, 1);
+  assert.deepEqual(rescueFlow.rescueRefs(fixture), [ref]);
+  for (const [path, content] of Object.entries(interruptedCall.LEFT))
+    assert.equal(`${rescueFlow.inRef(fixture, ref, path)}\n`, content, `the Rescue Ref holds ${path}`);
+  assert.equal(inWorktree(fixture, 'notes.txt'), false, 'the worktree was reset');
+  const calls = interruptedCall.redCalls(fixture);
+  assert.deepEqual(
+    calls.map((call) => call.marker?.split(':').at(-1)),
+    ['1', '2'],
+    'one retry, a new Attempt of the same Action',
+  );
+  assert.equal(calls[1]?.resume, null, 'the retry starts a fresh Session');
+  assert.equal(calls[1]?.brief, calls[0]?.brief, 'with the full Brief');
+  assert.deepEqual(interruptedCall.crashBudget(fixture), [1]);
+  const rescued = executionReads.loadTicket(fixture).history.filter((item) => item.kind === 'rescued');
+  assert.equal(rescued.length, 1);
+  assert.ok(rescued[0]?.text.includes(ref), 'the History names the Rescue Ref');
+});
+
+test('admission does not hold the worktree an interrupted attempt left', async (t) => {
+  const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job' });
+  await interruptedCall.crashed(fixture);
+  assert.equal(
+    await reconcile.dirtyState(executionReads.loadTicket(fixture), {
+      git: fixture.options.deps.git,
+      worktree: fixture.worktree,
+    }),
+    null,
+  );
+});
+
+test('a crash before the retry launches resumes at the retry', async (t) => {
+  const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job' });
+  await interruptedCall.crashed(fixture);
+  const retry = golden.markerOf(fixture.executionRecord, 'red', 1, 'red', 0, 2);
+  await interruptedCall.crashed(fixture, { crashAt: { marker: retry, point: 'before-intent' } });
+  const result = await interruptedCall.resumed(fixture);
+
+  assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
+  assert.deepEqual(rescueFlow.rescueRefs(fixture), [interruptedCall.refOf(fixture, 1)], 'no second Rescue Ref');
+  assert.equal(executionReads.intents(executionReads.loadTicket(fixture), 'reset').length, 1, 'no repeated reset');
+  assert.deepEqual(interruptedCall.crashBudget(fixture), [1], 'no second budget charge');
+  assert.equal(interruptedCall.redCalls(fixture).length, 2, 'the retry launched once');
+});
+
+test('a change after the last heartbeat is rescued, not held', async (t) => {
+  const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job' });
+  await interruptedCall.crashed(fixture);
+  writeFileSync(join(fixture.worktree, 'late.txt'), 'written after the last heartbeat\n');
+  const result = await interruptedCall.resumed(fixture);
+
+  assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
+  const ref = interruptedCall.refOf(fixture, 1);
+  assert.equal(rescueFlow.inRef(fixture, ref, 'late.txt'), 'written after the last heartbeat');
+  const history = executionReads.loadTicket(fixture).history;
+  assert.ok(
+    history.some((item) => item.text.includes(ref)),
+    'the History names the Rescue Ref',
+  );
+});
+
+for (const [how, name] of [
+  ['none', 'an uncontained interrupted attempt is rescued and held, not reset'],
+  ['unsaved', 'a crash before the containment kind is saved is rescued and held'],
+] as const) {
+  test(name, async (t) => {
+    const fixture = await interruptedCall.interruptedFixture(t, { 1: how });
+    await interruptedCall.crashed(fixture);
+    const result = await interruptedCall.resumed(fixture);
+
+    assert.equal(result.held, true, JSON.stringify(result));
+    const ref = interruptedCall.refOf(fixture, 1);
+    assert.deepEqual(rescueFlow.rescueRefs(fixture), [ref], 'the work is rescued');
+    assert.equal(rescueFlow.inRef(fixture, ref, 'notes.txt'), 'what red tried');
+    assert.equal(inWorktree(fixture, 'notes.txt'), true, 'and not reset');
+    assert.deepEqual(executionReads.intents(executionReads.loadTicket(fixture), 'reset'), []);
+    assert.ok(terminalText(fixture).includes(ref), 'the hold names the Rescue Ref');
+    assert.equal(interruptedCall.redCalls(fixture).length, 1, 'nothing was retried');
+  });
+}
+
+test('a second interruption exhausts the crash budget and holds', async (t) => {
+  const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job', 2: 'job' });
+  await interruptedCall.crashed(fixture);
+  await interruptedCall.crashed(fixture);
+  const result = await interruptedCall.resumed(fixture);
+
+  assert.equal(result.held, true, JSON.stringify(result));
+  const refs = [interruptedCall.refOf(fixture, 1), interruptedCall.refOf(fixture, 2)];
+  assert.deepEqual(rescueFlow.rescueRefs(fixture).sort(), [...refs].sort());
+  for (const ref of refs) assert.ok(terminalText(fixture).includes(ref), `the hold names ${ref}`);
+  assert.equal(inWorktree(fixture, 'notes.txt'), false, 'the second Attempt was reset before the hold');
+  assert.deepEqual(interruptedCall.crashBudget(fixture), [1]);
+  assert.equal(interruptedCall.redCalls(fixture).length, 2);
+});
+
+test("an interrupted attempt's rescue is not a vertex rescue output", async (t) => {
+  const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job' });
+  await interruptedCall.crashed(fixture);
+  await interruptedCall.resumed(fixture);
+
+  assert.equal(rescueFlow.rescueRefs(fixture).length, 1, 'the Attempt was rescued');
+  const { outputs } = executionReads.loadTicket(fixture);
+  assert.deepEqual(
+    outputs.filter((output) => 'rescue' in output.value),
+    [],
+  );
+});
+
+test("a reset that cannot remove a locked file holds with the interrupted attempt's state rescued", async (t) => {
+  const fixture = await interruptedCall.interruptedFixture(t, { 1: 'job' });
+  await interruptedCall.crashed(fixture);
+  fixture.options.deps.git = {
+    ...fixture.options.deps.git,
+    resetTo: async () => {
+      throw new exec.CommandError('git reset failed', {
+        code: 1,
+        stdout: '',
+        stderr: "error: unable to unlink old 'package.json': Permission denied",
+      });
+    },
+  };
+  const result = await interruptedCall.resumed(fixture);
+
+  assert.equal(result.held, true, JSON.stringify(result));
+  const ref = interruptedCall.refOf(fixture, 1);
+  assert.deepEqual(rescueFlow.rescueRefs(fixture), [ref], 'the work is in the ref');
+  assert.equal(rescueFlow.inRef(fixture, ref, 'notes.txt'), 'what red tried');
+  assert.equal(inWorktree(fixture, 'notes.txt'), true, 'and still in the worktree');
+  assert.ok(terminalText(fixture).includes(ref), 'the hold names the Rescue Ref');
 });
