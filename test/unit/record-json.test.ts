@@ -133,13 +133,13 @@ function mayLeaveOut(kind: Kind, row: Json, segments: Segment[]) {
 }
 
 // The rows a full fixture gives: the Execution Record itself, then one row per variant at its path.
-function executionRows(): { row: Json; under: string }[] {
-  const rows = [{ row: FIXTURE.execution as Json, under: '' }];
-  for (const [path, values] of Object.entries(FIXTURE.variants)) {
+function executionRows(fixture = FIXTURE): { row: Json; under: string }[] {
+  const rows = [{ row: fixture.execution as Json, under: '' }];
+  for (const [path, values] of Object.entries(fixture.variants)) {
     for (const value of values)
       rows.push({
         row: changed(
-          FIXTURE.execution,
+          fixture.execution,
           path.split('.'),
           (parent, key) => void ((parent as Record<Segment, Json>)[key] = value),
         ),
@@ -167,6 +167,19 @@ test('every row of the full fixture loads, and saves back as the row it was read
       const saved = 'execution' in loaded ? recordJson.toJson(loaded) : recordJson.epicJson(loaded);
       assert.deepEqual(JSON.parse(JSON.stringify(saved)), row, `the ${kind} row with ${under || 'no variant'}`);
     }
+});
+
+// The full fixture as version 1 wrote it, every row and variant, so none holds a field version 2 added: a reader
+// accepts the version before its own, and a field new in its version is optional when absent (#422, decision 8).
+const VERSION_1 = JSON.parse(
+  readFileSync(new URL('../fixtures/record-rows-version-1.json', import.meta.url), 'utf8'),
+) as Fixture;
+
+test('a record saved at the previous schema version still reads', () => {
+  assert.equal(recordJson.RECORD_SCHEMA_VERSION, 2, 'version 1 is the one before');
+  for (const { row, under } of executionRows(VERSION_1))
+    loads('ticket', row, `the version 1 row with ${under || 'no variant'}`);
+  loads('epic', VERSION_1.epic, 'the version 1 Epic Record');
 });
 
 test('the full fixture holds an intent of every Effect and of an agent call', () => {

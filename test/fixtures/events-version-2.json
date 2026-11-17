@@ -1,0 +1,314 @@
+[
+  {
+    "schemaVersion": 2,
+    "time": "2026-11-17T05:46:58.868Z",
+    "type": "action",
+    "flow": "default",
+    "configHash": "c0ffee",
+    "launchProfile": null,
+    "confinement": null,
+    "ticket": 7,
+    "owner": {
+      "kind": "ticket",
+      "number": 7
+    },
+    "run": "r1",
+    "execution": "e1",
+    "vertex": "green",
+    "visit": 1,
+    "procedure": "implement",
+    "action": "push",
+    "recovery": 0,
+    "attempt": 1,
+    "durationMs": 1500,
+    "outcome": "run-stop",
+    "direction": "stop",
+    "signals": {
+      "harnessResult": {
+        "status": "failed",
+        "failureClass": "auth"
+      }
+    },
+    "rule": {
+      "table": "fixed",
+      "row": "run-stop"
+    },
+    "agent": true,
+    "harness": "fake",
+    "agentCliVersion": "1.0.0",
+    "model": "fake-model",
+    "effort": "medium",
+    "personaHash": "p1",
+    "tools": [
+      "Read"
+    ],
+    "sessionInit": {
+      "tools": [
+        "Read"
+      ]
+    },
+    "sessionId": "s1",
+    "sessionLineage": null,
+    "transcriptPath": "transcripts/s1.jsonl",
+    "usage": {
+      "cumulative": {
+        "inputTokens": 1,
+        "cacheReadTokens": 1,
+        "cacheWriteTokens": 1,
+        "outputTokens": 1,
+        "reasoningTokens": 1,
+        "costUsd": null,
+        "peakContextTokens": 1,
+        "turns": 1,
+        "toolCalls": 1,
+        "compactions": 1
+      },
+      "delta": {
+        "inputTokens": 1,
+        "cacheReadTokens": 1,
+        "cacheWriteTokens": 1,
+        "outputTokens": 1,
+        "reasoningTokens": 1,
+        "costUsd": null,
+        "peakContextTokens": 1,
+        "turns": 1,
+        "toolCalls": 1,
+        "compactions": 1
+      }
+    },
+    "exitCode": 1,
+    "exitSignal": null,
+    "finalEventSubtype": "error",
+    "permissionDenials": [],
+    "commandsRun": [
+      "npm test"
+    ],
+    "check": "tests",
+    "integrityViolations": [],
+    "retryAfterMs": 0,
+    "failureClass": "auth",
+    "error": "not logged in",
+    "cleanup": {
+      "confirmed": true,
+      "survivors": []
+    },
+    "decision": null
+  },
+  {
+    "schemaVersion": 2,
+    "time": "2026-11-17T05:46:58.945Z",
+    "type": "action",
+    "flow": "default",
+    "configHash": "c0ffee",
+    "launchProfile": null,
+    "confinement": null,
+    "ticket": 7,
+    "owner": {
+      "kind": "ticket",
+      "number": 7
+    },
+    "run": "r1",
+    "execution": "e1",
+    "vertex": "green",
+    "visit": 1,
+    "procedure": "implement",
+    "action": "push",
+    "recovery": 0,
+    "attempt": 1,
+    "durationMs": 1500,
+    "outcome": "run-stop",
+    "direction": "stop",
+    "signals": {
+      "harnessResult": {
+        "status": "failed",
+        "failureClass": "auth"
+      }
+    },
+    "rule": {
+      "table": "fixed",
+      "row": "run-stop"
+    },
+    "agent": false,
+    "check": null,
+    "integrityViolations": null,
+    "retryAfterMs": null,
+    "failureClass": "auth",
+    "error": "git push exited 128",
+    "cleanup": null,
+    "decision": null
+  },
+  {
+    "schemaVersion": 2,
+    "time": "2026-11-17T05:46:59.037Z",
+    "type": "run_start",
+    "run": "r1"
+  },
+  {
+    "schemaVersion": 2,
+    "time": "2026-11-17T05:46:59.126Z",
+    "type": "run_end",
+    "run": "r1",
+    "tickets": [
+      {
+        "ticket": 7,
+        "outcome": "needs-human"
+      }
+    ],
+    "failureClass": "auth"
+  },
+  {
+    "schemaVersion": 2,
+    "time": "2026-11-17T05:46:59.204Z",
+    "type": "ticket_start",
+    "run": "r1",
+    "execution": "e1",
+    "ticket": 7,
+    "owner": {
+      "kind": "ticket",
+      "number": 7
+    }
+  },
+  {
+    "schemaVersion": 2,
+    "time": "2026-11-17T05:46:59.282Z",
+    "type": "ticket_end",
+    "run": "r1",
+    "execution": "e1",
+    "ticket": 7,
+    "owner": {
+      "kind": "ticket",
+      "number": 7
+    },
+    "outcome": "needs-human",
+    "diffStats": {
+      "files": 2,
+      "insertions": 10,
+      "deletions": 1,
+      "testFiles": 1,
+      "testInsertions": 4
+    },
+    "terminalReason": {
+      "decidedBy": {
+        "vertex": "publish",
+        "visit": 1,
+        "action": "pr-ready",
+        "recovery": 0
+      },
+      "outcome": "ok",
+      "rule": {
+        "table": "passed",
+        "row": null
+      },
+      "text": "publish visit 1 completed every publish Action."
+    },
+    "error": "boom",
+    "interrupted": {
+      "terminal": "ready-for-qa",
+      "terminalReason": {
+        "decidedBy": {
+          "vertex": "publish",
+          "visit": 1,
+          "action": "pr-ready",
+          "recovery": 0
+        },
+        "outcome": "ok",
+        "rule": {
+          "table": "passed",
+          "row": null
+        },
+        "text": "publish visit 1 completed every publish Action."
+      }
+    }
+  },
+  {
+    "schemaVersion": 2,
+    "time": "2026-11-17T05:46:59.359Z",
+    "type": "label_failed",
+    "ticket": 7,
+    "change": {
+      "add": [
+        "gg:state:done"
+      ],
+      "remove": []
+    },
+    "error": "gh 502",
+    "run": "r1"
+  },
+  {
+    "schemaVersion": 2,
+    "time": "2026-11-17T05:46:59.437Z",
+    "type": "visit_end",
+    "run": "r1",
+    "execution": "e1",
+    "ticket": 7,
+    "owner": {
+      "kind": "ticket",
+      "number": 7
+    },
+    "vertex": "reviewer",
+    "visit": 2,
+    "outcome": "repeat",
+    "rule": {
+      "table": "passed",
+      "row": 1
+    },
+    "next": "senior-dev",
+    "edge": "reviewer->senior-dev:repeat",
+    "count": 1,
+    "spent": [
+      {
+        "edge": "reviewer->implementer-fix:changes"
+      },
+      {
+        "vertex": "implementer-fix"
+      }
+    ]
+  },
+  {
+    "schemaVersion": 2,
+    "time": "2026-11-17T05:46:59.515Z",
+    "type": "config_change",
+    "run": "r1",
+    "execution": "e1",
+    "ticket": 7,
+    "owner": {
+      "kind": "ticket",
+      "number": 7
+    },
+    "vertex": "publish",
+    "visit": 1,
+    "from": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "to": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  {
+    "schemaVersion": 2,
+    "time": "2026-11-17T05:46:59.594Z",
+    "type": "ticket_resolved",
+    "execution": "e1",
+    "ticket": 7,
+    "owner": {
+      "kind": "ticket",
+      "number": 7
+    },
+    "human": "octo-human",
+    "run": null
+  },
+  {
+    "schemaVersion": 2,
+    "time": "2026-11-17T05:46:59.668Z",
+    "type": "ticket_resumed",
+    "execution": "e1",
+    "ticket": 7,
+    "owner": {
+      "kind": "ticket",
+      "number": 7
+    },
+    "human": "octo-human",
+    "vertex": "publish",
+    "head": "cccccccccccccccccccccccccccccccccccccccc",
+    "superseded": [
+      "gg:e1:r1:green:1:recover:0:1"
+    ],
+    "run": null
+  }
+]

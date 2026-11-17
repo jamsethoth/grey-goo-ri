@@ -516,6 +516,31 @@ test('a record whose visits, traversals or Check runs are not objects is corrupt
   assert.equal(corrupt.length, broken.length);
 });
 
+// A save writes the current version, so a record's version always says which fields it may hold (#422, Q4 A).
+test('a record read at the previous schema version saves at the current one', async (t) => {
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
+  const execution = { ...record.toJson(knownRecord(commonDir, 8)), schemaVersion: 1 };
+  const epic = { ...withoutCommonDir(record.createEpicRecord({ commonDir, epic: 3 })), schemaVersion: 1 };
+  withDb(commonDir, (db) => {
+    const insert = db.prepare('INSERT INTO records (kind, n, json) VALUES (?, ?, ?)');
+    insert.run('ticket', 8, JSON.stringify(execution));
+    insert.run('epic', 3, JSON.stringify(epic));
+  });
+  record.save(record.load(commonDir, 'ticket', 8)!);
+  record.save(record.load(commonDir, 'epic', 3)!);
+  const savedVersion = (kind: string, recordNumber: number) =>
+    withDb(
+      commonDir,
+      (db) =>
+        (
+          JSON.parse(
+            db.prepare('SELECT json FROM records WHERE kind = ? AND n = ?').get(kind, recordNumber)!.json as string,
+          ) as { schemaVersion: number }
+        ).schemaVersion,
+    );
+  assert.deepEqual([savedVersion('ticket', 8), savedVersion('epic', 3)], [2, 2]);
+});
+
 test('a record written before Action ids is corrupt, not misread', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   // Its cursor names a phase and ordinal, which a resume would read as an Action id and a Recovery Number.

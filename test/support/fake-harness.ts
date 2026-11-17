@@ -79,7 +79,7 @@ export interface FakeHarnessOptions {
   responses?: ScriptedResponses;
   transcriptDir?: string;
   validate?: (agent: unknown) => { ok: boolean; errors: string[] };
-  resolveTools?: (agent: { tools?: unknown } | undefined) => unknown;
+  resolveTools?: (agent: { tools?: unknown } | undefined, context?: runContext.ToolsContext) => unknown;
 }
 
 const CONFIRMED: commandCleanup.CleanupReport = {
@@ -188,6 +188,8 @@ const recordedCall = (call: HarnessCall) => ({
   personaHash: call.persona?.hash,
   personaBytes: call.persona?.bytes,
   schema: call.schema,
+  previousUsage: call.previousUsage,
+  runDirectory: call.runDirectory,
 });
 
 export function fakeHarness({

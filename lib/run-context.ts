@@ -88,6 +88,11 @@ export interface HarnessStarted {
 export interface HarnessHooks {
   started(report: HarnessStarted): void;
 }
+// What gg tells resolveTools beside the Agent: the Declared Commands it may run and the platform it runs on.
+export interface ToolsContext {
+  commands: Record<string, string>;
+  platform: NodeJS.Platform;
+}
 export interface Harness {
   run(
     call: Record<string, unknown>,
@@ -143,6 +148,8 @@ export interface ExecutionOptions {
   crashAt?: sideEffect.EffectContext['crashAt'];
   fault?: unknown;
   admission?: Admission | null;
+  // The Run's cancel signal, passed beside every Harness call; nothing aborts it until #220.
+  signal?: AbortSignal;
 }
 
 // The Run context: the options with each dep under its own name, as the effects, Terminals and Reconciliation read

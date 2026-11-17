@@ -198,3 +198,17 @@ test("a scripted costBasis comes back on the call's Usage delta", async () => {
   const outcome = await harness.run(call(cwd));
   assert.equal(usage(outcome).delta.costBasis, 'reported');
 });
+
+// A recovery pass's Phase is recover whatever its number, so the key takes the Action and the Recovery Number from the
+// call's Action Marker (#422, Q2 A).
+test('two recovery passes of one Attempt take different scripted responses', async () => {
+  const { harness, cwd } = await setup({
+    responses: {
+      'implement/1/red/1/1': { response: { pass: 1 } },
+      'implement/1/red/2/1': { response: { pass: 2 } },
+    },
+  });
+  const first = await harness.run(call(cwd, { phase: 'recover', marker: 'gg:e1:implement:1:red:1:r1:1' }));
+  const second = await harness.run(call(cwd, { phase: 'recover', marker: 'gg:e1:implement:1:red:2:r1:1' }));
+  assert.deepEqual([first.response, second.response], [{ pass: 1 }, { pass: 2 }]);
+});

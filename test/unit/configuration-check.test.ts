@@ -130,6 +130,23 @@ test('a Promise resolveTools rejects is refused as a Promise, and its rejection 
   ]);
 });
 
+// The Claude Harness allows the Declared Commands, so preflight resolves each Agent's tools with the repository's
+// (#422, decision 6).
+test("preflight resolves each Agent's tools with the repository's Declared Commands and the platform", async () => {
+  const contexts: unknown[] = [];
+  const fake = fakeHarness.fakeHarness({
+    resolveTools: (_agent, context) => {
+      contexts.push(context);
+      return {};
+    },
+  });
+  await checkOf(sources(repositorySource()), { harnesses: { fake } });
+  assert.deepEqual(contexts, [
+    { commands: { test: 'npm test' }, platform: process.platform },
+    { commands: { test: 'npm test' }, platform: process.platform },
+  ]);
+});
+
 // A lost gg.db leaves gg/ behind, so the check is on the file: preflight and gg doctor both report it this way (#150).
 test('a gg.db deleted from an existing gg directory is a missing State Database', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-configuration-check-');
