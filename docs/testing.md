@@ -252,6 +252,9 @@ directory is removed, and the stage fails. A clean stage prints `temp census: no
 its figures after a failed temp census, since a test that ends its process early leaves node's own `node-coverage-*`
 directory, and `coverage measured no lines` says why.
 
+To inspect a failed case's temp directory, replace the `rmSync` in `test/support/temp-directory.ts` with a print of the
+path for one focused `node --test` run of its file, outside a stage, whose temp census would remove it, then undo it.
+
 The check stage runs no tests and takes no temp census.
 
 It sees only what lands in the temp directory a step's node reads. A case that writes elsewhere, or a process that
