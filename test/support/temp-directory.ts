@@ -5,9 +5,8 @@ import { join } from 'node:path';
 import * as stateDatabase from '../../lib/state-database/index.ts';
 
 // A temp directory removed when the case ends. The State Database at `commonDirOf(directory)` is closed first, since
-// Windows will not remove an open database file. `beforeRemove` runs first, kept or not, and the directory goes
-// whatever it throws, since node:test skips the later after hooks once one throws. GG_KEEP_TEMP keeps the directory and
-// names it, for debugging a case.
+// Windows will not remove an open database file. `beforeRemove` runs first, and the directory goes whatever it throws,
+// since node:test skips the later after hooks once one throws.
 export function tempDirectory(
   t: TestContext,
   prefix: string,
@@ -15,11 +14,6 @@ export function tempDirectory(
   beforeRemove: () => void = () => {},
 ): string {
   const directory = mkdtempSync(join(tmpdir(), prefix));
-  if (process.env.GG_KEEP_TEMP) {
-    t.diagnostic(`kept temp directory: ${directory}`);
-    t.after(beforeRemove);
-    return directory;
-  }
   t.after(() => {
     try {
       beforeRemove();
