@@ -1,7 +1,6 @@
 // The Terminal Reason every ticket_end carries in full (request 3.3, #23): its four keys, each of its frozen type, and
 // a rule identity `{ table, row }` exactly when a table row or one of gg's fixed rows decided the Outcome. A hold, an
 // abandonment and a fault decide no Outcome, so their outcome and rule are both null.
-import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import * as eventRead from '../../lib/event-read.ts';
 import type * as events from '../../lib/events.ts';
@@ -55,16 +54,9 @@ export const ticketEnds = (commonDir: string, execution: string): events.TicketE
     .filter((event): event is events.TicketEndEvent => event.type === 'ticket_end');
 
 // Checks, as the case ends, every ticket_end in the State Database it is given, of every Execution. The checked read
-// throws on any row it refuses, so a case that plants a corrupt row removes it before it ends. Called before the case's
-// temp directory is made, so the check runs before the directory goes. Returns the setter for that State Database.
-export function atCaseEnd(t: TestContext): (commonDir: string) => void {
-  let checked: string | undefined;
-  t.after(() => {
-    if (!checked) return;
-    for (const event of eventRead.readEvents(checked))
-      if (event.type === 'ticket_end') assertFull(event.terminalReason, `ticket_end of ${event.execution}`);
-  });
-  return (commonDir) => {
-    checked = commonDir;
-  };
+// throws on any row it refuses, so a case that plants a corrupt row removes it before it ends. The case's temp
+// directory runs it before its removal, which a failed check does not stop.
+export function atCaseEnd(commonDir: string): void {
+  for (const event of eventRead.readEvents(commonDir))
+    if (event.type === 'ticket_end') assertFull(event.terminalReason, `ticket_end of ${event.execution}`);
 }

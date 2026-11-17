@@ -1,6 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import ts from 'typescript';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
@@ -141,6 +141,40 @@ test('harness.md lists exactly the harness contract methods', () => {
   // What gg passes run(call) and what it reads back: the call it builds, the Harness Result and a failure.
   for (const [file, name] of HARNESS_SHAPES)
     assert.deepEqual(sorted(documented.get(`paths:${name}`) ?? []), sorted(walked(file, name)), name);
+});
+
+// Each declaration of resolveTools in a module's source, a method or a property of a function type, as `path: text`. A
+// property typed by another's declaration (`Harness['resolveTools']`) uses that one and declares none.
+function resolveToolsDeclarations(path: string, source: string): string[] {
+  const found: string[] = [];
+  const visit = (node: ts.Node): void => {
+    const declares =
+      ts.isMethodSignature(node) ||
+      (ts.isPropertySignature(node) && node.type !== undefined && ts.isFunctionTypeNode(node.type));
+    if (declares && node.name.getText() === 'resolveTools') found.push(`${path}: ${node.getText()}`);
+    ts.forEachChild(node, visit);
+  };
+  visit(ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true));
+  return found;
+}
+
+test('resolveTools has one declaration, which answers at once as harness.md states', () => {
+  assert.deepEqual(
+    resolveToolsDeclarations('lib/sample.ts', 'interface Sample {\n  resolveTools: (agent: unknown) => unknown;\n}'),
+    ['lib/sample.ts: resolveTools: (agent: unknown) => unknown;'],
+    'a declaration as a property of a function type is found',
+  );
+  const root = new URL('../../', import.meta.url);
+  const declarations = readdirSync(new URL('lib', root), { recursive: true, encoding: 'utf8' })
+    .map((file) => `lib/${file.split('\\').join('/')}`)
+    .filter((path) => path.endsWith('.ts'))
+    .sort()
+    .flatMap((path) => resolveToolsDeclarations(path, readFileSync(new URL(path, root), 'utf8')));
+  assert.deepEqual(declarations, ['lib/run-context.ts: resolveTools(agent: unknown): jsonValue.JsonValue;']);
+  assert.match(
+    documentText('harness.md'),
+    /^\| `resolveTools\(agent, ctx\)` \|[^\n]*returned at once, never a Promise/m,
+  );
 });
 
 test('problems.md lists exactly the Problem codes', () => {

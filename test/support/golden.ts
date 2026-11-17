@@ -216,8 +216,10 @@ export interface GoldenOptions {
 // git and integrity are fakes unless the case asks for either by name, for a test whose subject is git behaviour.
 export async function fixture(t: TestContext, options: GoldenOptions = {}) {
   const { responses = firstVisitResponses, integrity = 'fake', git: which = 'fake', baseFiles } = options;
-  const checkTicketEnds = fullTerminalReason.atCaseEnd(t);
-  const root = tempDirectory.tempDirectory(t, 'gg-golden-', (directory) => join(directory, 'main', '.git'));
+  const commonDirOf = (directory: string) => join(directory, 'main', '.git');
+  const root: string = tempDirectory.tempDirectory(t, 'gg-golden-', commonDirOf, () =>
+    fullTerminalReason.atCaseEnd(commonDirOf(root)),
+  );
   const { base, git, fakeGit } = seedGit(root, which, baseFiles);
   const fakeIntegrity = fakeIntegrityFor(integrity, base, git);
   const mainRoot = join(root, 'main');
@@ -240,7 +242,6 @@ export async function fixture(t: TestContext, options: GoldenOptions = {}) {
     branch: BRANCH,
     base: 'main',
   });
-  checkTicketEnds(commonDir);
   const database = caseDatabase.caseDatabase(t);
   database.save(executionRecord);
   const repos = { root, mainRoot, worktree, commonDir, base, git, fakeGit, fakeIntegrity };

@@ -7,11 +7,13 @@ import * as config from './config.ts';
 import type * as github from './github.ts';
 import * as contract from './harnesses/contract.ts';
 import * as interpreter from './interpreter.ts';
+import * as jsonValue from './json-value.ts';
 import type * as model from './model.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as record from './record.ts';
 import * as settingsModule from './settings.ts';
 import * as stateDatabase from './state-database/index.ts';
+import type * as runContext from './run-context.ts';
 import * as report from './validate/report.ts';
 import * as validator from './validate/index.ts';
 
@@ -139,7 +141,7 @@ export const missingFlowAdvice = (flow: string, ticket: number): string =>
 interface PreflightHarness {
   run?: unknown;
   validate(agent: unknown): Promise<{ ok: boolean; errors: string[] }>;
-  resolveTools(agent: unknown): Promise<unknown>;
+  resolveTools: runContext.Harness['resolveTools'];
 }
 
 // Each Vertex's registered Harness, checked by name before any GitHub access, in the Flow as written: a Flow with an
@@ -161,7 +163,10 @@ async function harnessProblems(
       contract.assertHarness(harness);
       const { ok, errors } = await harness.validate(agent);
       if (!ok) throw new Error(errors.join(', '));
-      await harness.resolveTools(agent);
+      // The agent Action copies what it returns, so a value it could not copy, a Promise among them, fails here.
+      const tools: unknown = harness.resolveTools(agent);
+      if (tools instanceof Promise) tools.catch(() => {});
+      jsonValue.checked(tools, 'resolveTools');
     } catch (err) {
       const reason = (err as Error).message.split('\n')[0];
       const location = `flows.${flow.name}.ticket.vertices.${id}`;

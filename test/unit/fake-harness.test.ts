@@ -188,3 +188,13 @@ test('an unscripted key throws naming it', async () => {
     /review\/1\/review\/1/,
   );
 });
+
+test("a scripted costBasis comes back on the call's Usage delta", async () => {
+  const { harness, cwd } = await setup({
+    responses: {
+      'implement/1/red/1': { response: {}, result: { usage: { delta: { inputTokens: 1, costBasis: 'reported' } } } },
+    },
+  });
+  const outcome = await harness.run(call(cwd));
+  assert.equal(usage(outcome).delta.costBasis, 'reported');
+});

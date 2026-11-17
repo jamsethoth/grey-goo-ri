@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as runSuite from '../../scripts/run-suite.ts';
 import * as processProbe from '../support/process-probe.ts';
@@ -42,7 +42,7 @@ function launcherCopy(t: TestContext, { prettier = 0, eslint = 0, tsc = 0, insta
     t.after(() => {
       if (!copyRoot) return; // no copy was made, so a leak.pid in the working directory is not this case's
       processProbe.endProcessIn(join(copyRoot, 'leak.pid'));
-      if (!process.env.GG_KEEP_TEMP) rmSync(copyRoot, { recursive: true, force: true, maxRetries: 6, retryDelay: 100 });
+      rmSync(copyRoot, { recursive: true, force: true, maxRetries: 6, retryDelay: 100 });
     });
   const root = tempDirectory.tempDirectory(t, 'gg-run-suite-');
   copyRoot = root;
@@ -115,11 +115,11 @@ function endedEarly(t: TestContext) {
 
 // A temp directory of the copy's own, as every platform's node finds it, so what a stage leaves in it is the stage's
 // alone. Node's test runner keeps its coverage in a node-coverage-* directory there and removes it only in its own
-// teardown, which a process.exit skips (#377). A caller's GG_KEEP_TEMP would keep the launcher's own, so it is cleared.
+// teardown, which a process.exit skips (#377).
 function ownTemp(root: string) {
   const temp = join(root, 'tmp');
   mkdirSync(temp);
-  return { temp, env: { TEMP: temp, TMP: temp, TMPDIR: temp, GG_KEEP_TEMP: '' } };
+  return { temp, env: { TEMP: temp, TMP: temp, TMPDIR: temp } };
 }
 
 test("a coverage stage whose test ends the process early fails, and does not read an earlier run's report", (t) => {
@@ -144,17 +144,6 @@ test('a coverage stage that measures no lines fails, and leaves nothing in the t
   assert.equal(result.status, 1, result.stdout);
   assert.match(result.stderr, /measured no lines/);
   assert.deepEqual(readdirSync(temp), []);
-});
-
-test("with GG_KEEP_TEMP a coverage stage keeps its tests' temp directory and names it", (t) => {
-  const copy = endedEarly(t);
-  const { temp, env } = ownTemp(copy.root);
-  const result = copy.run(['coverage'], [], { ...env, GG_KEEP_TEMP: '1' });
-  assert.equal(result.status, 1, result.stdout);
-  const kept = /^temp census: GG_KEEP_TEMP kept the stage's temp directory: (.+)$/m.exec(result.stderr)?.[1];
-  assert.ok(kept, result.stderr);
-  assert.deepEqual(readdirSync(temp), [basename(kept)]);
-  assert.match(readdirSync(kept).join(), /node-coverage-/);
 });
 
 // A copy whose one test makes a temp directory and never removes it, as a case that skips its cleanup does.
@@ -349,17 +338,6 @@ for (const [stage, argv] of [
   });
 }
 
-test('with GG_KEEP_TEMP the fast stage keeps what a case left, names the directory and passes', (t) => {
-  const copy = untidyCopy(t);
-  const { temp, env } = ownTemp(copy.root);
-  const result = copy.run(['fast'], [], { ...env, GG_KEEP_TEMP: '1' });
-  assert.equal(result.status, 0, result.stderr);
-  const kept = /^temp census: GG_KEEP_TEMP kept the stage's temp directory: (.+)$/m.exec(result.stderr)?.[1];
-  assert.ok(kept, result.stderr);
-  assert.deepEqual(readdirSync(temp), [basename(kept)]);
-  assert.match(readdirSync(kept).join(), /sample-left-/);
-});
-
 // Windows refuses to remove a directory a live process works in; elsewhere the removal succeeds. The child opens its
 // working directory as it starts up, after the spawn event, so the census waits for the child's own word that it runs.
 test('a temp census that cannot remove the directory still names each entry left', options.WIN_CASE, async (t) => {
@@ -372,7 +350,7 @@ test('a temp census that cannot remove the directory still names each entry left
   });
   t.after(() => holder.kill());
   await once(holder.stdout, 'data');
-  const { failed, report } = runSuite.tempCensus(directory, false);
+  const { failed, report } = runSuite.tempCensus(directory);
   holder.kill();
   await once(holder, 'exit');
   assert.equal(failed, true);

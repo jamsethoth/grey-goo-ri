@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { join, matchesGlob, resolve } from 'node:path';
@@ -87,7 +87,7 @@ test('every stage that runs tests takes a temp census, and the check stage does 
 
 test('a temp census of an empty directory passes, says nothing was left and removes it', (t) => {
   const directory = tempDirectory.tempDirectory(t, 'gg-temp-census-');
-  assert.deepEqual(runSuite.tempCensus(directory, false), { failed: false, report: 'temp census: nothing left' });
+  assert.deepEqual(runSuite.tempCensus(directory), { failed: false, report: 'temp census: nothing left' });
   assert.equal(existsSync(directory), false);
 });
 
@@ -96,7 +96,7 @@ test('a temp census fails naming each entry left, then removes the directory', (
   mkdirSync(join(directory, 'sample-left'));
   writeFileSync(join(directory, 'sample-left', 'inner.txt'), '');
   writeFileSync(join(directory, 'left.txt'), '');
-  assert.deepEqual(runSuite.tempCensus(directory, false), {
+  assert.deepEqual(runSuite.tempCensus(directory), {
     failed: true,
     report:
       'temp census: this stage left 2 in its temp directory, now removed; a case removes what it makes:\n' +
@@ -109,29 +109,19 @@ test('a temp census fails naming each entry left, then removes the directory', (
 test("a temp census passes over node's compile cache", (t) => {
   const directory = tempDirectory.tempDirectory(t, 'gg-temp-census-');
   mkdirSync(join(directory, 'node-compile-cache'));
-  assert.deepEqual(runSuite.tempCensus(directory, false), { failed: false, report: 'temp census: nothing left' });
+  assert.deepEqual(runSuite.tempCensus(directory), { failed: false, report: 'temp census: nothing left' });
   assert.equal(existsSync(directory), false);
 });
 
 test("a temp census fails naming a file left under the compile cache's name, which is a directory", (t) => {
   const directory = tempDirectory.tempDirectory(t, 'gg-temp-census-');
   writeFileSync(join(directory, 'node-compile-cache'), '');
-  assert.deepEqual(runSuite.tempCensus(directory, false), {
+  assert.deepEqual(runSuite.tempCensus(directory), {
     failed: true,
     report:
       'temp census: this stage left 1 in its temp directory, now removed; a case removes what it makes:\n' +
       '  node-compile-cache',
   });
-});
-
-test('with GG_KEEP_TEMP a temp census keeps the directory, names it and does not fail', (t) => {
-  const directory = tempDirectory.tempDirectory(t, 'gg-temp-census-');
-  writeFileSync(join(directory, 'left.txt'), '');
-  assert.deepEqual(runSuite.tempCensus(directory, true), {
-    failed: false,
-    report: `temp census: GG_KEEP_TEMP kept the stage's temp directory: ${directory}`,
-  });
-  assert.deepEqual(readdirSync(directory), ['left.txt']);
 });
 
 // ADR 0016, amended: a unit test imports the launcher, so what it loads of lib/ is loaded on demand.

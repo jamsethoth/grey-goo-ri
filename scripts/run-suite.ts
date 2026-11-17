@@ -250,10 +250,8 @@ export async function census(strays: Strays): Promise<{ failed: boolean; report:
 }
 
 // What a stage left in its private temp directory, named, then removed with the directory. node keeps its compile cache
-// there on purpose when a step enables it, as Prettier, ESLint and tsc do. GG_KEEP_TEMP keeps the directory, whose
-// cases' own directories tempDirectory then keeps too, so it never fails.
-export function tempCensus(directory: string, keep: boolean): { failed: boolean; report: string } {
-  if (keep) return { failed: false, report: `temp census: GG_KEEP_TEMP kept the stage's temp directory: ${directory}` };
+// there on purpose when a step enables it, as Prettier, ESLint and tsc do.
+export function tempCensus(directory: string): { failed: boolean; report: string } {
   let left: string[] = [];
   try {
     left = readdirSync(directory, { withFileTypes: true })
@@ -324,7 +322,7 @@ if (entry && (process.platform === 'win32' ? entry.toLowerCase() === self.toLowe
     if (failed && !stageCode) stageCode = 1;
   }
   // After the process census, which ends what could hold a file open.
-  const tempLeft = temp ? tempCensus(temp, Boolean(process.env.GG_KEEP_TEMP)) : { failed: false, report: '' };
+  const tempLeft = temp ? tempCensus(temp) : { failed: false, report: '' };
   if (tempLeft.report) console.error(tempLeft.report);
   if (stageCode) process.exit(stageCode);
   // The coverage figures are still held: a test that ends the process early leaves node's coverage directory behind,
