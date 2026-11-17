@@ -109,6 +109,27 @@ test('preflight names a Harness that fails in a Flow --flow does not name', asyn
   ]);
 });
 
+// The agent Action copies what resolveTools returns at once, so preflight refuses an answer it could not copy (#411).
+test('preflight refuses a Harness whose resolveTools answers with a Promise', async () => {
+  const fake = fakeHarness.fakeHarness({ resolveTools: async () => ({ allowed: ['Read'] }) });
+  assert.deepEqual(errorLines(await checkOf(sources(repositorySource()), { harnesses: { fake } })), [
+    'error: flows.default.ticket.vertices.red: vertex red: harness fake: resolveTools: the value is a Promise, ' +
+      'which JSON cannot hold [harness-preflight-failed]',
+    'error: flows.default.ticket.vertices.green: vertex green: harness fake: resolveTools: the value is a Promise, ' +
+      'which JSON cannot hold [harness-preflight-failed]',
+  ]);
+});
+
+test('a Promise resolveTools rejects is refused as a Promise, and its rejection does not end gg', async () => {
+  const fake = fakeHarness.fakeHarness({ resolveTools: () => Promise.reject(new Error('bad tools')) });
+  assert.deepEqual(errorLines(await checkOf(sources(repositorySource()), { harnesses: { fake } })), [
+    'error: flows.default.ticket.vertices.red: vertex red: harness fake: resolveTools: the value is a Promise, ' +
+      'which JSON cannot hold [harness-preflight-failed]',
+    'error: flows.default.ticket.vertices.green: vertex green: harness fake: resolveTools: the value is a Promise, ' +
+      'which JSON cannot hold [harness-preflight-failed]',
+  ]);
+});
+
 // A lost gg.db leaves gg/ behind, so the check is on the file: preflight and gg doctor both report it this way (#150).
 test('a gg.db deleted from an existing gg directory is a missing State Database', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-configuration-check-');
