@@ -208,7 +208,14 @@ test('two recovery passes of one Attempt take different scripted responses', asy
       'implement/1/red/2/1': { response: { pass: 2 } },
     },
   });
-  const first = await harness.run(call(cwd, { phase: 'recover', marker: 'gg:e1:implement:1:red:1:r1:1' }));
-  const second = await harness.run(call(cwd, { phase: 'recover', marker: 'gg:e1:implement:1:red:2:r1:1' }));
-  assert.deepEqual([first.response, second.response], [{ pass: 1 }, { pass: 2 }]);
+  // A key the fake does not find throws, which reads here as its message, so the case fails on its assertion.
+  const responseOf = (actionMarker: string) =>
+    harness.run(call(cwd, { phase: 'recover', marker: actionMarker })).then(
+      ({ response }) => response,
+      (err: unknown) => (err as Error).message,
+    );
+  assert.deepEqual(
+    [await responseOf('gg:e1:implement:1:red:1:r1:1'), await responseOf('gg:e1:implement:1:red:2:r1:1')],
+    [{ pass: 1 }, { pass: 2 }],
+  );
 });

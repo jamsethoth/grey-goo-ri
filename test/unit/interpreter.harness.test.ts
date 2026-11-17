@@ -91,13 +91,27 @@ test("the fake's agent Action Event holds null for the digest, CLI version, mode
   );
 });
 
-// A signal that never reaches the Harness leaves the call hung, which fails at the case timeout.
+// The Run's signal is aborted once the hung call has started. A call given no signal is released by cancel() instead,
+// so the case fails on its assertion, never hangs; a fake that ignored the signal would hang to the case timeout.
 test('an aborted signal resolves a hung call as killed', { timeout: 60_000 }, async (t) => {
   const red = golden.firstVisitResponses[RED_CALL]!;
   const fixture = await golden.fixture(t, {
     responses: firstVisitWith({ [RED_CALL]: { ...red, hang: true }, [RED_RETRY]: red }),
   });
-  await interpreter.runExecution({ ...fixture.options, signal: AbortSignal.abort() });
+  const controller = new AbortController();
+  const given: unknown[] = [];
+  const run = fixture.harness.run;
+  fixture.harness.run = (call, hooks) => {
+    const result = run(call, hooks);
+    if (call.vertex === 'red' && call.attempt === 1) {
+      given.push(hooks?.signal);
+      if (hooks?.signal === controller.signal) controller.abort();
+      else fixture.harness.cancel();
+    }
+    return result;
+  };
+  await interpreter.runExecution({ ...fixture.options, signal: controller.signal });
+  assert.deepEqual(given, [controller.signal], "the hung call was given the Run's signal");
   const [hung] = attemptsOf(fixture, 'red', 'red');
   assert.equal(hung!.signals.harnessResult?.status, 'killed');
 });
