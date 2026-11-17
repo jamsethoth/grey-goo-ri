@@ -145,8 +145,13 @@ async function writeFiles(cwd: string, files: Record<string, string>) {
 }
 
 // Each script's usage delta over the empty usage the capabilities give: a field the capabilities omit stays null.
-const deltaOf = (script: ScriptedResponse, empty: Usage): Usage =>
-  contract.usageOf((field) => (empty[field] === null ? null : (script.result?.usage?.delta?.[field] ?? empty[field])));
+const deltaOf = (script: ScriptedResponse, empty: Usage): Usage => {
+  const costBasis = script.result?.usage?.delta?.costBasis;
+  const counts = contract.usageOf((field) =>
+    empty[field] === null ? null : (script.result?.usage?.delta?.[field] ?? empty[field]),
+  );
+  return costBasis === undefined ? counts : { ...counts, costBasis };
+};
 
 function sessionStore(capabilities: Record<string, unknown>, transcriptDir: string | undefined) {
   const sessions = new Map<string, Session>();

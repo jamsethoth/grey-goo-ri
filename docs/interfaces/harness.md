@@ -15,7 +15,7 @@ code.
 | `capabilities` | the Capability matrix below |
 | `protectedPaths` | the paths that configure the Harness, each a directory with a trailing `/` or a file |
 | `validate(agent)` | checks an Agent against the matrix; returns a typed result, never throws |
-| `resolveTools(agent, ctx)` | the tools the Harness will pass for this Agent, hint fields marked |
+| `resolveTools(agent, ctx)` | the tools the Harness will pass for this Agent, hint fields marked, as JSON returned at once, never a Promise; gg passes no `ctx` yet |
 | `run(call, hooks)` | runs one Attempt; reports it has started through `hooks.started`; resolves `{ response, result, failure }` |
 | `interactiveArgs(agent, opening, opts)` | argv for an interactive session opened with `opening` |
 | `metrics(session)` | cumulative Usage of a Session |
