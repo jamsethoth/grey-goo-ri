@@ -157,7 +157,7 @@ leverage and a change lands in one place (locality).
 | `lib/harnesses/claude.ts` | **stub**: the Claude Code Harness; exports only `protectedPaths` and an empty `createCli(exec)`, so `gg run` preflight fails "not implemented" |
 | `lib/harnesses/codex.ts` | **stub**: the Codex Harness; exports only `protectedPaths` and an empty `createCli(exec)`, so `gg run` preflight fails "not implemented" |
 | `lib/exec.ts` | process spawn (a nonzero exit rejects with a `CommandError`), the shell runner, with its timeout and cleanup (ported), and `launch`, an argv run contained with no shell under its stall and wall clocks and the cancel signal, its tree taken down (#423) |
-| `lib/command-shim.ts` | what an argv starts as with no shell, for `run` and `launch`: on Windows an npm `.cmd` shim read for the program and script it names, any other `.cmd` refused |
+| `lib/command-shim.ts` | what an argv starts as with no shell, for `run` and `launch`: on Windows an npm `.cmd` shim for a node bin read for the script it names, any other `.cmd` refused |
 | `lib/launch-clock.ts` | the clocks that stop a launch: the stall clock, which output and `onIdle`'s last activity re-arm, the wall clock and the cancel signal |
 | `lib/command-cleanup.ts` | Command Cleanup's decisions, with no I/O: the `ps` listing parse, the descendant closure, the watcher's update, the kill plans and their survivors, a job's leftovers, the `cleanup` report |
 | `lib/process-tree.ts` | the processes a shell command leaves, on either platform: listing, watching and killing them as Command Cleanup decides, the Windows job's termination, and the helper processes that do so (ported) |

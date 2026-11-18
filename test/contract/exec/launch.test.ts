@@ -67,10 +67,16 @@ const stopOf = (result: exec.LaunchResult, pidFile: string) => ({
   confirmed: result.cleanup.confirmed,
 });
 
+// onIdle answers only once the child has written its pid, so the stall stops a process the case can check.
 test('launch stops a process silent past stallMs and says stall', UNSANDBOXED_CASE, async (t) => {
   const pidFile = join(scratch, 'stall.pid');
   t.after(() => processProbe.endProcessIn(pidFile));
-  const result = await launch({ command: process.execPath, args: [childScripts.LONG_LIVED, pidFile], stallMs: 500 });
+  const result = await launch({
+    command: process.execPath,
+    args: [childScripts.LONG_LIVED, pidFile],
+    stallMs: 500,
+    onIdle: async () => (await processProbe.waitFor(() => processProbe.pidIn(pidFile) > 0, t.signal), null),
+  });
   assert.deepEqual(stopOf(result, pidFile), { timedOut: 'stall', cancelled: false, alive: false, confirmed: true });
 });
 
@@ -162,6 +168,7 @@ test('output that arrives while onIdle is pending re-arms the stall clock', CASE
   );
 });
 
+// No hook holds the wall clock, so it runs 3 s: the child writes its pid within 0.7 s even with 8 launches at once.
 test('launch stops a process past wallMs and says wall', UNSANDBOXED_CASE, async (t) => {
   const pidFile = join(scratch, 'wall.pid');
   t.after(() => processProbe.endProcessIn(pidFile));
@@ -169,7 +176,7 @@ test('launch stops a process past wallMs and says wall', UNSANDBOXED_CASE, async
     command: process.execPath,
     args: [childScripts.LONG_LIVED, pidFile],
     stallMs: 60_000,
-    wallMs: 500,
+    wallMs: 3000,
   });
   assert.deepEqual(stopOf(result, pidFile), { timedOut: 'wall', cancelled: false, alive: false, confirmed: true });
 });
@@ -310,6 +317,10 @@ test('a .cmd that is not an npm shim is refused, naming the file', WIN_CASE, asy
   // cmd-shim's form for a bin whose shebang names another program: gg would run it with node.
   writeFileSync(join(bin, 'gg-sh-shim.cmd'), readFileSync(SHIM, 'utf8').replace('_prog=node', '_prog=/bin/sh'));
   await assert.rejects(launch({ command: 'gg-sh-shim', args: [] }), /gg-sh-shim\.cmd is not an npm shim/);
+  // cmd-shim's form for a node bin whose shebang sets a variable: gg would run it without the variable.
+  const envShim = readFileSync(SHIM, 'utf8').replace('SETLOCAL', 'SETLOCAL\r\n@SET NODE_OPTIONS=x');
+  writeFileSync(join(bin, 'gg-env-shim.cmd'), envShim);
+  await assert.rejects(launch({ command: 'gg-env-shim', args: [] }), /gg-env-shim\.cmd is not an npm shim/);
 });
 
 // A relative shim path or PATH entry names a file in the child's working directory, as spawn reads it, not gg's.
