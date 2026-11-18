@@ -40,7 +40,7 @@ export interface Settings {
   baseBranch: string;
   worktreeRoot: string;
   maxParallel: number;
-  commands: Record<string, jsonValue.JsonValue>;
+  commands: Record<string, string>;
   testPaths: string[];
   approvers?: string[];
 }

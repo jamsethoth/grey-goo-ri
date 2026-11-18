@@ -1,4 +1,4 @@
-// Append-only event log, schema 2: one row per Event in the events table of the State Database. lib/event-read.ts
+// Append-only event log, schema 3: one row per Event in the events table of the State Database. lib/event-read.ts
 // reads it back, checked against the declarations here.
 import type * as approvalAction from './approval-action.ts';
 import * as checks from './checks.ts';
@@ -15,7 +15,15 @@ type Declaration<Fields> = eventDeclaration.Declaration<Fields>;
 type Declared<Fields, Shape> = eventDeclaration.Declared<Fields, Shape>;
 
 // The frozen Event schema version (docs/interfaces/events.md); a change to it needs a new ADR (#23).
-export const EVENT_SCHEMA_VERSION = 2;
+export const EVENT_SCHEMA_VERSION = 3;
+// A reader accepts the version before its own, without the fields its own added: a ReadEvent (ADR 0024, decision 8).
+export const PREVIOUS_EVENT_SCHEMA_VERSION = 2;
+export const ADDED_IN_VERSION = ['effectiveModel', 'effectiveEffort', 'repositoryDigest'] as const;
+type Added = (typeof ADDED_IN_VERSION)[number];
+type Previous<Current> = Current extends unknown
+  ? Omit<Current, 'schemaVersion' | Added> & { schemaVersion: typeof PREVIOUS_EVENT_SCHEMA_VERSION }
+  : never;
+export type ReadEvent = Event | Previous<Event>;
 // Every Event's own header, ahead of its declared fields.
 interface EventHeader<Type extends string> {
   schemaVersion: typeof EVENT_SCHEMA_VERSION;
@@ -112,6 +120,11 @@ interface AgentFields {
   agentCliVersion: string | null;
   model: string | null;
   effort: string | null;
+  // The model and effort the Harness says the call ran with, and its digest of the repository's own Harness
+  // configuration, each null where it reported none.
+  effectiveModel: string | null;
+  effectiveEffort: string | null;
+  repositoryDigest: string | null;
   personaHash: string;
   tools: jsonValue.JsonValue;
   sessionInit: jsonValue.JsonValue;
@@ -130,6 +143,9 @@ export const AGENT = {
   agentCliVersion: 'required',
   model: 'required',
   effort: 'required',
+  effectiveModel: 'required',
+  effectiveEffort: 'required',
+  repositoryDigest: 'required',
   personaHash: 'required',
   tools: 'required',
   sessionInit: 'required',

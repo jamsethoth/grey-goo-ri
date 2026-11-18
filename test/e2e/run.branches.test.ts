@@ -231,7 +231,7 @@ async function siblingOverwrite(t: TestContext, { seeded, siblingRecord, sibling
     await ensureWorktree(fixture, BRANCH);
     record.save(unvisitedExecution.unvisitedExecution(fixture));
   }
-  const files = responses['red/1/red/1']?.files as Record<string, string>;
+  const files = responses['red/1/red/0/1']?.files as Record<string, string>;
   files[relative(fixture.worktree, join(sibling, 'package.json'))] = '{ "overwritten": true }\n';
   return { fixture, sibling, results: await run.runTarget(fixture.options) };
 }

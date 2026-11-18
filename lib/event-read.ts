@@ -28,11 +28,15 @@ const READ_FIELDS = ['failureClass', 'execution', 'run', 'head'];
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-// The fields an Event of this type declares after its header. A saved Event holds every one, an optional field null.
-function declaredFields(type: unknown, agent: unknown): string[] {
+// The fields an Event of this type declares after its header. A saved Event holds every one, an optional field null;
+// one of the previous version holds none its version added.
+function declaredFields(type: unknown, agent: unknown, previous: boolean): string[] {
   if (type === 'action') {
     if (typeof agent !== 'boolean') throw new Error('its agent is not true or false');
-    return ['agent', ...Object.keys(events.ACTION), ...(agent ? Object.keys(events.AGENT) : [])];
+    const agentFields = Object.keys(events.AGENT).filter(
+      (field) => !(previous && (events.ADDED_IN_VERSION as readonly string[]).includes(field)),
+    );
+    return ['agent', ...Object.keys(events.ACTION), ...(agent ? agentFields : [])];
   }
   // An own key only: `toString` would otherwise find Object.prototype's member and pass as a type.
   const shape = Object.entries(events.LIFECYCLE).find(([name]) => name === type)?.[1];
@@ -52,13 +56,15 @@ function checkFields(fields: Record<string, unknown>, declared: Set<string>): vo
 
 // What a row must hold to be read as an Event. tsc cannot follow a check over declared names, so the narrowing is
 // this assertion function's, and its body is the whole check.
-function assertEvent(value: unknown, row: EventRow): asserts value is events.Event {
+function assertEvent(value: unknown, row: EventRow): asserts value is events.ReadEvent {
   if (!isObject(value)) throw new Error('its JSON is not an object');
   const { schemaVersion, time, ...fields } = value;
-  if (schemaVersion !== events.EVENT_SCHEMA_VERSION) throw new Error(`unknown schemaVersion ${String(schemaVersion)}`);
+  const previous = schemaVersion === events.PREVIOUS_EVENT_SCHEMA_VERSION;
+  if (schemaVersion !== events.EVENT_SCHEMA_VERSION && !previous)
+    throw new Error(`unknown schemaVersion ${String(schemaVersion)}`);
   if (typeof time !== 'string') throw new Error('its time is not a string');
   const { type, ...body } = fields;
-  checkFields(body, new Set(declaredFields(type, fields.agent)));
+  checkFields(body, new Set(declaredFields(type, fields.agent, previous)));
   for (const column of COLUMNS) {
     const saved = fields[column] ?? null;
     if (row[column] !== saved)
@@ -68,7 +74,7 @@ function assertEvent(value: unknown, row: EventRow): asserts value is events.Eve
   }
 }
 
-function checked(row: EventRow): events.Event {
+function checked(row: EventRow): events.ReadEvent {
   const raw = String(row.json);
   const refused = (reason: string) =>
     new EventCorruptError(typeof row.id === 'number' ? row.id : String(row.id), String(row.type), reason, raw);
@@ -88,7 +94,7 @@ function checked(row: EventRow): events.Event {
 
 // The one read of the events table (lib/state-database/events.ts): each row checked, a refused one thrown, or handed to
 // `onRefused` and left out.
-export function checkedRows(rows: EventRow[], onRefused?: (err: EventCorruptError) => void): events.Event[] {
+export function checkedRows(rows: EventRow[], onRefused?: (err: EventCorruptError) => void): events.ReadEvent[] {
   return rows.flatMap((row) => {
     try {
       return [checked(row)];
@@ -105,7 +111,7 @@ export const ofExecution = (
   rows: EventRow[],
   execution: string,
   onRefused: (err: EventCorruptError) => void,
-): events.Event[] =>
+): events.ReadEvent[] =>
   checkedRows(rows, onRefused).filter((event) => ('execution' in event ? event.execution : null) === execution);
 
 // The real State Database's Event reads, for callers that take no seam; a Run's path reaches them through the database

@@ -11,8 +11,9 @@ import * as reviewFlow from '../support/review-flow.ts';
 
 // visit_end: each Visit's Outcome, its rule and the Edge it took, saved with the next cursor (#335).
 const { MAJOR, finding, fixed, review, reviewed } = reviewFlow;
-const reviewCall = (visitNumber: number) => keys.responseKey('reviewer', visitNumber, 'review', 1);
-const fixCall = (vertex: string) => keys.responseKey(vertex, 1, 'fix', 1);
+const reviewCall = (visitNumber: number) =>
+  keys.responseKey({ vertex: 'reviewer', visit: visitNumber, action: 'review' });
+const fixCall = (vertex: string) => keys.responseKey({ vertex, visit: 1, action: 'fix' });
 // A Vertex's routes, as a case edits them.
 type Routes = Record<string, unknown>;
 
@@ -199,7 +200,7 @@ test('a spent Edge whose exhausted target is its own Vertex records no edge or c
       [reviewCall(1)]: reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
       [fixCall('implementer-fix')]: fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' }),
       [reviewCall(2)]: reviewed(review('changes', [finding('major', 'lib/add.mjs', 'second problem')])),
-      [keys.responseKey('implementer-fix', 2, 'fix', 1)]: fixed({
+      [keys.responseKey({ vertex: 'implementer-fix', visit: 2, action: 'fix' })]: fixed({
         'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n',
       }),
       [reviewCall(3)]: reviewed(review('ok')),

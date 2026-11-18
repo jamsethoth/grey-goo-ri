@@ -113,9 +113,14 @@ export const noTestResponse = (notes = 'A config default; no behaviour to test.'
     diagnosis: 'The change has no observable behaviour.',
   });
 
-// The scripted Attempt of `vertex`'s Visit `visit` of its agent Action `phase`, first attempt unless `attempt` says.
-export const call = (vertex: string, visit: number, phase: string, attempt = 1) =>
-  keys.responseKey(vertex, visit, phase, attempt);
+// The scripted Attempt of `vertex`'s Visit `visit` of its agent Action `action`, its first pass and first attempt
+// unless `pass` says.
+export const call = (
+  vertex: string,
+  visit: number,
+  action: string,
+  pass: { recovery?: number; attempt?: number } = {},
+) => keys.responseKey({ vertex, visit, action, ...pass });
 
 // The first-visit pass: red writes a failing test, green implements it, and the reviewer accepts.
 export const firstPass = (): fakeHarnessModule.ScriptedResponses => ({

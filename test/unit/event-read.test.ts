@@ -62,6 +62,9 @@ const SHAPES: Record<string, (log: ReturnType<typeof events.eventLog>) => void> 
       agentCliVersion: '1.0.0',
       model: 'fake-model',
       effort: 'medium',
+      effectiveModel: 'fake-model-1',
+      effectiveEffort: 'medium',
+      repositoryDigest: 'sha256:d1',
       personaHash: 'p1',
       tools: ['Read'],
       sessionInit: { tools: ['Read'] },
@@ -287,9 +290,56 @@ test('a row whose JSON is not an object is refused by name', (t) => {
 
 test('a row of another schemaVersion is refused by name', (t) => {
   const { commonDir, id, type } = plantEdited(t, 'run_start', (json) => {
-    json.schemaVersion = 3;
+    json.schemaVersion = 1;
   });
-  assertRefused(commonDir, id, type, /unknown schemaVersion 3/);
+  assertRefused(commonDir, id, type, /unknown schemaVersion 1/);
+});
+
+// One Event of each shape as version 2 wrote it, every optional field given where it could be (SHAPES at version 2), so
+// none holds a field version 3 added.
+const VERSION_2 = JSON.parse(
+  readFileSync(new URL('../fixtures/events-version-2.json', import.meta.url), 'utf8'),
+) as Record<string, unknown>[];
+
+// A reader accepts the version before its own, and a field new in its version is optional when absent (#422, decision
+// 8).
+test('an event of the previous schema version still reads', (t) => {
+  assert.equal(events.EVENT_SCHEMA_VERSION, 3, 'version 2 is the one before');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-event-read-');
+  const insert = stateDatabase
+    .open(commonDir)
+    .prepare('INSERT INTO events (ts, type, run, execution, ticket, json) VALUES (?, ?, ?, ?, ?, ?)');
+  for (const event of VERSION_2) {
+    const column = (name: string) => (event[name] ?? null) as string | number | null;
+    insert.run(
+      event.time as string,
+      column('type'),
+      column('run'),
+      column('execution'),
+      column('ticket'),
+      JSON.stringify(event),
+    );
+  }
+  assert.deepEqual(
+    eventRead.readEvents(commonDir).map((event) => `${event.type} ${event.schemaVersion}`),
+    [
+      'action 2',
+      'action 2',
+      'run_start 2',
+      'run_end 2',
+      'ticket_start 2',
+      'ticket_end 2',
+      'label_failed 2',
+      'visit_end 2',
+      'config_change 2',
+      'ticket_resolved 2',
+      'ticket_resumed 2',
+    ],
+  );
+  const [first] = eventRead.readEvents(commonDir);
+  // @ts-expect-error a read Event may be of version 2, which lacks the fields version 3 added
+  const digest: unknown = first?.type === 'action' && first.agent ? first.repositoryDigest : null;
+  assert.equal(digest, undefined);
 });
 
 test('a row without its time is refused by name', (t) => {

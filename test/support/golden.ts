@@ -62,12 +62,12 @@ export const greenResponse = {
 };
 
 export const firstVisitResponses: fakeHarnessModule.ScriptedResponses = {
-  [keys.responseKey('red', 1, 'red', 1)]: {
+  [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: {
     files: { 'test/add.test.mjs': "import { add } from '../lib/add.mjs';\n" },
     response: redResponse,
     result: { usage: { delta: { inputTokens: 100, outputTokens: 20 } } },
   },
-  [keys.responseKey('green', 1, 'green', 1)]: {
+  [keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })]: {
     files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' },
     response: greenResponse,
     result: { usage: { delta: { inputTokens: 200, outputTokens: 40 } } },

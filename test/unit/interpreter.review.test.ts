@@ -26,8 +26,9 @@ import * as actionSignals from '../support/action-signals.ts';
 import * as keys from '../support/keys.ts';
 import { actionById } from '../support/procedure-actions.ts';
 
-const reviewKey = (visit: number, attempt = 1) => keys.responseKey('reviewer', visit, 'review', attempt);
-const fixKey = (vertex: string, visit: number) => keys.responseKey(vertex, visit, 'fix', 1);
+const reviewKey = (visit: number, attempt = 1) =>
+  keys.responseKey({ vertex: 'reviewer', visit, action: 'review', attempt });
+const fixKey = (vertex: string, visit: number) => keys.responseKey({ vertex, visit, action: 'fix' });
 // A Vertex's route as a case edits it: the configuration declares a Vertex's keys as unknown.
 const routeOf = (vertex: Record<string, unknown>) => vertex.route as Record<string, unknown>;
 
@@ -203,7 +204,7 @@ test('a restart at the review-to-fix boundary runs the pending fix with the save
 test('two reviewer vertices keep their own sessions and provenance rows', async (t) => {
   const fixture = await reviewFixture(t, {
     [reviewKey(1)]: reviewed(review('ok')),
-    [keys.responseKey('reviewer-2', 1, 'review', 1)]: reviewed(review('ok')),
+    [keys.responseKey({ vertex: 'reviewer-2', visit: 1, action: 'review' })]: reviewed(review('ok')),
   });
   golden.configure(fixture, (configured) => {
     const { vertices } = configured.flows.golden.ticket;

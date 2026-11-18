@@ -67,7 +67,7 @@ export async function executionContext(t: TestContext) {
     events: events.eventLog(commonDir),
     protectedPaths: [],
     run: 'run-1',
-    runState: { stop: null, remoteNotBefore: 0 },
+    runState: sideEffect.createRunState(),
     cwd: commonDir,
     labelPrefix: 'gg',
     log: (line: string) => logs.push(line),

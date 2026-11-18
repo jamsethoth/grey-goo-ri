@@ -15,9 +15,9 @@ import { MAJOR, finding, fixed, review, reviewFixture, reviewed, runReviewFlow }
 import { editRuns } from '../support/suite-runs.ts';
 
 type GoldenFixture = golden.GoldenFixture;
-const FIRST_REVIEW = keys.responseKey('reviewer', 1, 'review', 1);
-const FIRST_FIX = keys.responseKey('implementer-fix', 1, 'fix', 1);
-const SECOND_REVIEW = keys.responseKey('reviewer', 2, 'review', 1);
+const FIRST_REVIEW = keys.responseKey({ vertex: 'reviewer', visit: 1, action: 'review' });
+const FIRST_FIX = keys.responseKey({ vertex: 'implementer-fix', visit: 1, action: 'fix' });
+const SECOND_REVIEW = keys.responseKey({ vertex: 'reviewer', visit: 2, action: 'review' });
 
 // Each Visit's snapshot as last saved, by `vertex/visit`: the record keeps only the current Visit's.
 function pinnedInputs(t: TestContext) {
@@ -184,7 +184,7 @@ test('a held Execution saves a Terminal stop that declares every field', async (
 
 test('a shipped Brief names its inputs directly', async (t) => {
   const responses = firstVisitWith();
-  responses[keys.responseKey('red', 1, 'red', 1)]!.files!['test/sentinel.test.mjs'] =
+  responses[keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]!.files!['test/sentinel.test.mjs'] =
     "import { add } from '../lib/add.mjs';\n";
   const fixture = await golden.fixture(t, { responses });
   editRuns(fixture, (result) => ({ ...result, output: `${result.output}\nSENTINEL red output` }));

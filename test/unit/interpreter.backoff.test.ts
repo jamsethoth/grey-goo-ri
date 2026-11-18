@@ -2,7 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type * as sideEffect from '../../lib/effects/side-effect.ts';
+import * as sideEffect from '../../lib/effects/side-effect.ts';
 import type * as events from '../../lib/events.ts';
 import * as github from '../../lib/github.ts';
 import * as integrity from '../../lib/integrity.ts';
@@ -54,6 +54,7 @@ type GoldenFixture = golden.GoldenFixture;
 const PUSH = keys.retryKey({ vertex: 'green', visit: 1, action: 'push', recovery: 0 });
 const PR_UPSERT = keys.retryKey({ vertex: 'green', visit: 1, action: 'pr', recovery: 0 });
 const PR_READY = keys.retryKey({ vertex: 'publish', visit: 1, action: 'pr-ready', recovery: 0 });
+const RED = keys.responseKey({ vertex: 'red', visit: 1, action: 'red' });
 test('a transient pr-upsert failure is retried and opens one PR', async (t) => {
   const fixture = await golden.fixture(t);
   fixture.gh.fail({ matches: isPr('create'), status: 502 });
@@ -373,7 +374,7 @@ test('a latched run stop does not consume a relaunch retry', async (t) => {
   // Another Ticket stops the run once this Action is under way, after the Visit's own check.
   let stop = null;
   const runState = {
-    remoteNotBefore: 0,
+    ...sideEffect.createRunState(),
     get stop() {
       return (stop ??= ticketRow(fixture).activity.busy ? { failureClass: 'auth', ticket: 21 } : null);
     },
@@ -568,7 +569,7 @@ test('a remote auth failure stops the run and the next Execution stops before it
   pushThrough(fixture, () =>
     Promise.reject(refusedPush("fatal: Authentication failed for 'https://github.com/o/r.git/'\n")),
   );
-  const runState: sideEffect.RunState = { stop: null, remoteNotBefore: 0 };
+  const runState = sideEffect.createRunState();
   const result = await interpreter.runExecution({ ...fixture.options, runState });
 
   assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
@@ -602,7 +603,7 @@ test('a remote permission failure faults only its Ticket', async (t) => {
       refusedPush("fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 403\n"),
     ),
   );
-  const runState: sideEffect.RunState = { stop: null, remoteNotBefore: 0 };
+  const runState = sideEffect.createRunState();
   const result = await interpreter.runExecution({ ...fixture.options, runState });
 
   assert.equal(result.fault, true, JSON.stringify(result));
@@ -621,7 +622,7 @@ test('a remote permission failure faults only its Ticket', async (t) => {
 test("a remote auth failure in a Terminal's report latches the run stop and faults its Ticket", async (t) => {
   const fixture = await golden.fixture(t, {
     responses: {
-      [keys.responseKey('red', 1, 'red', 1)]: { files: {}, response: null, failure: { failureClass: 'unknown' } },
+      [RED]: { files: {}, response: null, failure: { failureClass: 'unknown' } },
     },
   });
   fixture.gh.fail({
@@ -629,7 +630,7 @@ test("a remote auth failure in a Terminal's report latches the run stop and faul
     status: 401,
     body: { message: 'Bad credentials' },
   });
-  const runState: sideEffect.RunState = { stop: null, remoteNotBefore: 0 };
+  const runState = sideEffect.createRunState();
   const result = await interpreter.runExecution({ ...fixture.options, runState });
 
   assert.equal(result.fault, true, JSON.stringify(result));
@@ -652,7 +653,7 @@ test('a remote run stop whose own report fails becomes a fault that keeps the ru
     status: 401,
     body: { message: 'Bad credentials' },
   });
-  const runState: sideEffect.RunState = { stop: null, remoteNotBefore: 0 };
+  const runState = sideEffect.createRunState();
   const result = await interpreter.runExecution({ ...fixture.options, runState });
 
   assert.equal(result.fault, true, JSON.stringify(result));
@@ -672,13 +673,13 @@ test('a remote run stop whose own report fails becomes a fault that keeps the ru
 test("a remote auth failure first met in a fault's report keeps the run stop on the fault", async (t) => {
   const fixture = await golden.fixture(t, {
     responses: {
-      [keys.responseKey('red', 1, 'red', 1)]: { files: {}, response: null, failure: { failureClass: 'unknown' } },
+      [RED]: { files: {}, response: null, failure: { failureClass: 'unknown' } },
     },
   });
   const onTicket = (args: string[]) => fakeGhModule.isCommentPost(args, golden.TICKET);
   fixture.gh.fail({ matches: onTicket, status: 422, body: { message: 'Validation Failed' } });
   fixture.gh.fail({ matches: onTicket, status: 401, body: { message: 'Bad credentials' } });
-  const runState: sideEffect.RunState = { stop: null, remoteNotBefore: 0 };
+  const runState = sideEffect.createRunState();
   const result = await interpreter.runExecution({ ...fixture.options, runState });
 
   assert.equal(result.fault, true, JSON.stringify(result));
@@ -705,7 +706,7 @@ test('a remote Action that fails for good records its Action Event with its clas
     await t.test(name, async (t) => {
       const fixture = await golden.fixture(t);
       pushThrough(fixture, () => Promise.reject(refusedPush(stderr)));
-      await interpreter.runExecution({ ...fixture.options, runState: { stop: null, remoteNotBefore: 0 } });
+      await interpreter.runExecution({ ...fixture.options, runState: sideEffect.createRunState() });
 
       const pushed = actionEvent(fixture, 'green', 'push');
       assert.ok(pushed, 'the failed push has an Action Event');
@@ -730,7 +731,7 @@ test('a remote Action that fails for good records its Action Event with its clas
 test('a run stop survives a human abandonment of its Terminal', async (t) => {
   const fixture = await golden.fixture(t, {
     responses: {
-      [keys.responseKey('red', 1, 'red', 1)]: { files: {}, response: null, failure: { failureClass: 'auth' } },
+      [RED]: { files: {}, response: null, failure: { failureClass: 'auth' } },
     },
   });
   // The run stop's own comment backs off, and a human sets needs-human meanwhile.
@@ -738,7 +739,7 @@ test('a run stop survives a human abandonment of its Terminal', async (t) => {
   fixture.clock.onSleep = () => {
     fixture.gh.labels.add('gg:state:needs-human');
   };
-  const runState: sideEffect.RunState = { stop: null, remoteNotBefore: 0 };
+  const runState = sideEffect.createRunState();
   const result = await interpreter.runExecution({ ...fixture.options, runState });
 
   assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
@@ -772,7 +773,7 @@ test('a stop routed to ready-for-qa keeps its run stop when the replacement repo
   const onTicket = (args: string[]) => fakeGhModule.isCommentPost(args, golden.TICKET);
   fixture.gh.fail({ matches: onTicket, status: 401, body: { message: 'Bad credentials' } });
   fixture.gh.fail({ matches: onTicket, status: 422, body: { message: 'Validation Failed' } });
-  const runState: sideEffect.RunState = { stop: null, remoteNotBefore: 0 };
+  const runState = sideEffect.createRunState();
   const result = await interpreter.runExecution({ ...fixture.options, runState });
 
   assert.equal(result.fault, true, JSON.stringify(result));
@@ -786,7 +787,7 @@ test("a failed Action's Event that cannot be saved still stops the run and saves
   const fixture = await golden.fixture(t);
   pushThrough(fixture, () => Promise.reject(refusedPush(AUTH_REFUSED)));
   caseDatabase.failAppends(t, (event) => event.type === 'action' && event.action === 'push');
-  const runState: sideEffect.RunState = { stop: null, remoteNotBefore: 0 };
+  const runState = sideEffect.createRunState();
   const err = await interpreter.runExecution({ ...fixture.options, runState }).then(
     () => null,
     (err: Error) => err,

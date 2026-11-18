@@ -7,12 +7,14 @@ import * as clockModule from './clock.ts';
 import * as config from './config.ts';
 import * as configurationCheck from './configuration-check.ts';
 import * as effectErrors from './effect-errors.ts';
+import * as sideEffect from './effects/side-effect.ts';
 import * as events from './events.ts';
 import * as flowModule from './flow.ts';
 import * as github from './github.ts';
 import * as labels from './labels.ts';
 import * as locksModule from './locks.ts';
 import * as model from './model.ts';
+import * as paths from './paths.ts';
 import type * as runContext from './run-context.ts';
 import * as report from './validate/report.ts';
 import * as stateDatabase from './state-database/index.ts';
@@ -292,7 +294,7 @@ function startRun(
   { named, log }: { named: (message: string) => string; log: (line: string) => void },
 ) {
   const runId = `${new Date(clock.now()).toISOString().replace(/[-:]|\.\d+/g, '')}-${randomBytes(3).toString('hex')}`;
-  const runDir = join(repo.gitCommonDir, 'gg', 'runs', runId);
+  const runDir = paths.runDirectory(repo.gitCommonDir, runId);
   flowModule.writeResolved(runDir, model.toJson(selected.flow), selected.hash);
   for (const { hash, configuration } of flows) database.savePinnedConfiguration(repo.gitCommonDir, hash, configuration);
   const runLog = (message: string) => {
@@ -325,10 +327,8 @@ async function runRepo(repo: admission.Repo, admitted: Admitted, options: RunOpt
   for (const warning of warnings) runLog(report.line('warning', warning));
   const results: TicketResult[] = [];
   // The first run stop of any Execution, which ends every other one before its next Action, and the cooldown every
-  // remote Action of the Run waits for after any one of them backs off.
-  const runState = { stop: null, remoteNotBefore: 0 } as runContext.ExecutionOptions['runState'] & {
-    stop: { failureClass: string } | null;
-  };
+  // remote Action of the Run waits for after any one of them backs off, and the signal every Harness call is given.
+  const runState = sideEffect.createRunState();
   const context: admission.AdmissionContext = {
     config: settings,
     flow,

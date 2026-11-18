@@ -125,6 +125,10 @@ const harnessResult = object((field, has) => ({
   ...(has('permissionDenials') && { permissionDenials: json(field('permissionDenials')) }),
   ...(has('commandsRun') && { commandsRun: json(field('commandsRun')) }),
   ...(has('cleanup') && { cleanup: callCleanup(field('cleanup')) }),
+  ...(has('repositoryDigest') && { repositoryDigest: nullableText(field('repositoryDigest')) }),
+  ...(has('agentCliVersion') && { agentCliVersion: nullableText(field('agentCliVersion')) }),
+  ...(has('effectiveModel') && { effectiveModel: nullableText(field('effectiveModel')) }),
+  ...(has('effectiveEffort') && { effectiveEffort: nullableText(field('effectiveEffort')) }),
 }));
 
 const harnessFailure = object((field, has) => ({

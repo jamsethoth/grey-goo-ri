@@ -149,7 +149,7 @@ interface PreflightHarness {
 async function harnessProblems(
   failed: report.Report,
   flow: model.DeclaredFlowJson,
-  harnesses: Record<string, unknown>,
+  { harnesses, commands }: { harnesses: Record<string, unknown>; commands: Record<string, string> },
 ) {
   for (const [id, { agent }] of Object.entries(flow.ticket.vertices)) {
     const harnessName = referencePaths.isRecord(agent) ? agent.harness : undefined;
@@ -164,7 +164,7 @@ async function harnessProblems(
       const { ok, errors } = await harness.validate(agent);
       if (!ok) throw new Error(errors.join(', '));
       // The agent Action copies what it returns, so a value it could not copy, a Promise among them, fails here.
-      const tools: unknown = harness.resolveTools(agent);
+      const tools: unknown = harness.resolveTools(agent, { commands, platform: process.platform });
       if (tools instanceof Promise) tools.catch(() => {});
       jsonValue.checked(tools, 'resolveTools');
     } catch (err) {
@@ -242,7 +242,9 @@ export async function check({
   const environment = report.newReport();
   if (commonDir !== undefined) stateDatabaseProblems(environment, commonDir);
   const readable = commonDir !== undefined && !environment.errors.length;
-  for (const [, { declared }] of admitted) await harnessProblems(environment, declared, harnesses);
+  // Settings with an error give no Declared Commands, so the Harnesses resolve their tools with none.
+  const commands = parsed.settings?.commands ?? {};
+  for (const [, { declared }] of admitted) await harnessProblems(environment, declared, { harnesses, commands });
   return {
     flows: declared.flows,
     configurationErrors: [...(parsed.errors ?? []), ...declared.errors],

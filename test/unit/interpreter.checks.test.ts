@@ -35,10 +35,10 @@ type ConfiguredProcedure = GoldenConfig['procedures'][string] & {
 // A configured Vertex's routes or inputs, as a case edits them.
 type Routes = Record<string, unknown>;
 type Inputs = Record<string, Record<string, unknown>>;
-const RED_CALL = keys.responseKey('red', 1, 'red', 1);
-const RED_RECOVERY = keys.responseKey('red', 1, 'recover', 1);
-const GREEN_CALL = keys.responseKey('green', 1, 'green', 1);
-const GREEN_RECOVERY = keys.responseKey('green', 1, 'recover', 1);
+const RED_CALL = keys.responseKey({ vertex: 'red', visit: 1, action: 'red' });
+const RED_RECOVERY = keys.responseKey({ vertex: 'red', visit: 1, action: 'red', recovery: 1 });
+const GREEN_CALL = keys.responseKey({ vertex: 'green', visit: 1, action: 'green' });
+const GREEN_RECOVERY = keys.responseKey({ vertex: 'green', visit: 1, action: 'green', recovery: 1 });
 
 // The evidence an Action's saved output carries.
 const evidenceOf = (fixture: GoldenFixture, vertex: string, action: string) =>
@@ -386,7 +386,9 @@ test('a failed Check produces no evidence output', async (t) => {
 
 test('a tests-fail pass by name match alone carries foundByNameOnly: true in its evidence', async (t) => {
   const output = `Error: ${golden.TEST_NAME} threw\n`;
-  const built = await reviewFixture(t, { [keys.responseKey('reviewer', 1, 'review', 1)]: reviewed(review('ok')) });
+  const built = await reviewFixture(t, {
+    [keys.responseKey({ vertex: 'reviewer', visit: 1, action: 'review' })]: reviewed(review('ok')),
+  });
   // The runner prints no per-test statuses, only the test's name.
   editRuns(built, (result) => (result.code === 0 ? result : { ...result, output }));
   const fixture = await ranToEnd(built);
@@ -412,11 +414,11 @@ test(
     const fixture = await runReviewFlow(
       t,
       {
-        [keys.responseKey('reviewer', 1, 'review', 1)]: reviewed(review('changes', [MAJOR])),
-        [keys.responseKey('implementer-fix', 1, 'fix', 1)]: fixed({
+        [keys.responseKey({ vertex: 'reviewer', visit: 1, action: 'review' })]: reviewed(review('changes', [MAJOR])),
+        [keys.responseKey({ vertex: 'implementer-fix', visit: 1, action: 'fix' })]: fixed({
           'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n',
         }),
-        [keys.responseKey('reviewer', 2, 'review', 1)]: reviewed(review('ok')),
+        [keys.responseKey({ vertex: 'reviewer', visit: 2, action: 'review' })]: reviewed(review('ok')),
       },
       { configure: reuseTree('implement', 'fix', 'publish') },
     );
@@ -516,7 +518,7 @@ test('a reused pass writes a confirmed cleanup', async (t) => {
   const fixture = await runReviewFlow(
     t,
     {
-      [keys.responseKey('reviewer', 1, 'review', 1)]: reviewed(review('ok')),
+      [keys.responseKey({ vertex: 'reviewer', visit: 1, action: 'review' })]: reviewed(review('ok')),
     },
     { configure: reuseTree('implement', 'publish') },
   );

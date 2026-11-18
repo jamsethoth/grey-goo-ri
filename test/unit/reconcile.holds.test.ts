@@ -83,7 +83,7 @@ for (const point of CRASH_POINTS) {
 for (const point of CRASH_POINTS) {
   test(`a crash ${point} of the run stop needs-human label keeps the run stop classification`, async (t) => {
     const fixture = await golden.fixture(t, {
-      responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
+      responses: { 'red/1/red/0/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
     });
     await crashResume.crashed(fixture, ['needs-human', 1, 'end-label', 0], point);
 
@@ -138,8 +138,8 @@ test('a vertex missing from the flow holds the ticket', async (t) => {
 const testFixFixture = (t: TestContext) =>
   goldenRun.greenFixture(t, {
     responses: {
-      'green/1/green/1': goldenRun.greenWrites({ 'lib/add.mjs': goldenRun.WRONG_ADD }),
-      'green/1/recover/1': goldenRun.greenWrites({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
+      'green/1/green/0/1': goldenRun.greenWrites({ 'lib/add.mjs': goldenRun.WRONG_ADD }),
+      'green/1/green/1/1': goldenRun.greenWrites({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
     },
   });
 const greenActions = (fixture: golden.GoldenFixture) =>
@@ -215,12 +215,12 @@ test('bounds survive a restart', async (t) => {
   const fixture = await reviewFlow.reviewFixture(
     t,
     {
-      'reviewer/1/review/1': review([finding('first problem')]),
-      'implementer-fix/1/fix/1': {
+      'reviewer/1/review/0/1': review([finding('first problem')]),
+      'implementer-fix/1/fix/0/1': {
         files: { 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' },
         response: { ...golden.greenResponse, summary: 'Address the findings.' },
       },
-      'reviewer/2/review/1': review([finding('second problem')]),
+      'reviewer/2/review/0/1': review([finding('second problem')]),
     },
     {
       configure: (configured) => {

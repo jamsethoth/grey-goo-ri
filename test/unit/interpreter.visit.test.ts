@@ -34,10 +34,10 @@ import * as firstVisit from '../support/first-visit.ts';
 import * as keys from '../support/keys.ts';
 import * as suiteRuns from '../support/suite-runs.ts';
 
-const RED_CALL = keys.responseKey('red', 1, 'red', 1);
-const RED_RECOVERY = keys.responseKey('red', 1, 'recover', 1);
-const GREEN_CALL = keys.responseKey('green', 1, 'green', 1);
-const GREEN_RECOVERY = keys.responseKey('green', 1, 'recover', 1);
+const RED_CALL = keys.responseKey({ vertex: 'red', visit: 1, action: 'red' });
+const RED_RECOVERY = keys.responseKey({ vertex: 'red', visit: 1, action: 'red', recovery: 1 });
+const GREEN_CALL = keys.responseKey({ vertex: 'green', visit: 1, action: 'green' });
+const GREEN_RECOVERY = keys.responseKey({ vertex: 'green', visit: 1, action: 'green', recovery: 1 });
 
 // A write-ahead intent with the payload its effect saves.
 type Intent<Payload> = writeAhead.WriteAheadEntry & { payload: Payload };

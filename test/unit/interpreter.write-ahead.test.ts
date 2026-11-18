@@ -16,8 +16,8 @@ import * as caseDatabase from '../support/case-database.ts';
 import * as firstVisit from '../support/first-visit.ts';
 import * as keys from '../support/keys.ts';
 
-const RED_CALL = keys.responseKey('red', 1, 'red', 1);
-const RED_RETRY = keys.responseKey('red', 1, 'red', 2);
+const RED_CALL = keys.responseKey({ vertex: 'red', visit: 1, action: 'red' });
+const RED_RETRY = keys.responseKey({ vertex: 'red', visit: 1, action: 'red', attempt: 2 });
 const RED_RETRIES = keys.retryKey({ vertex: 'red', visit: 1, action: 'red', recovery: 0 });
 const isCrash = (err: unknown) => err instanceof interpreter.CrashError;
 // The error a run rejects with, or null when it resolves.
@@ -45,11 +45,11 @@ test('a completed call is not rerun after a crash before the next action', async
   });
   await t.test('a review with a changes result', async (t) => {
     const fixture = await reviewFixture(t, {
-      [keys.responseKey('reviewer', 1, 'review', 1)]: reviewed(review('changes', [MAJOR])),
-      [keys.responseKey('implementer-fix', 1, 'fix', 1)]: fixed({
+      [keys.responseKey({ vertex: 'reviewer', visit: 1, action: 'review' })]: reviewed(review('changes', [MAJOR])),
+      [keys.responseKey({ vertex: 'implementer-fix', visit: 1, action: 'fix' })]: fixed({
         'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n',
       }),
-      [keys.responseKey('reviewer', 2, 'review', 1)]: reviewed(review('ok')),
+      [keys.responseKey({ vertex: 'reviewer', visit: 2, action: 'review' })]: reviewed(review('ok')),
     });
     const call = attemptMarker(fixture, 'reviewer', 1, 'review', 0);
     await assert.rejects(
@@ -130,11 +130,11 @@ for (const [name, agentWrites] of agentEdits) {
 
 test('the repeat Check appends once per visit across a crash', async (t) => {
   const fixture = await reviewFixture(t, {
-    [keys.responseKey('reviewer', 1, 'review', 1)]: reviewed(review('changes', [MAJOR])),
-    [keys.responseKey('implementer-fix', 1, 'fix', 1)]: fixed({
+    [keys.responseKey({ vertex: 'reviewer', visit: 1, action: 'review' })]: reviewed(review('changes', [MAJOR])),
+    [keys.responseKey({ vertex: 'implementer-fix', visit: 1, action: 'fix' })]: fixed({
       'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n',
     }),
-    [keys.responseKey('reviewer', 2, 'review', 1)]: reviewed(review('ok')),
+    [keys.responseKey({ vertex: 'reviewer', visit: 2, action: 'review' })]: reviewed(review('ok')),
   });
   const appendEvent = fixture.options.events;
   let crashed = false;
@@ -180,7 +180,7 @@ test('the repeat Check appends once per visit across a crash', async (t) => {
 
 test('the terminal stop survives a crash before the first terminal action', async (t) => {
   const responses = firstVisit.firstVisitWith();
-  responses[keys.responseKey('green', 1, 'green', 1)].response = {
+  responses[keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })].response = {
     ...golden.greenResponse,
     claim: 'blocked',
     diagnosis: 'NOTES-7f3: the ticket contradicts itself.',
@@ -397,7 +397,7 @@ const REFUSED_TICKET_ENDS: [string, string][] = [
   [
     "holding another Execution's JSON",
     JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 3,
       time: 't',
       type: 'ticket_end',
       ...{ run: 'run-1', execution: 'other', ticket: golden.TICKET, owner: { kind: 'ticket', number: golden.TICKET } },

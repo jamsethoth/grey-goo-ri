@@ -3,6 +3,7 @@ import type { TestContext } from 'node:test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
+import * as sideEffect from '../../lib/effects/side-effect.ts';
 import type * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
@@ -26,7 +27,7 @@ const deterministic = (vertex: string, action: string, row: string) => {
   return {
     action,
     recovery: 0,
-    schemaVersion: 2,
+    schemaVersion: 3,
     vertex,
     visit: 1,
     procedure,
@@ -271,10 +272,7 @@ const ghWrite = (args: string[]) =>
 
 test('a run stop during a repo-lock wait skips the queued effect and only needs-human reporting follows', async (t) => {
   const fixture = await golden.fixture(t, { integrity: 'real', git: 'real' });
-  const runState: { stop: { failureClass: string; ticket: number } | null; remoteNotBefore: number } = {
-    stop: null,
-    remoteNotBefore: 0,
-  };
+  const runState = sideEffect.createRunState();
   let before: number | undefined;
   let written: Record<string, number> | undefined;
   // Another Ticket stops the run while this one's push waits for the repo lock.
@@ -310,7 +308,7 @@ test('a run stop during a repo-lock wait skips the queued effect and only needs-
 
 // A green call held for cleanup, on real git with the real integrity, whose survivor writes before the later Run looks.
 async function heldGreen(t: TestContext) {
-  const greenCall = keys.responseKey('green', 1, 'green', 1);
+  const greenCall = keys.responseKey({ vertex: 'green', visit: 1, action: 'green' });
   const fixture = await golden.fixture(t, {
     integrity: 'real',
     git: 'real',
@@ -403,7 +401,7 @@ test('an edit made while a gate waits for its cleanup holds the Ticket and survi
 
 // red has no gg commit behind it, so only the held call's own baseline sees the commit.
 test('a commit made before any gg commit, while a hold waits, is kept', async (t) => {
-  const redCall = keys.responseKey('red', 1, 'red', 1);
+  const redCall = keys.responseKey({ vertex: 'red', visit: 1, action: 'red' });
   const fixture = await golden.fixture(t, {
     integrity: 'real',
     git: 'real',

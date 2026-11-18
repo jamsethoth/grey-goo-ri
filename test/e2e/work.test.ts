@@ -15,7 +15,9 @@ import * as runFixture from '../support/run-fixture.ts';
 test('gg work resume refuses a worktree with uncommitted changes and keeps the record', async (t) => {
   const responses = {
     ...structuredClone(golden.firstVisitResponses),
-    [keys.responseKey('green', 1, 'green', 1)]: goldenRun.greenWrites({ 'lib/add.mjs': goldenRun.WRONG_ADD }),
+    [keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })]: goldenRun.greenWrites({
+      'lib/add.mjs': goldenRun.WRONG_ADD,
+    }),
   };
   const fixture = runFixture.fixture(t, { responses, git: 'real', integrity: 'real' });
   fixture.options.deps.exec = addSuite.addSuite({ worktree: fixture.worktree, checksSum: true });

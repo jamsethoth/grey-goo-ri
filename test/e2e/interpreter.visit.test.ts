@@ -15,9 +15,9 @@ import * as keys from '../support/keys.ts';
 import * as suiteRuns from '../support/suite-runs.ts';
 
 type Commit = writeAhead.WriteAheadEntry & { payload: commit.Payload };
-const RED_CALL = keys.responseKey('red', 1, 'red', 1);
-const RED_RECOVERY = keys.responseKey('red', 1, 'recover', 1);
-const GREEN_CALL = keys.responseKey('green', 1, 'green', 1);
+const RED_CALL = keys.responseKey({ vertex: 'red', visit: 1, action: 'red' });
+const RED_RECOVERY = keys.responseKey({ vertex: 'red', visit: 1, action: 'red', recovery: 1 });
+const GREEN_CALL = keys.responseKey({ vertex: 'green', visit: 1, action: 'green' });
 
 test('commits match the recorded intent tree', async (t) => {
   const fixture = await runFirstVisit(t, { git: 'real' });

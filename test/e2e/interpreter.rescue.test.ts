@@ -281,9 +281,11 @@ test('a background writer left by a returned call is killed before the rescue', 
 });
 
 // The golden traces of a failed fix: escalated with its work rescued, and left in place once the escalation is spent.
-const reviewCall = (visitNumber: number) => keys.responseKey('reviewer', visitNumber, 'review', 1);
-const fixCall = (vertex: string, visitNumber = 1) => keys.responseKey(vertex, visitNumber, 'fix', 1);
-const fixRecovery = (visitNumber = 1) => keys.responseKey('implementer-fix', visitNumber, 'recover', 1);
+const reviewCall = (visitNumber: number) =>
+  keys.responseKey({ vertex: 'reviewer', visit: visitNumber, action: 'review' });
+const fixCall = (vertex: string, visitNumber = 1) => keys.responseKey({ vertex, visit: visitNumber, action: 'fix' });
+const fixRecovery = (visitNumber = 1) =>
+  keys.responseKey({ vertex: 'implementer-fix', visit: visitNumber, action: 'fix', recovery: 1 });
 const wrongFix = () => reviewFlow.fixed({ 'lib/add.mjs': goldenRun.WRONG_ADD });
 
 // A failed implementer-fix escalates to senior-dev, which reads the failed work as `previous`, once; then it ends.

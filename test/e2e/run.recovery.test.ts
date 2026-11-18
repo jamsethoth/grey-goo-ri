@@ -30,7 +30,7 @@ const addWorktree = (fixture: RunFixture) =>
 // An Execution whose red wrote a Protected File, an Integrity Violation, and whose reset crashed before it ran.
 async function interruptedReset(t: TestContext) {
   const responses = structuredClone(golden.firstVisitResponses);
-  (responses['red/1/red/1']?.files as Record<string, string>)['.agents/injected.json'] = '{}\n';
+  (responses['red/1/red/0/1']?.files as Record<string, string>)['.agents/injected.json'] = '{}\n';
   const fixture = runFixture.fixture(t, { responses, labels: [IN_PROGRESS_LABEL], integrity: 'real', git: 'real' });
   const git = resetInterruption.crashingReset(fixture.options.deps.git);
   const seeded = await runFixture.seedExecution(fixture, { git });
@@ -129,7 +129,7 @@ test('an interrupted reset whose intent predates the index fingerprint is held',
 test('a Run resumes a partial restore without repeating the agent call', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   // The agent changes an ignored Protected File and adds another: an Integrity Violation, whose rollback restores both.
-  Object.assign(responses['red/1/red/1']?.files as Record<string, string>, {
+  Object.assign(responses['red/1/red/0/1']?.files as Record<string, string>, {
     '.claude/settings.local.json': '{"agent":true}\n',
     '.claude/agent.json': '{}\n',
   });

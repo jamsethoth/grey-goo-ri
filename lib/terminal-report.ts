@@ -72,7 +72,9 @@ export const declaredStop = (stop: StopDeclaration): record.TerminalStop => ({
 
 // An Execution's run stop: the first of its Action Events whose Failure Class reaches the whole Run, or null. The
 // Events only grow, so no later Terminal can lose it (#251).
-export const runStopEvent = (executionEvents: events.Event[]): events.ActionEvent | null =>
+export const runStopEvent = (
+  executionEvents: events.ReadEvent[],
+): Extract<events.ReadEvent, { type: 'action' }> | null =>
   executionEvents.filter((event) => event.type === 'action').find((event) => reachOf(event.failureClass) === 'run') ??
   null;
 

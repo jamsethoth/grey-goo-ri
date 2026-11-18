@@ -170,11 +170,27 @@ test('resolveTools has one declaration, which answers at once as harness.md stat
     .filter((path) => path.endsWith('.ts'))
     .sort()
     .flatMap((path) => resolveToolsDeclarations(path, readFileSync(new URL(path, root), 'utf8')));
-  assert.deepEqual(declarations, ['lib/run-context.ts: resolveTools(agent: unknown): jsonValue.JsonValue;']);
+  assert.deepEqual(declarations, [
+    'lib/run-context.ts: resolveTools(agent: unknown, context: ToolsContext): jsonValue.JsonValue;',
+  ]);
   assert.match(
     documentText('harness.md'),
-    /^\| `resolveTools\(agent, ctx\)` \|[^\n]*returned at once, never a Promise/m,
+    /^\| `resolveTools\(agent, \{ commands, platform \}\)` \|[^\n]*returned at once, never a Promise/m,
   );
+});
+
+// A script's failure is the Harness failure the fake reports, so a test scripts its class by the key every Harness
+// reports it under (#422, decision 5).
+test("a scripted failureClass is the failure's class", () => {
+  const scripted = walked('test/support/fake-harness.ts', 'ScriptedResponse').filter((path) =>
+    path.startsWith('failure'),
+  );
+  assert.deepEqual(sorted(scripted), [
+    'failure.failureClass: string (visit.HarnessFailure)',
+    'failure.message?: string (visit.HarnessFailure)',
+    'failure.retryAfterMs?: number | null (visit.HarnessFailure)',
+    'failure?: object (fakeHarness.ScriptedResponse)',
+  ]);
 });
 
 test('problems.md lists exactly the Problem codes', () => {
@@ -187,11 +203,11 @@ test('problems.md lists exactly the Problem codes', () => {
 });
 
 test('records and events carry the frozen version constants', (t) => {
-  assert.equal(record.RECORD_SCHEMA_VERSION, 1);
+  assert.equal(record.RECORD_SCHEMA_VERSION, 2);
   assert.equal(record.createExecutionRecord(START).schemaVersion, record.RECORD_SCHEMA_VERSION);
   assert.equal(record.createEpicRecord({ commonDir: 'C:/x', epic: 3 }).schemaVersion, record.RECORD_SCHEMA_VERSION);
-  assert.equal(events.EVENT_SCHEMA_VERSION, 2);
-  assert.equal(fakeHarness.FAKE_HARNESS_VERSION, 1);
+  assert.equal(events.EVENT_SCHEMA_VERSION, 3);
+  assert.equal(fakeHarness.FAKE_HARNESS_VERSION, 2);
   const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-freeze-');
   events.eventLog(directory)('run_start', { run: 'r' });
   assert.deepEqual(

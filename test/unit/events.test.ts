@@ -75,6 +75,9 @@ const actionFields = (): events.EventInput<'action'> => ({
   agentCliVersion: null,
   model: 'fake-model',
   effort: 'medium',
+  effectiveModel: null,
+  effectiveEffort: null,
+  repositoryDigest: null,
   personaHash: 'p1',
   tools: ['Read'],
   sessionInit: null,
@@ -116,6 +119,9 @@ const agentRequired = [
   'agentCliVersion',
   'model',
   'effort',
+  'effectiveModel',
+  'effectiveEffort',
+  'repositoryDigest',
   'personaHash',
   'tools',
   'sessionInit',
@@ -159,6 +165,9 @@ const ACTION_EVENT_KEYS = [
   'agentCliVersion',
   'model',
   'effort',
+  'effectiveModel',
+  'effectiveEffort',
+  'repositoryDigest',
   'personaHash',
   'tools',
   'sessionInit',
@@ -190,10 +199,10 @@ test('an action event carries schema version 2 and every required field', (t) =>
   const lines = rows(directory).map((row) => row.json);
   assert.deepEqual(
     lines.map((line) => line.slice(0, 18)),
-    ['{"schemaVersion":2', '{"schemaVersion":2'],
+    ['{"schemaVersion":3', '{"schemaVersion":3'],
   );
   const back = JSON.parse(lines[0]) as Record<string, unknown>;
-  assert.equal(back.schemaVersion, 2);
+  assert.equal(back.schemaVersion, 3);
   assert.equal(back.type, 'action');
   assert.equal(typeof back.time, 'string');
   assert.deepEqual(Object.keys(back), ACTION_EVENT_KEYS);
@@ -251,7 +260,7 @@ test('an Event carries schemaVersion and time', (t) => {
   events.eventLog(directory, { run: 'r1' })('run_start');
   const [event] = eventRead.readEvents(directory);
   assert.deepEqual(Object.keys(event), ['schemaVersion', 'time', 'type', 'run']);
-  assert.equal(event.schemaVersion, 2);
+  assert.equal(event.schemaVersion, 3);
   assert.ok(!Number.isNaN(Date.parse(event.time)), event.time);
 });
 
@@ -426,7 +435,7 @@ test('eventLog validates every event before appending it', (t) => {
   events.eventLog(directory, { run: 'r1' })('run_start');
   const [row] = rows(directory);
   const back = JSON.parse(row.json) as Record<string, unknown>;
-  assert.equal(back.schemaVersion, 2);
+  assert.equal(back.schemaVersion, 3);
   assert.equal(back.type, 'run_start');
   assert.equal(back.run, 'r1');
 });
@@ -507,7 +516,7 @@ test('eventLog appends a row with the identity columns and the full event', (t) 
   assert.equal(rest.length, 0);
   const event = JSON.parse(row.json) as { time: string };
   assert.deepEqual(event, {
-    schemaVersion: 2,
+    schemaVersion: 3,
     time: event.time,
     type: 'ticket_start',
     run: 'r1',

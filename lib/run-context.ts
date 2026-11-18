@@ -4,7 +4,7 @@ import * as checks from './checks.ts';
 import * as clockModule from './clock.ts';
 import type * as commandCleanup from './command-cleanup.ts';
 import type * as config from './config.ts';
-import type * as sideEffect from './effects/side-effect.ts';
+import * as sideEffect from './effects/side-effect.ts';
 import * as events from './events.ts';
 import type * as exec from './exec.ts';
 import type * as github from './github.ts';
@@ -79,14 +79,26 @@ export interface HarnessResult {
   permissionDenials?: jsonValue.JsonValue;
   commandsRun?: jsonValue.JsonValue;
   cleanup?: commandCleanup.CallCleanup;
+  // What the Harness found of its own run, for the Action Event: absent from a result saved before #422 (ADR 0024).
+  repositoryDigest?: string | null;
+  agentCliVersion?: string | null;
+  effectiveModel?: string | null;
+  effectiveEffort?: string | null;
 }
 // The Harness's report that its call has started, given before run resolves: what contains the call's processes, so
 // an Interrupted Attempt is reset only once they are known gone (N1).
 export interface HarnessStarted {
   kind: string;
 }
+// `signal` travels beside the call, never inside it: the copy the Harness gets would turn it into `{}`.
 export interface HarnessHooks {
   started(report: HarnessStarted): void;
+  signal: AbortSignal;
+}
+// What gg tells resolveTools beside the Agent: the Declared Commands it may run and the platform it runs on.
+export interface ToolsContext {
+  commands: Record<string, string>;
+  platform: NodeJS.Platform;
 }
 export interface Harness {
   run(
@@ -97,7 +109,7 @@ export interface Harness {
     result: HarnessResult;
     failure: visit.HarnessFailure | null;
   }>;
-  resolveTools(agent: unknown): jsonValue.JsonValue;
+  resolveTools(agent: unknown, context: ToolsContext): jsonValue.JsonValue;
   capabilities: { confinement?: string | null; sessionResume?: { supported?: boolean } };
 }
 
@@ -192,7 +204,7 @@ export function createRunContext(options: ExecutionOptions): RunContext {
     clock,
     flow: options.pinned.flow,
     run: options.run ?? executionRecord.run,
-    runState: options.runState ?? { stop: null, remoteNotBefore: 0 },
+    runState: options.runState ?? sideEffect.createRunState(),
     database: deps.database ?? stateDatabase,
     integrity: deps.integrity ?? integrity.createIntegrity(deps.git, undefined, deps.locks),
     testImmutability:

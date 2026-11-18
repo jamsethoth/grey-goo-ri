@@ -7,9 +7,16 @@ interface ActionPlace {
   action: string;
 }
 
-// The fake harness's scripted response for one Attempt of an agent phase: `vertex/visit/phase/attempt`.
-export const responseKey = (vertex: string, visit: number, phase: string, attempt: number): string =>
-  `${vertex}/${visit}/${phase}/${attempt}`;
+// The fake harness's scripted response for one Attempt of an agent Action: `vertex/visit/action/recovery/attempt`,
+// its first pass and first attempt unless `recovery` and `attempt` say.
+export const responseKey = ({
+  vertex,
+  visit,
+  action,
+  recovery = 0,
+  attempt = 1,
+}: ActionPlace & { recovery?: number; attempt?: number }): string =>
+  `${vertex}/${visit}/${action}/${recovery}/${attempt}`;
 
 // An Action's retries in the Execution Record: `vertex/visit/action/recovery`, lib's own key.
 export const retryKey = (actionIdentity: ActionPlace & { recovery: number }): string =>

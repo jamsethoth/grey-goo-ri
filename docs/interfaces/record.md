@@ -7,8 +7,11 @@ here outside the Reserved section needs a new ADR under `docs/adr/` and a versio
 - Code source: `ExecutionRecord` and `EpicRecord` (`lib/record.ts`), saved as `ExecutionRecordJson` and `EpicRecordJson`
   (`lib/record-json.ts`), and read back field by field by `lib/record-read.ts`, which refuses any other shape. The
   types are the one declaration: tsc holds each reader to its type both ways (#402).
-- Version: `RECORD_SCHEMA_VERSION = 1`, saved as each row's `schemaVersion`. A row of any other version is a corrupt
-  row, never read as this one.
+- Version: `RECORD_SCHEMA_VERSION = 2`, saved as each row's `schemaVersion`. A row of version 1, the one before, still
+  reads: each field version 2 added is optional, so a row without it reads (ADR 0024). Every save writes the current
+  version, whichever version the row was read at. A row of any other version is a corrupt row, never read as this one.
+- Version 2 added the Harness Result's `repositoryDigest`, `agentCliVersion`, `effectiveModel` and `effectiveEffort`
+  (#422).
 - The State Database version: `stateDatabase.SCHEMA_VERSION = 1`, its `user_version` (below).
 
 `test/unit/freeze.test.ts` holds every block below to the code: change one and the test names the difference.
@@ -647,6 +650,10 @@ visitState.call.harnessResult.cleanup.containment<kind=job>.kind: "job"
 visitState.call.harnessResult.cleanup.containment<kind=group>.kind: "group"
 visitState.call.harnessResult.cleanup.containment<kind=group>.pgid: number
 visitState.call.harnessResult.cleanup.containment<kind=none>.kind: "none"
+visitState.call.harnessResult.repositoryDigest?: string | null (runContext.HarnessResult)
+visitState.call.harnessResult.agentCliVersion?: string | null (runContext.HarnessResult)
+visitState.call.harnessResult.effectiveModel?: string | null (runContext.HarnessResult)
+visitState.call.harnessResult.effectiveEffort?: string | null (runContext.HarnessResult)
 visitState.call.claim: object (visit.AgentCall)
 visitState.call.claim.valid: boolean (visit.ClaimSignal)
 visitState.call.claim.token: string | null (visit.ClaimSignal)

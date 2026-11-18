@@ -5,6 +5,7 @@ import * as github from '../../lib/github.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
 import * as stateDatabase from '../../lib/state-database/index.ts';
+import * as sideEffect from '../../lib/effects/side-effect.ts';
 import * as golden from '../support/golden.ts';
 import {
   actionEvent,
@@ -255,7 +256,7 @@ test('a retry that crashed as it launched needs a new retry to launch again', as
 test('a cooldown raised while a retry looks for its effect is waited out before the launch', async (t) => {
   const fixture = await reviewFixture(t, okReview);
   fixture.gh.fail(onPr({ status: 502 }));
-  const runState = { stop: null, remoteNotBefore: 0 };
+  const runState = sideEffect.createRunState();
   const { comments } = fixture.options.deps.gh;
   let raised = false;
   // Another Ticket backs off while this retry's lookup is in flight.
@@ -280,7 +281,9 @@ test('a cooldown raised while a retry looks for its effect is waited out before 
 
 test('a human needs-human label during a fault report backoff abandons the Execution', async (t) => {
   const fixture = await golden.fixture(t, {
-    responses: { [keys.responseKey('red', 1, 'red', 1)]: { throw: new Error('harness exploded') } },
+    responses: {
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: { throw: new Error('harness exploded') },
+    },
   });
   fixture.gh.fail({ matches: (args: string[]) => fakeGhModule.isCommentPost(args, golden.TICKET), status: 502 });
   fixture.clock.onSleep = () => {
@@ -353,7 +356,7 @@ test('a pending report waiting out a sibling cooldown checks the human override 
   const posted = fixture.gh.calls.filter((call) => fakeGhModule.isCommentPost(call.args)).length;
 
   // Another Ticket of the next Run is backing off; a human sets needs-human during the wait.
-  const runState = { stop: null, remoteNotBefore: fixture.clock.now() + 7_000 };
+  const runState = { ...sideEffect.createRunState(), remoteNotBefore: fixture.clock.now() + 7_000 };
   fixture.sleeps.length = 0;
   fixture.clock.onSleep = () => {
     fixture.gh.labels.add('gg:state:needs-human');

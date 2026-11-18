@@ -6,6 +6,7 @@ import type * as approvalAction from '../../lib/approval-action.ts';
 import * as github from '../../lib/github.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
+import * as sideEffect from '../../lib/effects/side-effect.ts';
 import * as approvalFlow from '../support/approval-flow.ts';
 import { loadTicket } from '../support/execution-reads.ts';
 import { firstVisitWith } from '../support/first-visit.ts';
@@ -26,7 +27,7 @@ const {
 } = approvalFlow;
 
 const SECOND_GREEN = {
-  [keys.responseKey('green', 2, 'green', 1)]: {
+  [keys.responseKey({ vertex: 'green', visit: 2, action: 'green' })]: {
     files: { 'lib/add.mjs': 'export const add = (a, b) => b + a;\n' },
     response: golden.greenResponse,
   },
@@ -540,7 +541,7 @@ test("a run stop met in Reconciliation's cooldown leaves a Pending request as it
     (err) => err instanceof interpreter.CrashError,
   );
   const crashed = loadTicket(fixture);
-  const runState = { stop: { failureClass: 'auth', ticket: 99 }, remoteNotBefore: 0 };
+  const runState = { ...sideEffect.createRunState(), stop: { failureClass: 'auth', ticket: 99 } };
 
   const result = await laterRun(fixture, { runState });
   assert.equal(result.outcome, 'pending');

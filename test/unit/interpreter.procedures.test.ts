@@ -22,10 +22,10 @@ type GoldenConfig = golden.GoldenConfig;
 // A configured Procedure's Claim tokens, or a Vertex's inputs, as a case edits them.
 type ClaimTokens = Record<string, Record<string, unknown>>;
 type Inputs = Record<string, unknown>;
-const GREEN_CALL = keys.responseKey('green', 1, 'green', 1);
-const GREEN_RECOVERY = keys.responseKey('green', 1, 'recover', 1);
+const GREEN_CALL = keys.responseKey({ vertex: 'green', visit: 1, action: 'green' });
+const GREEN_RECOVERY = keys.responseKey({ vertex: 'green', visit: 1, action: 'green', recovery: 1 });
 // The first Attempt of the agent Action `ask` at the first Visit of `vertex`.
-const askOf = (vertex: string) => keys.responseKey(vertex, 1, 'ask', 1);
+const askOf = (vertex: string) => keys.responseKey({ vertex, visit: 1, action: 'ask' });
 
 // Procedures are configuration: these cases declare Procedures of their own, with names gg does not know (#116).
 const PROBE_SCHEMA = JSON.stringify({
