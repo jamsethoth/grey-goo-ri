@@ -99,6 +99,7 @@ test('a workspace-write Agent on a read-only Procedure is an access-conflict tha
   assert.ok(errors[0]!.message.includes('"review"'), errors[0]!.message);
   assert.ok(errors[0]!.message.includes('"reviewer"'), errors[0]!.message);
   assert.ok(errors[0]!.message.includes('set "access": "read-only" on the Vertex'), errors[0]!.message);
+  assert.deepEqual(errors[0]!.params, { procedure: 'review', agent: 'reviewer' });
 });
 
 // Every combination of the Procedure's, the Agent's and the Vertex's access: a Vertex either runs with the access its

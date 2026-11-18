@@ -429,3 +429,84 @@ test('the launch profile the Config Hash pins has a name and a version', () => {
   assert.match(claude.launchProfile.name, /^[a-z][a-z0-9-]*$/);
   assert.ok(Number.isInteger(claude.launchProfile.version) && claude.launchProfile.version >= 1);
 });
+
+// A Claude configuration directory listing `installed` (key to installPath, made unless named in `absent`) and
+// account-synced plugins at plugins/synced/<path>, each named in its plugin.json.
+function claudeHome(
+  t: TestContext,
+  installed: Record<string, string>,
+  { synced = {}, absent = [] }: { synced?: Record<string, string>; absent?: string[] } = {},
+) {
+  const configDirectory = tempDirectory.tempDirectory(t, 'gg-claude-home-');
+  mkdirSync(join(configDirectory, 'plugins'));
+  const plugins: Record<string, { installPath: string }[]> = {};
+  for (const [key, directory] of Object.entries(installed)) {
+    const installPath = join(configDirectory, 'cache', directory);
+    if (!absent.includes(key)) mkdirSync(installPath, { recursive: true });
+    plugins[key] = [{ installPath }];
+  }
+  writeFileSync(join(configDirectory, 'plugins', 'installed_plugins.json'), JSON.stringify({ plugins }));
+  for (const [path, pluginName] of Object.entries(synced)) {
+    const directory = join(configDirectory, 'plugins', 'synced', path, '.claude-plugin');
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, 'plugin.json'), JSON.stringify({ name: pluginName }));
+  }
+  return configDirectory;
+}
+
+const pluginDirectoriesOf = (configDirectory: string, plugins: string[]) =>
+  claude
+    .createClaude({ configDirectory })
+    .resolveTools({ ...WRITER, plugins }, { commands: COMMANDS, platform: 'linux' }).pluginDirectories;
+
+// Ported, feature-flow 89e1d67 test/core.test.mjs:187.
+test('claudeToolkit plugin names: qualified exact match, qualified miss, ambiguous bare name', (t) => {
+  const home = claudeHome(t, { 'alpha@mkt': 'alpha' });
+  assert.deepEqual(pluginDirectoriesOf(home, ['alpha@mkt']), [join(home, 'cache', 'alpha')]);
+  assert.throws(() => pluginDirectoriesOf(home, ['alpha@other']), /plugin alpha@other is not installed/);
+  const two = claudeHome(t, { 'alpha@a': 'a', 'alpha@b': 'b' });
+  assert.throws(() => pluginDirectoriesOf(two, ['alpha']), /plugin alpha ambiguous: alpha@a, alpha@b/);
+});
+
+// Ported, feature-flow 89e1d67 test/core.test.mjs:263; a listed installPath that is gone counts as not installed.
+test('findClaudePlugin resolves installed and nested synced plugins', (t) => {
+  const home = claudeHome(
+    t,
+    { 'alpha@mkt': 'a', 'gone@mkt': 'gone' },
+    { synced: { 'acct/uuid': 'beta' }, absent: ['gone@mkt'] },
+  );
+  assert.deepEqual(pluginDirectoriesOf(home, ['alpha']), [join(home, 'cache', 'a')]);
+  assert.deepEqual(pluginDirectoriesOf(home, ['beta']), [join(home, 'plugins', 'synced', 'acct', 'uuid')]);
+  assert.throws(() => pluginDirectoriesOf(home, ['gamma']), /plugin gamma is not installed/);
+  assert.throws(() => pluginDirectoriesOf(home, ['gone']), /plugin gone is not installed/);
+});
+
+test('validate fails plugins that are not names and a contextBudget that is not a positive integer', async () => {
+  for (const [field, value, error] of [
+    ['plugins', 'alpha', 'plugins must be a list of plugin names'],
+    ['contextBudget', 0, 'contextBudget must be a positive integer of tokens'],
+    ['contextBudget', 1.5, 'contextBudget must be a positive integer of tokens'],
+  ] as const)
+    assert.deepEqual(await harness.validate({ ...WRITER, [field]: value }), { ok: false, errors: [error], hinted: [] });
+});
+
+test("the settings file is named by its content, so a Run's parallel Tickets never share one by accident", () => {
+  const settingsPath = (agent: model.Agent) => flagValue(launched({ agent }).argv, '--settings');
+  assert.equal(settingsPath(WRITER), settingsPath(WRITER));
+  assert.notEqual(settingsPath(WRITER), settingsPath({ ...WRITER, network: true }));
+});
+
+test('every listed plugin that is not installed is named in one error', () => {
+  assert.throws(
+    () => harness.resolveTools({ ...WRITER, plugins: ['nope-a', 'nope-b'] }, { commands: COMMANDS, platform: 'linux' }),
+    { message: 'plugin nope-a is not installed, plugin nope-b is not installed' },
+  );
+});
+
+test('--autocompact stays within the window Claude accepts, 100,000 to 1,000,000 tokens', () => {
+  const autocompact = (contextBudget: number) =>
+    flagValue(launched({ agent: { ...WRITER, contextBudget } }).argv, '--autocompact');
+  assert.equal(autocompact(50000), '100000');
+  assert.equal(autocompact(100000), '110000');
+  assert.equal(autocompact(1000000), '1000000');
+});

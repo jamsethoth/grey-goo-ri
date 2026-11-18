@@ -152,11 +152,22 @@ function resolveToolsIn(configDirectory: string, agent: unknown, context: runCon
   const readOnly = [...READ_ONLY_GIT, ...(context.platform === 'win32' ? READ_ONLY_POWERSHELL : [])];
   const rule = (command: string) => `${shell}(${command})`;
   const plugins = isStrings(fields.plugins) ? fields.plugins : [];
+  const failures: string[] = [];
+  const pluginDirectories = plugins.flatMap((plugin) => {
+    try {
+      return [pluginDirectory(plugin, configDirectory)];
+    } catch (err) {
+      failures.push((err as Error).message);
+      return [];
+    }
+  });
+  // Every plugin that fails, in one error: preflight shows one line a Vertex (request section 4).
+  if (failures.length) throw new Error(failures.join(', '));
   return {
     tools: [shell, 'Read', 'Grep', 'Glob', ...(writes ? ['Edit', 'Write'] : []), ...(network ? WEB_TOOLS : [])],
     allow: [...commands, ...readOnly].map(rule),
     deny: [...DENIED_COMMANDS.map(rule), ...(network ? [] : WEB_TOOLS)],
-    pluginDirectories: plugins.map((plugin) => pluginDirectory(plugin, configDirectory)),
+    pluginDirectories,
     hinted: hintedOf(fields),
   };
 }
@@ -165,7 +176,11 @@ function resolveToolsIn(configDirectory: string, agent: unknown, context: runCon
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 
 // The margin above contextBudget at which Claude compacts, a backstop behind gg's own hand-off (#430).
-const AUTOCOMPACT_MARGIN = 1.1;
+const AUTOCOMPACT_PERCENT = 110;
+// The window --autocompact accepts, in tokens (Claude Code docs, model-config, read 2026-11-18).
+const AUTOCOMPACT_RANGE = { least: 100_000, most: 1_000_000 };
+const autocompactAt = (budget: number) =>
+  Math.min(AUTOCOMPACT_RANGE.most, Math.max(AUTOCOMPACT_RANGE.least, Math.ceil((budget * AUTOCOMPACT_PERCENT) / 100)));
 
 // The argv and environment of the launch profile (request 3.2, bullets 1-3), and the files they name.
 export function launchArgs(call: ClaudeCall, tools: ClaudeTools): Launch {
@@ -187,9 +202,7 @@ export function launchArgs(call: ClaudeCall, tools: ClaudeTools): Launch {
     ...(modelName == null ? [] : ['--model', modelName]),
     ...(effort == null ? [] : ['--effort', effort]),
     ...['--tools', tools.tools.join(',')],
-    ...(typeof contextBudget === 'number'
-      ? ['--autocompact', String(Math.ceil(contextBudget * AUTOCOMPACT_MARGIN))]
-      : []),
+    ...(typeof contextBudget === 'number' ? ['--autocompact', String(autocompactAt(contextBudget))] : []),
     ...(call.resume === null ? [] : ['--resume', call.resume]),
   ];
   const env: Record<string, string> = {
