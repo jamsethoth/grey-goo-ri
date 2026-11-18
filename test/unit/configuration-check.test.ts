@@ -147,6 +147,52 @@ test("preflight resolves each Agent's tools with the repository's Declared Comma
   ]);
 });
 
+// A Setting's error elsewhere leaves the Declared Commands valid, so the Harnesses still resolve with them (#424, D5).
+test("preflight keeps the repository's valid Declared Commands when another setting is invalid", async () => {
+  const contexts: unknown[] = [];
+  const fake = fakeHarness.fakeHarness({
+    resolveTools: (_agent, context) => {
+      contexts.push(context);
+      return {};
+    },
+  });
+  await checkOf(sources(repositorySource(), { ...MACHINE_SETTINGS, maxParallel: 0, files: {} }), {
+    harnesses: { fake },
+  });
+  assert.deepEqual(contexts, [
+    { commands: { test: 'npm test' }, platform: process.platform },
+    { commands: { test: 'npm test' }, platform: process.platform },
+  ]);
+});
+
+// Preflight runs the Claude Harness's validate and resolveTools, and only then its stop, until #425's last step.
+test("preflight fails a Claude Agent listing mcp on the Harness's validate", async () => {
+  const repository = repositorySource();
+  Object.assign(repository.agents.implementer!, { harness: 'claude', mcp: ['github'] });
+  const claude = await import('../../lib/harnesses/claude.ts');
+  const lines = errorLines(await checkOf(sources(repository), { harnesses: { claude } }));
+  assert.equal(lines.length, 2, lines.join('\n'));
+  assert.match(lines[0]!, /^error: flows\.default\.ticket\.vertices\.red: vertex red: harness claude: .*\bmcp\b/);
+  assert.match(lines[1]!, /^error: flows\.default\.ticket\.vertices\.green: vertex green: harness claude: .*\bmcp\b/);
+});
+
+test("preflight fails a Claude Agent's plugin that is not installed on the Harness's resolveTools", async (t) => {
+  const repository = repositorySource();
+  Object.assign(repository.agents.implementer!, { harness: 'claude', plugins: ['gg-no-such-plugin'] });
+  const claudeModule = await import('../../lib/harnesses/claude.ts');
+  const claude = claudeModule.createClaude({ configDirectory: tempDirectory.tempDirectory(t, 'gg-claude-home-') });
+  const lines = errorLines(await checkOf(sources(repository), { harnesses: { claude } }));
+  assert.equal(lines.length, 2, lines.join('\n'));
+  assert.match(
+    lines[0]!,
+    /^error: flows\.default\.ticket\.vertices\.red: vertex red: harness claude: .*plugin gg-no-such-plugin/,
+  );
+  assert.match(
+    lines[1]!,
+    /^error: flows\.default\.ticket\.vertices\.green: vertex green: harness claude: .*plugin gg-no-such-plugin/,
+  );
+});
+
 // A lost gg.db leaves gg/ behind, so the check is on the file: preflight and gg doctor both report it this way (#150).
 test('a gg.db deleted from an existing gg directory is a missing State Database', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-configuration-check-');

@@ -51,6 +51,7 @@ export const PROBLEM_CODES = [
   'invalid-comment-target',
   'invalid-otherwise',
   'invalid-procedure-access',
+  'access-conflict',
   'invalid-reuse',
   'invalid-tests-setting',
   'malformed-claim-token',

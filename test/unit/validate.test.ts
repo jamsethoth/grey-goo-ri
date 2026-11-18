@@ -161,15 +161,6 @@ test('a Procedure with no agent Action that declares claimTokens is an error', (
   ]);
 });
 
-test('access: read-only on the Procedure caps the Agent', () => {
-  const config = exampleLayer.config();
-  config.agents.reviewer.access = 'workspace-write';
-  const { errors, flows } = exampleLayer.check(config);
-  assert.deepEqual(errors, []);
-  assert.equal(flows.default.ticket.vertices.reviewer.agent?.access, 'workspace-write');
-  assert.equal(flows.default.ticket.vertices.reviewer.access, 'read-only');
-});
-
 test("a Vertex's own access outside the Permission Intents is an error at the Vertex", () => {
   const config = exampleLayer.config();
   config.flows.default.ticket.vertices.green.access = 'read-write';
