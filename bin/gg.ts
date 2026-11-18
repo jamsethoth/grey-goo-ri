@@ -53,7 +53,7 @@ function runCommand(parsed: options.ParsedOptions, gh: github.Gh) {
 async function runTickets(parsed: options.ParsedOptions, gh: github.Gh, target: number, resume?: { vertex: string }) {
   const deps = realDeps(gh);
   const { mainRoot } = await deps.git.repoInfo(repositoryPath(parsed));
-  const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.ts');
+  const harnesses = (await import('../lib/harnesses/shipped.ts')).shipped(deps.exec);
   const results = await run.runTarget({
     deps,
     target,
@@ -77,7 +77,8 @@ async function initCommand(parsed: options.ParsedOptions) {
 
 async function doctorCommand(parsed: options.ParsedOptions, gh: github.Gh) {
   const { mainRoot, gitCommonDir } = await git.repoInfo(repositoryPath(parsed));
-  const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.ts');
+  const runner = exec.createExec({ kernel32: containment.openKernel32() });
+  const harnesses = (await import('../lib/harnesses/shipped.ts')).shipped(runner);
   const { text, exitCode } = await doctor.doctor({
     config: config.loadSources(mainRoot),
     harnesses,

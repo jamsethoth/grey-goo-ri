@@ -20,7 +20,7 @@ entry point since #199 (ADR 0019).
    waits on the event it
    asserts on (a PID file written, a lock taken, a run settled), never on a fixed duration; a wait may be bounded
    only by the case's own timeout (#143). Time-dependent logic takes the injected clock (`{ now, sleep }`), not the
-   wall clock. Three cases measure real time, recorded as exceptions because their subject is real time across
+   wall clock. Six cases measure real time, recorded as exceptions because their subject is real time across
    processes, which no injected clock reaches. None compares one process's clock with another's: two processes'
    `Date.now()` can disagree by a millisecond on Windows, so an order between processes is shown causally, by what one
    saw of the other's writes (#260):
@@ -32,6 +32,12 @@ entry point since #199 (ADR 0019).
    - `test/contract/exec/exec.timeout.test.ts`, `runShell timeout kills an orphan its watcher listed, however slowly ps
      answers`: its `ps` answers after 2 s and then 5 s, past the 1.5 s listing budget and the 2 s start-time
      tolerance `runShell` once had (POSIX only).
+   - `test/contract/exec/launch.test.ts`, `output resets the stall clock` and `stderr output resets the stall clock
+     too`: a child's output, arriving across processes, keeps a 5 s stall clock from firing over 6 s; each gap is
+     100 ms, and the first line waits only on node's start (twice on Windows, behind the gate).
+   - `test/contract/exec/launch.test.ts`, `onIdle's last activity re-arms the stall clock for what is left of
+     stallMs`: the re-armed stall fires near 3.2 s, 2.3 s before the wall clock, where a full stall from the ask
+     would come after it.
 2. **Test behaviour through the public interface.** Call a module's exports (the namespace import of AGENTS.md
    Tests), not its private helpers or internal shapes. A refactor that keeps behaviour must not break a test.
 3. **Assert state, not interactions.** Check the result (the record, the events, the worktree, the labels), not
@@ -171,7 +177,7 @@ coverage stage fails when the line or function coverage of `lib/` under `test/un
 when the measured figures have moved well above it; nothing is recorded per change, so open PRs do not conflict on it.
 Coverage can fall between the measured figure and the floor without failing. The
 measured set is what a small test can reach: `lib/`
-without `lib/exec.ts`, `lib/git.ts`, `lib/git-temp-index.ts`, `lib/git-default-branch.ts`, `lib/process-tree.ts` and `lib/containment.ts`, whose contract suites cover
+without `lib/exec.ts`, `lib/command-shim.ts`, `lib/launch-clock.ts`, `lib/git.ts`, `lib/git-temp-index.ts`, `lib/git-default-branch.ts`, `lib/process-tree.ts`, `lib/containment.ts` and `lib/containment-gate.ts`, whose contract suites cover
 them, and without the `bin/gg.ts` entry point that wires them. Command Cleanup's decisions, which processes a command
 left and what is done with each, are measured: they live in `lib/command-cleanup.ts`, not in `lib/process-tree.ts` or
 `lib/containment.ts`. A module no unit test loads still counts, at zero. The spec reporter prints each file's lines,

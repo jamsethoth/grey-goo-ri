@@ -1,7 +1,9 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { Readable } from 'node:stream';
+import * as commandShim from './command-shim.ts';
 import * as containment from './containment.ts';
 import * as commandCleanup from './command-cleanup.ts';
+import * as launchClock from './launch-clock.ts';
 import * as processTree from './process-tree.ts';
 
 // What a finished process gave: its exit code (null when a signal or timeout ended it), stdout and stderr.
@@ -39,15 +41,14 @@ export class CommandError extends Error {
 // A child spawned with piped stdio has both pipes.
 const pipesOf = (child: ChildProcess) => [child.stdout, child.stderr] as [Readable, Readable];
 
-// shortcut: no shell, so Windows needs real .exe binaries on PATH (the Agent CLIs, gh and git all ship them);
-// npm .cmd shims would need cross-spawn.
 export function run(
   command: string,
   args: string[],
   { cwd, input, allowFail = false, inherit = false, timeoutMs, env }: RunOptions = {},
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const argv = commandShim.argvOf(command, args, env?.PATH);
+    const child = spawn(argv.command, argv.args, {
       cwd,
       stdio: inherit ? 'inherit' : ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
@@ -154,20 +155,88 @@ export interface LaunchResult {
   cleanup: commandCleanup.CleanupReport;
 }
 
-// stub (#423 Red): runs nothing.
-function launch(options: LaunchOptions): Promise<LaunchResult> {
-  return Promise.resolve({
-    code: null,
-    signal: null,
-    timedOut: null,
-    cancelled: false,
-    stderrTail: '',
-    cleanup: {
-      confirmed: false,
-      survivors: [],
-      reason: `not implemented: ${options.command}`,
-      containment: { kind: 'none' },
-    },
+// How much of a launch's stderr it keeps: the end, where a CLI says why it stopped.
+const STDERR_TAIL_CHARS = 16_384;
+
+// An argv started with no shell, and when it started or why it could not: on Windows behind the gate in a job,
+// elsewhere in its own process group. env is merged over gg's environment, as run's is.
+function startArgv(kernel32: containment.Kernel32 | null, { command, args, cwd, env }: LaunchOptions) {
+  const argv = commandShim.argvOf(command, args, env?.PATH);
+  const environment = env ? { ...process.env, ...env } : undefined;
+  if (process.platform === 'win32') return containment.startArgv(kernel32, argv, { cwd, env: environment });
+  const child = spawn(argv.command, argv.args, { cwd, env: environment, detached: true, stdio: 'pipe' });
+  const spawned = new Promise<Error | null>((answer) => child.on('spawn', () => answer(null)).on('error', answer));
+  return { child, job: null, spawned };
+}
+
+// Each whole line of a stream, without its line ending, and an unended last one at the stream's end.
+function eachLine(stream: Readable, onLine: (line: string) => void) {
+  let partial = '';
+  stream.on('data', (data: string) => {
+    const lines = (partial + data).split('\n');
+    partial = lines.pop() ?? '';
+    for (const line of lines) onLine(line.replace(/\r$/, ''));
+  });
+  stream.on('end', () => partial && onLine(partial.replace(/\r$/, '')));
+}
+
+// Start an argv contained, with no shell; see LaunchOptions. Nothing is left running when it resolves: a stop takes the
+// tree down, and an exit ends what the argv left, as runShell does; cleanup says what it found. A launch whose
+// executable cannot start rejects with the spawn error.
+function launch(kernel32: containment.Kernel32 | null, options: LaunchOptions): Promise<LaunchResult> {
+  return new Promise((resolve, reject) => {
+    const started = startArgv(kernel32, options);
+    const { child } = started;
+    const cleanupContainment = cleanupContainmentOf(started);
+    const watcher = process.platform === 'win32' || !child.pid ? null : processTree.watchDescendants(child.pid);
+    const closed = new Promise((settled) => child.on('close', settled));
+    let giveUp = () => {};
+    const gaveUp = new Promise<void>((wake) => (giveUp = wake));
+    let stopped: launchClock.Stop | null = null;
+    let exited = false;
+    let stderrTail = '';
+    const finish = (ended: Pick<LaunchResult, 'code' | 'signal'>, cleanup: commandCleanup.Cleanup) => {
+      clocks.stop();
+      for (const pipe of pipesOf(child)) pipe.destroy();
+      const timedOut = stopped === 'cancel' ? null : stopped;
+      const report = reportOf(started, cleanupContainment, cleanup);
+      resolve({ ...ended, timedOut, cancelled: stopped === 'cancel', stderrTail, cleanup: report });
+    };
+    // A clock or the cancel after the exit only stops the wait for pipes a process outside the containment holds.
+    const clocks = launchClock.startClocks(options, async (why) => {
+      if (exited) return giveUp();
+      if (stopped) return;
+      stopped = why;
+      watcher?.stop();
+      const { survivors, cleanupErrors } = await processTree.takeDown(started, kernel32, watcher, {});
+      finish({ code: null, signal: null }, { survivors, cleanupErrors });
+    });
+    const [stdoutPipe, stderrPipe] = pipesOf(child);
+    stdoutPipe.setEncoding('utf8').on('data', clocks.touch);
+    stderrPipe.setEncoding('utf8').on('data', (data: string) => {
+      clocks.touch();
+      stderrTail = (stderrTail + data).slice(-STDERR_TAIL_CHARS);
+    });
+    eachLine(stdoutPipe, (line) => options.onLine?.(line));
+    child.stdin?.on('error', () => {}); // exited before reading all input: its exit reports it
+    child.stdin?.end(options.input ?? '');
+    void started.spawned.then((failure) => {
+      if (!failure) return options.onStarted?.(cleanupContainment);
+      clocks.stop();
+      watcher?.stop();
+      reject(failure);
+    });
+    // 'exit', not 'close': a leftover process can hold the pipes open for as long as it runs
+    child.on('exit', async (code: number | null, signal: NodeJS.Signals | null) => {
+      if (stopped) return;
+      exited = true;
+      watcher?.stop();
+      await started.spawned;
+      const settled = await processTree.settle(started, kernel32, watcher, {});
+      if (!(await Promise.race([closed.then(() => true), gaveUp.then(() => false)])))
+        settled.cleanupErrors.push('its output pipes stayed open past its clocks, held by a process gg cannot find');
+      finish({ code, signal }, settled);
+    });
   });
 }
 
@@ -177,7 +246,7 @@ export function createExec({ kernel32 = containment.openKernel32() }: { kernel32
   return {
     run,
     runShell: (commandLine: string, options?: ShellOptions) => shell(kernel32, commandLine, options),
-    launch,
+    launch: (options: LaunchOptions) => launch(kernel32, options),
     cleanupConfirmed,
   };
 }
@@ -231,6 +300,18 @@ function cleanupContainmentOf({ child, job }: containment.Started): commandClean
   return process.platform === 'win32' ? { kind: 'none' } : { kind: 'group', pgid: child.pid as number };
 }
 
+// A command's Command Cleanup report. An unconfirmed job keeps gg's handle, for the Run to close (closeJob).
+function reportOf(
+  started: containment.Started,
+  cleanupContainment: commandCleanup.CleanupContainment,
+  cleanup: commandCleanup.Cleanup,
+) {
+  const report = commandCleanup.cleanupReport(cleanupContainment, cleanup);
+  if (started.job && !report.confirmed)
+    Object.defineProperty(report, 'closeJob', { value: () => (started.job as containment.Job).close() });
+  return report;
+}
+
 // The clock of a run: timeoutMs from the call, or from when signal aborts, unless the run stops it first.
 function startClock(
   { timeoutMs, signal, timers = globalThis }: { timeoutMs?: number; signal?: AbortSignal; timers?: Timers },
@@ -260,12 +341,10 @@ function shell(
   const { child } = started;
   const kind = containmentOf(started);
   const cleanupContainment = cleanupContainmentOf(started);
-  const resultOf = (cleanup: commandCleanup.Cleanup) => {
-    const report = commandCleanup.cleanupReport(cleanupContainment, cleanup);
-    if (started.job && !report.confirmed)
-      Object.defineProperty(report, 'closeJob', { value: () => (started.job as containment.Job).close() });
-    return { cleanup: report, ...kind };
-  };
+  const resultOf = (cleanup: commandCleanup.Cleanup) => ({
+    cleanup: reportOf(started, cleanupContainment, cleanup),
+    ...kind,
+  });
   return new Promise((resolve, reject) => {
     let output = '';
     for (const pipe of pipesOf(child)) pipe.setEncoding('utf8').on('data', (data: string) => (output += data));

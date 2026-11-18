@@ -64,16 +64,17 @@ test('launch stops a process silent past stallMs and says stall', UNSANDBOXED_CA
   assert.deepEqual({ timedOut: result.timedOut, cancelled: result.cancelled }, { timedOut: 'stall', cancelled: false });
 });
 
-// 40 lines 100 ms apart take at least 3.9 s, past stallMs, while no gap between them comes near it.
+// 60 lines 100 ms apart take at least 5.9 s, past stallMs, while no gap between them, nor the start of node behind the
+// Windows gate, comes near it.
 test('output resets the stall clock', CASE, async () => {
   const lines: string[] = [];
   const result = await launch({
     command: process.execPath,
     args: [
       '-e',
-      "let n = 0; const t = setInterval(() => { console.log('tick'); if (++n === 40) clearInterval(t); }, 100)",
+      "let n = 0; const t = setInterval(() => { console.log('tick'); if (++n === 60) clearInterval(t); }, 100)",
     ],
-    stallMs: 3000,
+    stallMs: 5000,
     onLine: (line) => lines.push(line),
   });
   assert.deepEqual(
@@ -81,7 +82,7 @@ test('output resets the stall clock', CASE, async () => {
     {
       code: 0,
       timedOut: null,
-      lines: 40,
+      lines: 60,
     },
   );
 });
@@ -92,16 +93,17 @@ test('stderr output resets the stall clock too', CASE, async () => {
     command: process.execPath,
     args: [
       '-e',
-      "let n = 0; const t = setInterval(() => { console.error('tick'); if (++n === 40) clearInterval(t); }, 100)",
+      "let n = 0; const t = setInterval(() => { console.error('tick'); if (++n === 60) clearInterval(t); }, 100)",
     ],
-    stallMs: 3000,
+    stallMs: 5000,
     onLine: (line) => lines.push(line),
   });
   assert.deepEqual({ code: result.code, timedOut: result.timedOut, lines }, { code: 0, timedOut: null, lines: [] });
 });
 
-// Asked at the first stall, onIdle says the last activity was 900 ms before it, so the clock re-arms for the 100 ms
-// left of stallMs and stops the process near 1100 ms. A full stallMs from the ask would reach the wall clock first.
+// Asked at the first stall, onIdle says the last activity was 2800 ms before it, so the clock re-arms for the 200 ms
+// left of stallMs and stops the process near 3200 ms, 2.3 s before the wall clock. A full stallMs from the ask, near
+// 6000 ms, would reach the wall clock first.
 test("onIdle's last activity re-arms the stall clock for what is left of stallMs", UNSANDBOXED_CASE, async (t) => {
   const pidFile = join(scratch, 'idle.pid');
   t.after(() => processProbe.endProcessIn(pidFile));
@@ -109,11 +111,11 @@ test("onIdle's last activity re-arms the stall clock for what is left of stallMs
   const result = await launch({
     command: process.execPath,
     args: [childScripts.LONG_LIVED, pidFile],
-    stallMs: 1000,
-    wallMs: 1600,
+    stallMs: 3000,
+    wallMs: 5500,
     onIdle: () => {
       asked.push(Date.now());
-      return (asked[0] ?? 0) - 900;
+      return (asked[0] ?? 0) - 2800;
     },
   });
   assert.deepEqual(
