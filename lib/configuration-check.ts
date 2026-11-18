@@ -162,7 +162,7 @@ async function harnessProblems(
       if (harness.run) contract.assertHarness(harness);
       if (!harness.validate) throw new Error('not implemented');
       const { ok, errors } = await harness.validate(agent);
-      if (!ok) throw new Error(errors.join(', '));
+      if (!ok) throw new Error(errors.join('; '));
       // The agent Action copies what it returns, so a value it could not copy, a Promise among them, fails here.
       const tools: unknown = harness.resolveTools(agent, { commands, platform: process.platform });
       if (tools instanceof Promise) tools.catch(() => {});

@@ -499,7 +499,7 @@ test("the settings file is named by its content, so a Run's parallel Tickets nev
 test('every listed plugin that is not installed is named in one error', () => {
   assert.throws(
     () => harness.resolveTools({ ...WRITER, plugins: ['nope-a', 'nope-b'] }, { commands: COMMANDS, platform: 'linux' }),
-    { message: 'plugin nope-a is not installed, plugin nope-b is not installed' },
+    { message: 'plugin nope-a is not installed; plugin nope-b is not installed' },
   );
 });
 
@@ -507,6 +507,7 @@ test('--autocompact stays within the window Claude accepts, 100,000 to 1,000,000
   const autocompact = (contextBudget: number) =>
     flagValue(launched({ agent: { ...WRITER, contextBudget } }).argv, '--autocompact');
   assert.equal(autocompact(50000), '100000');
-  assert.equal(autocompact(100000), '110000');
+  assert.equal(autocompact(100000), '125000');
+  assert.equal(autocompact(100001), '125002');
   assert.equal(autocompact(1000000), '1000000');
 });

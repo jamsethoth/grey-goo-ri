@@ -162,7 +162,7 @@ function resolveToolsIn(configDirectory: string, agent: unknown, context: runCon
     }
   });
   // Every plugin that fails, in one error: preflight shows one line a Vertex (request section 4).
-  if (failures.length) throw new Error(failures.join(', '));
+  if (failures.length) throw new Error(failures.join('; '));
   return {
     tools: [shell, 'Read', 'Grep', 'Glob', ...(writes ? ['Edit', 'Write'] : []), ...(network ? WEB_TOOLS : [])],
     allow: [...commands, ...readOnly].map(rule),
@@ -176,8 +176,9 @@ function resolveToolsIn(configDirectory: string, agent: unknown, context: runCon
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 
 // The margin above contextBudget at which Claude compacts, a backstop behind gg's own hand-off (#430).
-const AUTOCOMPACT_PERCENT = 110;
-// The window --autocompact accepts, in tokens (Claude Code docs, model-config, read 2026-11-18).
+const AUTOCOMPACT_PERCENT = 125;
+// The window --autocompact accepts, in tokens (Claude Code docs, model-config, read 2026-11-18); a budget above 800,000
+// compacts less than 25% past it, at the 1,000,000 cap.
 const AUTOCOMPACT_RANGE = { least: 100_000, most: 1_000_000 };
 const autocompactAt = (budget: number) =>
   Math.min(AUTOCOMPACT_RANGE.most, Math.max(AUTOCOMPACT_RANGE.least, Math.ceil((budget * AUTOCOMPACT_PERCENT) / 100)));

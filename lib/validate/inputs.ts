@@ -39,12 +39,12 @@ const typeKey = (node: referencePaths.SchemaNode) =>
   });
 
 // `<vertex>.<action id>.<output>` and `<vertex>.rescue`, for every input's `from`.
-export function sourceScope(vertexProcedures: Map<string, checked.CheckedProcedure | undefined>, vertices: Value) {
+export function sourceScope(checkedProcedures: Map<string, checked.CheckedProcedure | undefined>, vertices: Value) {
   return procedures.object(
     Object.fromEntries(
       Object.entries(vertices).map(([id, vertex]) => {
         const procedure = referencePaths.isRecord(vertex)
-          ? vertexProcedures.get(vertex.procedure as string)
+          ? checkedProcedures.get(vertex.procedure as string)
           : undefined;
         if (!procedure) return [id, referencePaths.ANY];
         const actions = procedure.actions.filter(
