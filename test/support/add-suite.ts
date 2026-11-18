@@ -42,5 +42,6 @@ export function addSuite({
   };
   // Every process is gone by a later Run under a containment gg can check; a case says otherwise for a survivor.
   const cleanupConfirmed = (containment: commandCleanup.CleanupContainment) => containment.kind !== 'none';
-  return { runShell, cleanupConfirmed } as unknown as runContext.Deps['exec'];
+  const launch = () => Promise.reject(new Error('the add-suite fixture runs no launch'));
+  return { runShell, cleanupConfirmed, launch } as unknown as runContext.Deps['exec'];
 }

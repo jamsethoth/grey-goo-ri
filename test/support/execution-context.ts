@@ -58,7 +58,9 @@ export async function executionContext(t: TestContext) {
       gh: github.createGh(fakeGh.gh),
       // No case here reaches a git verb: the effects take git from their caller, and no Terminal here is ready-for-qa.
       git: {} as runContextModule.RunGit,
-      exec: {} as runContextModule.Deps['exec'],
+      exec: {
+        launch: () => Promise.reject(new Error('the execution-context fixture runs no launch')),
+      } as unknown as runContextModule.Deps['exec'],
       database: stateDatabase.createStateDatabase(),
       clock,
     },

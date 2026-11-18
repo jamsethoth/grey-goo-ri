@@ -2,7 +2,7 @@
 // cancel signal, its whole tree taken down when it stops (#423). The .cmd shim cases are Windows', where shims exist.
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,11 +58,20 @@ test('launch runs an argv with spaces and quotes unchanged, with no shell', CASE
   );
 });
 
+// What a clock's stop left: the process whose pid is in pidFile is checked by its own pid, so a launcher that left it
+// running fails here and not only in a census, which Ubuntu does not run.
+const stopOf = (result: exec.LaunchResult, pidFile: string) => ({
+  timedOut: result.timedOut,
+  cancelled: result.cancelled,
+  alive: processProbe.alive(processProbe.pidIn(pidFile)),
+  confirmed: result.cleanup.confirmed,
+});
+
 test('launch stops a process silent past stallMs and says stall', UNSANDBOXED_CASE, async (t) => {
   const pidFile = join(scratch, 'stall.pid');
   t.after(() => processProbe.endProcessIn(pidFile));
   const result = await launch({ command: process.execPath, args: [childScripts.LONG_LIVED, pidFile], stallMs: 500 });
-  assert.deepEqual({ timedOut: result.timedOut, cancelled: result.cancelled }, { timedOut: 'stall', cancelled: false });
+  assert.deepEqual(stopOf(result, pidFile), { timedOut: 'stall', cancelled: false, alive: false, confirmed: true });
 });
 
 // 60 lines 100 ms apart take at least 5.9 s, past stallMs, while no gap between them, nor the start of node behind the
@@ -130,6 +139,9 @@ test("onIdle's last activity re-arms the stall clock for what is left of stallMs
 test('output that arrives while onIdle is pending re-arms the stall clock', CASE, async () => {
   let sawB = () => {};
   const seenB = new Promise<void>((resolve) => (sawB = resolve));
+  // b reaching gg before the stall check asks onIdle would pass without testing the rule, so the case records it
+  let idlePending = false;
+  let bWhilePending = false;
   const result = await launch({
     command: process.execPath,
     args: [
@@ -137,13 +149,17 @@ test('output that arrives while onIdle is pending re-arms the stall clock', CASE
       "console.log('a'); setTimeout(() => { console.log('b'); setTimeout(() => process.exit(0), 300); }, 2500);",
     ],
     stallMs: 2000,
-    onLine: (line) => line === 'b' && sawB(),
+    onLine: (line) => line === 'b' && ((bWhilePending = idlePending), sawB()),
     onIdle: async () => {
+      idlePending = true;
       await seenB;
       return null;
     },
   });
-  assert.deepEqual({ code: result.code, timedOut: result.timedOut }, { code: 0, timedOut: null });
+  assert.deepEqual(
+    { code: result.code, timedOut: result.timedOut, bWhilePending },
+    { code: 0, timedOut: null, bWhilePending: true },
+  );
 });
 
 test('launch stops a process past wallMs and says wall', UNSANDBOXED_CASE, async (t) => {
@@ -155,7 +171,7 @@ test('launch stops a process past wallMs and says wall', UNSANDBOXED_CASE, async
     stallMs: 60_000,
     wallMs: 500,
   });
-  assert.deepEqual({ timedOut: result.timedOut, cancelled: result.cancelled }, { timedOut: 'wall', cancelled: false });
+  assert.deepEqual(stopOf(result, pidFile), { timedOut: 'wall', cancelled: false, alive: false, confirmed: true });
 });
 
 test('an aborted signal stops the process and says cancelled', UNSANDBOXED_CASE, async (t) => {
@@ -174,8 +190,9 @@ test('an aborted signal stops the process and says cancelled', UNSANDBOXED_CASE,
 // The grandchild starts before its parent prints, so a launcher that contained the process only once it spoke would
 // miss it; the parent's line cancels the launch.
 test('a grandchild started before the first output line is killed with its tree', UNSANDBOXED_CASE, async (t) => {
+  // Ends the parent too: a launcher that skipped the take-down would leave it holding the test file open.
   const pidFile = join(scratch, 'grandchild.pid');
-  t.after(() => processProbe.endProcessIn(pidFile));
+  t.after(() => [pidFile, `${pidFile}.parent`].forEach((file) => processProbe.endProcessIn(file)));
   const controller = new AbortController();
   const result = await launch({
     command: process.execPath,
@@ -287,7 +304,56 @@ test('a .cmd shim is resolved to the executable it names', WIN_CASE, async (t) =
 test('a .cmd that is not an npm shim is refused, naming the file', WIN_CASE, async (t) => {
   const bin = binOnPath(t, 'plain');
   writeFileSync(join(bin, 'gg-plain-batch.cmd'), '@echo hi\r\n');
-  await assert.rejects(launch({ command: 'gg-plain-batch', args: [] }), /gg-plain-batch\.cmd/);
+  const refused = /gg-plain-batch\.cmd is not an npm shim/;
+  await assert.rejects(launch({ command: 'gg-plain-batch', args: [] }), refused);
+  await assert.rejects(exec.run('gg-plain-batch', []), refused);
+  // cmd-shim's form for a bin whose shebang names another program: gg would run it with node.
+  writeFileSync(join(bin, 'gg-sh-shim.cmd'), readFileSync(SHIM, 'utf8').replace('_prog=node', '_prog=/bin/sh'));
+  await assert.rejects(launch({ command: 'gg-sh-shim', args: [] }), /gg-sh-shim\.cmd is not an npm shim/);
+});
+
+// A relative shim path or PATH entry names a file in the child's working directory, as spawn reads it, not gg's.
+test('a relative shim path or PATH entry is found from the working directory', WIN_CASE, async () => {
+  const cwd = mkdtempSync(join(scratch, 'relative-'));
+  const bin = join(cwd, 'bin');
+  mkdirSync(join(bin, 'node_modules', 'argv-printer'), { recursive: true });
+  copyFileSync(SHIM, join(bin, 'tool.cmd'));
+  writeFileSync(
+    join(bin, 'node_modules', 'argv-printer', 'print.js'),
+    'console.log(JSON.stringify(process.argv.slice(2)));\n',
+  );
+  const ran = (command: string, env?: Record<string, string>) =>
+    exec.run(command, ['x'], { cwd, env }).then(
+      (result) => result.stdout.trim(),
+      (err: Error) => err.message,
+    );
+  const lines: string[] = [];
+  const launched = await launch({
+    command: './bin/tool.cmd',
+    args: ['x'],
+    cwd,
+    onLine: (line) => lines.push(line),
+  }).then(
+    (result) => ({ code: result.code, lines }),
+    (err: Error) => err.message,
+  );
+  assert.deepEqual(
+    {
+      dotted: await ran('./bin/tool.cmd'),
+      backslashed: await ran('bin\\tool.cmd'),
+      onPath: await ran('tool', { PATH: `bin;${process.env.PATH}` }),
+      launched,
+    },
+    { dotted: '["x"]', backslashed: '["x"]', onPath: '["x"]', launched: { code: 0, lines: ['["x"]'] } },
+  );
+});
+
+// spawn throws at once for a .bat or .cmd it is handed, which only a shell runs; behind the Windows gate too, the
+// launch rejects with that error, as run does.
+test('a .bat the shim lookup does not find rejects with the spawn error', WIN_CASE, async () => {
+  const missing = join(scratch, 'no-such-dir', 'tool.bat');
+  await assert.rejects(exec.run(missing, []), { code: 'EINVAL' });
+  await assert.rejects(launch({ command: missing, args: [] }), { code: 'EINVAL' });
 });
 
 // Every way a launch's startup meets a stop (#423 review round 2). Each settles; onStarted runs at most once, before
@@ -394,5 +460,9 @@ for (const row of STARTUP_ROWS)
       const got = await (row.prompt ? Promise.race([settled, oneTurn]) : settled);
       events.push('result');
       assert.deepEqual({ ...got, events }, row.expected);
+      // a gate the refused stop left running answers later: once it has ended, onStarted must not have run again
+      if (doubles)
+        await processProbe.waitFor(() => [...doubles.members].every((pid) => !processProbe.alive(pid)), t.signal);
+      assert.deepEqual(events, row.expected.events);
     },
   );

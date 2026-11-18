@@ -9,11 +9,15 @@ if (import.meta.main && process.send) {
   const answer = process.send.bind(process);
   process.once('message', (message) => {
     const { command, args } = message as { command: string; args: string[] };
-    const child = spawn(command, args, { stdio: 'inherit', windowsHide: true });
-    child.on('spawn', () => answer({ started: true }, () => process.disconnect?.()));
-    child.on('error', ({ message: text, code }: NodeJS.ErrnoException) =>
-      answer({ error: { message: text, code } }, () => process.exit(1)),
-    );
-    child.on('exit', (code) => process.exit(code ?? 1));
+    const fail = ({ message: text, code }: NodeJS.ErrnoException) =>
+      answer({ error: { message: text, code } }, () => process.exit(1));
+    try {
+      const child = spawn(command, args, { stdio: 'inherit', windowsHide: true });
+      child.on('spawn', () => answer({ started: true }, () => process.disconnect?.()));
+      child.on('error', fail);
+      child.on('exit', (code) => process.exit(code ?? 1));
+    } catch (err) {
+      fail(err as NodeJS.ErrnoException); // spawn throws at once for a .bat or .cmd, which takes a shell
+    }
   });
 }
