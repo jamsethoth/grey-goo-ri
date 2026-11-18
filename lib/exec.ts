@@ -190,11 +190,12 @@ function launch(kernel32: containment.Kernel32 | null, options: LaunchOptions): 
     const cleanupContainment = cleanupContainmentOf(started);
     const watcher = process.platform === 'win32' || !child.pid ? null : processTree.watchDescendants(child.pid);
     const closed = new Promise((settled) => child.on('close', settled));
-    let giveUp = () => {};
-    const gaveUp = new Promise<void>((wake) => (giveUp = wake));
+    const { promise: gaveUp, resolve: giveUp } = Promise.withResolvers<void>();
     let stopped: launchClock.Stop | null = null;
     let exited = false;
     let stderrTail = '';
+    let reported = false; // onStarted once, before the result: a gate a stop left running may never answer
+    const reportStarted = () => !reported && ((reported = true), options.onStarted?.(cleanupContainment));
     const finish = (ended: Pick<LaunchResult, 'code' | 'signal'>, cleanup: commandCleanup.Cleanup) => {
       clocks.stop();
       for (const pipe of pipesOf(child)) pipe.destroy();
@@ -205,11 +206,12 @@ function launch(kernel32: containment.Kernel32 | null, options: LaunchOptions): 
     // A clock or the cancel after the exit only stops the wait for pipes a process outside the containment holds.
     const clocks = launchClock.startClocks(options, async (why) => {
       if (exited) return giveUp();
-      if (stopped) return;
+      if (stopped || !child.pid) return; // no pid: the spawn failed, and its error rejects the launch
       stopped = why;
       watcher?.stop();
       const { survivors, cleanupErrors } = await processTree.takeDown(started, kernel32, watcher, {});
-      await started.spawned; // so onStarted comes before the result
+      if (survivors.length) reportStarted();
+      else await started.spawned;
       finish({ code: null, signal: null }, { survivors, cleanupErrors });
     });
     const [stdoutPipe, stderrPipe] = pipesOf(child);
@@ -223,7 +225,7 @@ function launch(kernel32: containment.Kernel32 | null, options: LaunchOptions): 
     child.stdin?.end(options.input ?? '');
     void started.spawned.then((failure) => {
       // A stop that ended the gate before it answered resolves the launch; the containment still held what started.
-      if (!failure || stopped) return options.onStarted?.(cleanupContainment);
+      if (!failure || stopped) return reportStarted();
       clocks.stop();
       watcher?.stop();
       reject(failure);
