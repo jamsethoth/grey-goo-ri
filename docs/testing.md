@@ -20,7 +20,7 @@ entry point since #199 (ADR 0019).
    waits on the event it
    asserts on (a PID file written, a lock taken, a run settled), never on a fixed duration; a wait may be bounded
    only by the case's own timeout (#143). Time-dependent logic takes the injected clock (`{ now, sleep }`), not the
-   wall clock. Six cases measure real time, recorded as exceptions because their subject is real time across
+   wall clock. Seven cases measure real time, recorded as exceptions because their subject is real time across
    processes, which no injected clock reaches. None compares one process's clock with another's: two processes'
    `Date.now()` can disagree by a millisecond on Windows, so an order between processes is shown causally, by what one
    saw of the other's writes (#260):
@@ -38,6 +38,9 @@ entry point since #199 (ADR 0019).
    - `test/contract/exec/launch.test.ts`, `onIdle's last activity re-arms the stall clock for what is left of
      stallMs`: the re-armed stall fires near 3.2 s, 2.3 s before the wall clock, where a full stall from the ask
      would come after it.
+   - `test/contract/exec/launch.test.ts`, `output that arrives while onIdle is pending re-arms the stall clock`: a 2 s
+     stall must not fire within 0.3 s of output that arrived while onIdle was pending; onIdle answers only after it saw
+     the output.
 2. **Test behaviour through the public interface.** Call a module's exports (the namespace import of AGENTS.md
    Tests), not its private helpers or internal shapes. A refactor that keeps behaviour must not break a test.
 3. **Assert state, not interactions.** Check the result (the record, the events, the worktree, the labels), not

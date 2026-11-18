@@ -16,7 +16,7 @@ export function startClocks({ stallMs, wallMs, signal, onIdle }: exec.LaunchOpti
       const seen = await Promise.resolve()
         .then(onIdle)
         .catch(() => null);
-      lastActivity = Math.max(lastActivity, seen ?? lastActivity);
+      lastActivity = Math.max(lastOutput, seen ?? 0);
     }
     const left = stall - (Date.now() - lastActivity);
     if (!running) return;

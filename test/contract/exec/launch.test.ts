@@ -124,6 +124,27 @@ test("onIdle's last activity re-arms the stall clock for what is left of stallMs
   );
 });
 
+// The child prints b 2.5 s after a, while onIdle, asked at the 2 s stall, waits to see b before it answers; the child
+// exits 0.3 s after b, well inside the 2 s that b re-arms.
+test('output that arrives while onIdle is pending re-arms the stall clock', CASE, async () => {
+  let sawB = () => {};
+  const seenB = new Promise<void>((resolve) => (sawB = resolve));
+  const result = await launch({
+    command: process.execPath,
+    args: [
+      '-e',
+      "console.log('a'); setTimeout(() => { console.log('b'); setTimeout(() => process.exit(0), 300); }, 2500);",
+    ],
+    stallMs: 2000,
+    onLine: (line) => line === 'b' && sawB(),
+    onIdle: async () => {
+      await seenB;
+      return null;
+    },
+  });
+  assert.deepEqual({ code: result.code, timedOut: result.timedOut }, { code: 0, timedOut: null });
+});
+
 test('launch stops a process past wallMs and says wall', UNSANDBOXED_CASE, async (t) => {
   const pidFile = join(scratch, 'wall.pid');
   t.after(() => processProbe.endProcessIn(pidFile));
@@ -147,6 +168,43 @@ test('an aborted signal stops the process and says cancelled', UNSANDBOXED_CASE,
     onLine: () => controller.abort(),
   });
   assert.deepEqual({ timedOut: result.timedOut, cancelled: result.cancelled }, { timedOut: null, cancelled: true });
+});
+
+// A stop before the Windows gate answers still reports the containment first, once, and resolves as the stop.
+test(
+  'a signal aborted before the launch reports onStarted once and resolves cancelled',
+  UNSANDBOXED_CASE,
+  async (t) => {
+    const pidFile = join(scratch, 'pre-abort.pid');
+    t.after(() => processProbe.endProcessIn(pidFile));
+    let startedCalls = 0;
+    const result = await launch({
+      command: process.execPath,
+      args: [childScripts.LONG_LIVED, pidFile],
+      signal: AbortSignal.abort(),
+      onStarted: () => void startedCalls++,
+    });
+    assert.deepEqual(
+      { cancelled: result.cancelled, timedOut: result.timedOut, startedCalls, confirmed: result.cleanup.confirmed },
+      { cancelled: true, timedOut: null, startedCalls: 1, confirmed: true },
+    );
+  },
+);
+
+test('a wall clock that stops the launch before it starts reports onStarted once', UNSANDBOXED_CASE, async (t) => {
+  const pidFile = join(scratch, 'early-wall.pid');
+  t.after(() => processProbe.endProcessIn(pidFile));
+  let startedCalls = 0;
+  const result = await launch({
+    command: process.execPath,
+    args: [childScripts.LONG_LIVED, pidFile],
+    wallMs: 1,
+    onStarted: () => void startedCalls++,
+  });
+  assert.deepEqual(
+    { cancelled: result.cancelled, timedOut: result.timedOut, startedCalls, confirmed: result.cleanup.confirmed },
+    { cancelled: false, timedOut: 'wall', startedCalls: 1, confirmed: true },
+  );
 });
 
 // The grandchild starts before its parent prints, so a launcher that contained the process only once it spoke would

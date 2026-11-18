@@ -209,6 +209,7 @@ function launch(kernel32: containment.Kernel32 | null, options: LaunchOptions): 
       stopped = why;
       watcher?.stop();
       const { survivors, cleanupErrors } = await processTree.takeDown(started, kernel32, watcher, {});
+      await started.spawned; // so onStarted comes before the result
       finish({ code: null, signal: null }, { survivors, cleanupErrors });
     });
     const [stdoutPipe, stderrPipe] = pipesOf(child);
@@ -221,7 +222,8 @@ function launch(kernel32: containment.Kernel32 | null, options: LaunchOptions): 
     child.stdin?.on('error', () => {}); // exited before reading all input: its exit reports it
     child.stdin?.end(options.input ?? '');
     void started.spawned.then((failure) => {
-      if (!failure) return options.onStarted?.(cleanupContainment);
+      // A stop that ended the gate before it answered resolves the launch; the containment still held what started.
+      if (!failure || stopped) return options.onStarted?.(cleanupContainment);
       clocks.stop();
       watcher?.stop();
       reject(failure);
