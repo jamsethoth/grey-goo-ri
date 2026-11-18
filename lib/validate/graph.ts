@@ -21,7 +21,7 @@ export interface Graph {
   location: string;
   ticket: Record<string, unknown>;
   resolved: Map<string, model.DeclaredVertexJson>;
-  procs: Map<string, checked.CheckedProcedure | undefined>;
+  vertexProcedures: Map<string, checked.CheckedProcedure | undefined>;
   fallsOf: Map<string, FallThroughs>;
   clean: boolean;
 }
@@ -50,16 +50,16 @@ const PASSED_OUTPUTS = new Map<unknown, string>([
 // The outputs a Visit of Vertex `id` leaves when it ends in `ending` (H3): the agent's response on any Claim (N10);
 // effects, and the evidence of each Check the token requires (N9), only from the passed table (S4); and, when `rescued`
 // asks, the rescue when failing work moves on to a Vertex (R5a, W3).
-function leaves(id: string, proc: checked.CheckedProcedure, ending: OutcomeCase, rescued: boolean) {
+function leaves(id: string, procedure: checked.CheckedProcedure, ending: OutcomeCase, rescued: boolean) {
   const passed = ending.table === 'passed';
   const keys = [];
-  for (const action of ending.table === null ? [] : proc.actions) {
+  for (const action of ending.table === null ? [] : procedure.actions) {
     if (!referencePaths.isRecord(action) || typeof action.id !== 'string') continue;
     if (action.do === 'agent') keys.push(`${id}.${action.id}.response`);
     else if (
       passed &&
       action.do === 'check' &&
-      checked.requiredCheckIds(proc, ending.token as string).includes(action.id)
+      checked.requiredCheckIds(procedure, ending.token as string).includes(action.id)
     )
       keys.push(`${id}.${action.id}.evidence`);
     else if (passed && PASSED_OUTPUTS.has(action.do)) keys.push(`${id}.${action.id}.${PASSED_OUTPUTS.get(action.do)}`);
@@ -134,20 +134,20 @@ function workOf(write: boolean, cases: OutcomeCase[], landings: Landing[]) {
 function checkWrites(
   fail: (where: string, finding: report.Finding) => void,
   id: string,
-  proc: checked.CheckedProcedure,
+  procedure: checked.CheckedProcedure,
 ) {
-  if (!proc.tokens.passed.length) return;
-  if (!proc.actions.some((action) => referencePaths.isRecord(action) && action.do === 'commit')) {
+  if (!procedure.tokens.passed.length) return;
+  if (!procedure.actions.some((action) => referencePaths.isRecord(action) && action.do === 'commit')) {
     fail(id, {
       code: 'write-without-commit',
       message:
         `Vertex ${id} writes, so it must commit on every passing path, ` +
-        `but procedure ${proc.name} has no commit Action`,
-      params: { vertex: id, procedure: proc.name },
+        `but procedure ${procedure.name} has no commit Action`,
+      params: { vertex: id, procedure: procedure.name },
     });
   }
-  for (const token of proc.tokens.passed) {
-    if (!proc.claimTokens[token].requires?.length)
+  for (const token of procedure.tokens.passed) {
+    if (!procedure.claimTokens[token].requires?.length)
       fail(id, {
         code: 'commit-without-check',
         message: `Vertex ${id} writes, so its committing Claim token ${token} must require a Check`,
@@ -164,11 +164,11 @@ function routeEdges(problems: report.Report, graph: Graph) {
   };
   const edges: Edge[] = [];
   for (const [id, vertex] of resolved) {
-    const proc = graph.procs.get(id);
-    if (!proc) continue;
+    const procedure = graph.vertexProcedures.get(id);
+    if (!procedure) continue;
     const write = vertex.access !== 'read-only';
-    if (write) checkWrites(fail, id, proc);
-    const cases = checked.casesOf(proc, graph.fallsOf.get(id) as FallThroughs);
+    if (write) checkWrites(fail, id, procedure);
+    const cases = checked.casesOf(procedure, graph.fallsOf.get(id) as FallThroughs);
     for (const name of vertex.outcomes) {
       const route = flow.route(vertex.route, ticket.routes, name);
       if (!route) {
@@ -274,8 +274,8 @@ function groupsOf(resolved: Map<string, model.DeclaredVertexJson>) {
 // leaves none (N4), so it never guarantees one.
 function gained(graph: Graph, groups: Map<string, string[]>, edge: Edge, every: boolean) {
   const ways = edge.cases.map((ending) => {
-    const proc = graph.procs.get(edge.from) as checked.CheckedProcedure;
-    const keys = leaves(edge.from, proc, ending, edge.write && !every);
+    const procedure = graph.vertexProcedures.get(edge.from) as checked.CheckedProcedure;
+    const keys = leaves(edge.from, procedure, ending, edge.write && !every);
     const facts = [...groups]
       .filter(([, sources]) => sources.some((key) => keys.includes(key)))
       .map(([group]) => group);

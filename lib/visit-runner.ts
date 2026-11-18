@@ -141,7 +141,7 @@ async function heldDirty(runContext: RunContext, vertexId: string): Promise<Visi
 // Saved with the record, so a restart has the agent call and Check runs the remaining Actions read. `call` is the agent
 // Action's latest Attempt, `checks` each Check's latest signal, `runs` what the recovery Brief and the Terminal Reason
 // read.
-function visitStateOf(executionRecord: record.ExecutionRecord, resuming: boolean, proc: model.Procedure) {
+function visitStateOf(executionRecord: record.ExecutionRecord, resuming: boolean, procedure: model.Procedure) {
   const state = (executionRecord.visitState = resuming
     ? executionRecord.visitState!
     : {
@@ -156,20 +156,20 @@ function visitStateOf(executionRecord: record.ExecutionRecord, resuming: boolean
         unconfirmedCleanup: null,
       });
   // Not enumerable, so the Procedure's data stays out of the saved record.
-  Object.defineProperty(state, 'proc', { value: proc, enumerable: false });
-  Object.defineProperty(state, 'claimTokens', { value: proc.claimTokens, enumerable: false });
+  Object.defineProperty(state, 'procedure', { value: procedure, enumerable: false });
+  Object.defineProperty(state, 'claimTokens', { value: procedure.claimTokens, enumerable: false });
   return state as RunningVisit;
 }
 
 export async function runVisit(runContext: RunContext, vertexId: string, visitNumber: number): Promise<VisitEnd> {
   const { flow, record: executionRecord } = runContext;
   const resuming = await enterVisit(runContext, vertexId, visitNumber);
-  const proc = model.procedure(flow, executionRecord.configurationSnapshot!.procedure.name);
+  const procedure = model.procedure(flow, executionRecord.configurationSnapshot!.procedure.name);
   if (!resuming) {
     const held = await heldDirty(runContext, vertexId);
     if (held) return held;
   }
-  const state = visitStateOf(executionRecord, resuming, proc);
+  const state = visitStateOf(executionRecord, resuming, procedure);
   const ran = await runActions(runContext, state, resuming);
   return 'next' in ran ? ran : completeVisit(runContext, ran, state);
 }
@@ -181,7 +181,7 @@ export async function runVisit(runContext: RunContext, vertexId: string, visitNu
 async function runActions(runContext: RunContext, state: RunningVisit, resuming: boolean): Promise<VisitEnd | Ran> {
   const executionRecord = runContext.record;
   const snapshot = executionRecord.configurationSnapshot!;
-  const { actions } = state.proc;
+  const { actions } = state.procedure;
   const agentIndex = actions.findIndex((action) => action.do === 'agent');
   let last: Ran | null = null;
   for (
@@ -257,7 +257,7 @@ export function settleOf(
       state.settled = { action: actionIdentity.action, recovery: actionIdentity.recovery, resolution };
     else if (held) state.settled = null;
     if (!held || resolution) return;
-    const firstCheck = state.proc.actions.find((candidate) => candidate.do === 'check')!;
+    const firstCheck = state.procedure.actions.find((candidate) => candidate.do === 'check')!;
     executionRecord.cursor = { ...executionRecord.cursor, action: firstCheck.id, attempt: 1 };
     executionRecord.attempts += 1;
   };
@@ -349,7 +349,7 @@ async function completeVisit(runContext: RunContext, { actionIdentity }: Ran, st
   const { vertex, visit: visitNumber, procedure } = actionIdentity;
   const signals = [...state.checks.values()];
   const checked =
-    state.proc.passed.length && signals.some((signal) => signal.tree)
+    state.procedure.passed.length && signals.some((signal) => signal.tree)
       ? await attempt.whileBusy(runContext, () => visitScope.fresh(runContext, signals))
       : signals;
   const { claim, signal } = state.call ?? visitScope.IMPLICIT_OK;
@@ -359,7 +359,7 @@ async function completeVisit(runContext: RunContext, { actionIdentity }: Ran, st
     checks: visitScope.resolverChecks([], checked),
     retries: {},
     token: visitScope.tokenOf(state),
-    procedure: state.proc,
+    procedure: state.procedure,
     scope: visitScope.scopeOf(runContext.record, actionIdentity, state, checked),
   });
   const traversal = bounds.traverse(runContext, outcomeName);

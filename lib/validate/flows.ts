@@ -70,7 +70,7 @@ interface FlowState {
   used: Map<string, checked.CheckedProcedure>;
   // Each Vertex's Persona, in Vertex order, for the files the Flow uses.
   personas: string[];
-  procs: Map<string, checked.CheckedProcedure | undefined>;
+  vertexProcedures: Map<string, checked.CheckedProcedure | undefined>;
   fallsOf: Map<string, FallThroughs>;
   held: boolean;
 }
@@ -126,19 +126,27 @@ function vertexFalls(
   checking: FlowContext,
   vertex: references.VertexPlace,
   typed: inputs.TypedInputs,
-  proc: checked.CheckedProcedure,
+  procedure: checked.CheckedProcedure,
 ) {
   const declaredInputs = new Map(Object.entries(typed.inputs));
   const falls = {
-    ...(checking.procedureFalls.get(proc.name) ?? {}),
-    ...references.checkReferences(checking.report, proc, {
+    ...(checking.procedureFalls.get(procedure.name) ?? {}),
+    ...references.checkReferences(checking.report, procedure, {
       inputs: procedures.object(typed.nodes),
       optional: (input) => declaredInputs.get(input)?.optional === true,
       vertex,
     }),
   };
-  for (const { where, ...found } of templates.templateReferences(proc, procedures.object(typed.nodes), checking.reader))
-    report.errorOf(checking.report, `${proc.location}.${where}`, references.atVertex(found as report.Finding, vertex));
+  for (const { where, ...found } of templates.templateReferences(
+    procedure,
+    procedures.object(typed.nodes),
+    checking.reader,
+  ))
+    report.errorOf(
+      checking.report,
+      `${procedure.location}.${where}`,
+      references.atVertex(found as report.Finding, vertex),
+    );
   return falls;
 }
 
@@ -160,13 +168,14 @@ function checkProcedureName(checking: FlowContext, location: string, procedure: 
 
 // An Agent asking for more access than its Procedure allows is refused, never capped, so the Harness sees the access
 // the call runs with (#424).
-function accessConflict(problems: report.Report, location: string, proc: { name: string }, use: unknown) {
+function accessConflict(problems: report.Report, location: string, procedure: { name: string }, use: unknown) {
   const agent = typeof use === 'string' ? use : undefined;
   const named = agent === undefined ? '' : ` ${JSON.stringify(agent)}`;
   const message =
-    `Procedure ${JSON.stringify(proc.name)} is read-only but the Vertex's Agent${named} asks for workspace-write: ` +
+    `Procedure ${JSON.stringify(procedure.name)} is read-only ` +
+    `but the Vertex's Agent${named} asks for workspace-write: ` +
     'set "access": "read-only" on the Vertex or use a read-only Agent';
-  report.error(problems, location, 'access-conflict', message, { procedure: proc.name, ...(agent && { agent }) });
+  report.error(problems, location, 'access-conflict', message, { procedure: procedure.name, ...(agent && { agent }) });
 }
 
 function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex: unknown) {
@@ -185,24 +194,25 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
     return report.error(problems, location, 'not-an-object', 'a Vertex must be an object');
   report.unknownKeys(problems, vertex, [...VERTEX_KEYS, ...agentChecks.AGENT_KEYS], location);
   const ownKeys = agentChecks.checkAgentKeys(problems, location, vertex);
-  const proc = checking.procedures.get(vertex.procedure as string);
-  const procedure = checkProcedureName(checking, location, vertex.procedure);
-  if (proc && !state.used.has(proc.name)) state.used.set(proc.name, proc);
+  const procedure = checking.procedures.get(vertex.procedure as string);
+  const procedureName = checkProcedureName(checking, location, vertex.procedure);
+  if (procedure && !state.used.has(procedure.name)) state.used.set(procedure.name, procedure);
   if (checking.failedAgents.has(vertex.use)) state.held = true;
   const use = agentChecks.checkUse(checking, location, vertex.use);
-  const agent = agentChecks.vertexAgent(checking, { id, location }, vertex, { use, keys: ownKeys, proc });
-  if (proc?.access === 'read-only' && agent.access === 'workspace-write') accessConflict(problems, location, proc, use);
+  const agent = agentChecks.vertexAgent(checking, { id, location }, vertex, { use, keys: ownKeys, procedure });
+  if (procedure?.access === 'read-only' && agent.access === 'workspace-write')
+    accessConflict(problems, location, procedure, use);
   state.personas.push(...procedures.filesAt('agent', agent.declared));
   const typed = inputs.checkInputs(problems, location, vertex.inputs, state.sources);
   const bound = routes.checkVertexRoutes(problems, location, vertex, state.vertices);
-  const falls = proc ? vertexFalls(checking, { flow: state.name, id }, typed, proc) : {};
+  const falls = procedure ? vertexFalls(checking, { flow: state.name, id }, typed, procedure) : {};
   const prefix = checking.labelPrefix === undefined ? undefined : report.shown(checking.labelPrefix);
-  const approvalLabels = actionChecks.approvalLabelsOf(proc?.actions, id, prefix);
+  const approvalLabels = actionChecks.approvalLabelsOf(procedure?.actions, id, prefix);
   const resolved = { agent: agent.declared, inputs: typed.inputs, falls, approvalLabels };
-  state.resolved.set(id, declaredFlows.declaredVertex(vertex, resolved, proc));
-  const access = proc?.access === 'read-only' ? 'read-only' : (agent.access ?? 'read-only');
-  state.typed.set(id, { use, agent: agent.typed, procedure, access, ...bound });
-  state.procs.set(id, proc);
+  state.resolved.set(id, declaredFlows.declaredVertex(vertex, resolved, procedure));
+  const access = procedure?.access === 'read-only' ? 'read-only' : (agent.access ?? 'read-only');
+  state.typed.set(id, { use, agent: agent.typed, procedure: procedureName, access, ...bound });
+  state.vertexProcedures.set(id, procedure);
   state.fallsOf.set(id, falls);
 }
 
@@ -227,14 +237,14 @@ export function checkFlow(checking: FlowContext, name: string, declaration: unkn
     typed: new Map(),
     used: new Map(),
     personas: [],
-    procs: new Map(),
+    vertexProcedures: new Map(),
     fallsOf: new Map(),
     held: false,
   };
   for (const [id, vertex] of Object.entries(vertices)) checkVertex(checking, state, id, vertex);
   const clean = checking.sharedErrors === 0 && problems.errors.length === start && !state.held;
-  const { resolved, procs, fallsOf } = state;
-  graph.checkGraph(problems, { location, ticket, resolved, procs, fallsOf, clean });
+  const { resolved, vertexProcedures, fallsOf } = state;
+  graph.checkGraph(problems, { location, ticket, resolved, vertexProcedures, fallsOf, clean });
   const { used, personas } = state;
   const declaredProcedures = checking.config.procedures;
   return declaredFlows.checkedFlow(name, declaration, {

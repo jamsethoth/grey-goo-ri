@@ -84,8 +84,8 @@ const requiredOf = (
   report
     .unique(claimTokens[token].requires ?? [])
     .filter((id): id is string => checkIds.some((checkId) => checkId === id));
-export const requiredCheckIds = (proc: CheckedProcedure, token: string) =>
-  requiredOf(proc.claimTokens, proc.checkIds, token);
+export const requiredCheckIds = (procedure: CheckedProcedure, token: string) =>
+  requiredOf(procedure.claimTokens, procedure.checkIds, token);
 
 // The tests setting: frozen, write, or the path its named tests are read from. A named path that is not a string is
 // references.ts's to report.
@@ -260,13 +260,13 @@ function checkResponseConditions(problems: report.Report, declared: actionChecks
 }
 
 // pr-ready runs only on fresh passing Checks, so every token it can run under requires one (R11d).
-function checkPrReady(problems: report.Report, proc: CheckedProcedure) {
-  const ready = proc.actions.findIndex((action) => referencePaths.isRecord(action) && action.do === 'pr-ready');
-  for (const token of ready === -1 ? [] : proc.tokens.passed) {
-    if (!proc.claimTokens[token].requires?.length) {
+function checkPrReady(problems: report.Report, procedure: CheckedProcedure) {
+  const ready = procedure.actions.findIndex((action) => referencePaths.isRecord(action) && action.do === 'pr-ready');
+  for (const token of ready === -1 ? [] : procedure.tokens.passed) {
+    if (!procedure.claimTokens[token].requires?.length) {
       report.error(
         problems,
-        `${proc.location}.actions[${ready}]`,
+        `${procedure.location}.actions[${ready}]`,
         'pr-ready-without-checks',
         `pr-ready publishes only after passing Checks, but Claim token ${token} requires none`,
         { token },
@@ -322,7 +322,7 @@ export function checkProcedure(
   const otherwise = checkOtherwise(problems, location, declaration.otherwise, asking && !tokens.failed.length);
   checkResponseConditions(problems, declared);
   actionChecks.checkOrder(problems, location, actions);
-  const proc: CheckedProcedure = {
+  const procedure: CheckedProcedure = {
     name,
     location,
     agent: declared.agent,
@@ -340,15 +340,15 @@ export function checkProcedure(
     otherwise: report.isName(declaration.otherwise) ? declaration.otherwise : undefined, // reported, kept out (#174)
     typed: { actions: noActions ?? typedActions, claimTokens: typedTokens, ...settings.typed, ...rows, otherwise },
   };
-  checkPrReady(problems, proc);
-  return proc;
+  checkPrReady(problems, procedure);
+  return procedure;
 }
 
 // The Outcomes a Procedure can produce (R12b, T7): each table's rows, and its default when some input falls through.
 // `falls` holds the tokens some input falls through a table for; every token reaching a table that was not analysed
 // falls through.
-export function outcomesOf(proc: CheckedProcedure, falls: FallThroughs) {
-  const { tokens, tables, otherwise } = proc;
+export function outcomesOf(procedure: CheckedProcedure, falls: FallThroughs) {
+  const { tokens, tables, otherwise } = procedure;
   const found: string[] = [];
   const add = (table: TableName, fallback: (fell: string[]) => unknown[]) => {
     if (!tokens[table].length) return;
@@ -357,27 +357,28 @@ export function outcomesOf(proc: CheckedProcedure, falls: FallThroughs) {
     const fell = falls[table] ?? tokens[table];
     if (fell.length) found.push(...(fallback(fell) as string[]));
   };
-  const asking = procedures.approvalActionOf(proc.actions);
+  const asking = procedures.approvalActionOf(procedure.actions);
   const decided = otherwise ? [otherwise] : null;
   add('passed', (fell) => (asking ? procedures.decisionsOf(asking) : (decided ?? fell)));
   add('failed', () => [otherwise ?? 'failed']);
   add('stopped', (fell) => fell);
-  if (proc.agent) found.push(...outcome.HARNESS_OUTCOMES);
+  if (procedure.agent) found.push(...outcome.HARNESS_OUTCOMES);
   return report.unique(found);
 }
 
 // The ways a Procedure produces each Outcome (H3): each row of a table counting for every token of it (H2), and the
 // default for each token that falls through (outcomesOf, a token at a time); or a harness failure.
-export function casesOf(proc: CheckedProcedure, falls: FallThroughs) {
+export function casesOf(procedure: CheckedProcedure, falls: FallThroughs) {
   const cases: OutcomeCase[] = [];
   for (const table of TABLES) {
-    for (const token of proc.tokens[table]) {
+    for (const token of procedure.tokens[table]) {
       const tokens = Object.fromEntries(TABLES.map((each) => [each, each === table ? [token] : []]));
       const fell = falls[table] ? { [table]: falls[table].filter((name) => name === token) } : {};
-      const alone = { ...proc, agent: null, tokens } as CheckedProcedure;
+      const alone = { ...procedure, agent: null, tokens } as CheckedProcedure;
       for (const name of outcomesOf(alone, fell)) cases.push({ outcome: name, table, token });
     }
   }
-  if (proc.agent) cases.push(...outcome.HARNESS_OUTCOMES.map((name) => ({ outcome: name, table: null, token: null })));
+  if (procedure.agent)
+    cases.push(...outcome.HARNESS_OUTCOMES.map((name) => ({ outcome: name, table: null, token: null })));
   return cases;
 }

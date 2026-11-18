@@ -57,14 +57,14 @@ function checkProcedures(problems: report.Report, config: Value, { readSchema, c
     checkedProcedures.set(name, procedures.checkProcedure(declaring, name, declaration));
   // Each Procedure's references typed alone; each Vertex using it types those that read `inputs`.
   const procedureFalls = new Map<string, Partial<Record<procedures.TableName, string[]>>>();
-  for (const proc of checkedProcedures.values()) {
-    if (!proc) continue;
-    const falls = references.checkReferences(problems, proc, {
+  for (const procedure of checkedProcedures.values()) {
+    if (!procedure) continue;
+    const falls = references.checkReferences(problems, procedure, {
       inputs: referencePaths.ANY,
       optional: () => false,
       vertex: null,
     });
-    procedureFalls.set(proc.name, falls);
+    procedureFalls.set(procedure.name, falls);
   }
   return { checkedProcedures, procedureFalls };
 }

@@ -40,16 +40,16 @@ export function declaredVertex(
     agent: Value | null;
     falls: checked.FallThroughs;
   },
-  proc?: checked.CheckedProcedure,
+  procedure?: checked.CheckedProcedure,
 ): model.DeclaredVertexJson {
   const { agent, falls } = resolved;
   return {
     use: declaredValue(vertex.use) ?? null,
     agent: declaredValue(agent) ?? null,
     procedure: declaredValue(vertex.procedure) ?? null,
-    access: proc?.access === 'read-only' ? 'read-only' : (declaredValue(agent?.access) ?? 'read-only'),
-    tests: declaredValue(proc?.tests) ?? null,
-    outcomes: proc ? checked.outcomesOf(proc, falls) : [],
+    access: procedure?.access === 'read-only' ? 'read-only' : (declaredValue(agent?.access) ?? 'read-only'),
+    tests: declaredValue(procedure?.tests) ?? null,
+    outcomes: procedure ? checked.outcomesOf(procedure, falls) : [],
     approvalLabels: resolved.approvalLabels,
     routing: {},
     inputs: resolved.inputs,
@@ -66,9 +66,9 @@ function usedProcedures(
 ): Record<string, model.DeclaredProcedureJson> {
   const declared = new Map(report.entries(declaredProcedures));
   return Object.fromEntries(
-    used.map((proc) => {
-      const { actions, claimTokens, tests, access, recover, tables, otherwise, checkIds } = proc;
-      const hash = config.hashOf(declared.get(proc.name));
+    used.map((procedure) => {
+      const { actions, claimTokens, tests, access, recover, tables, otherwise, checkIds } = procedure;
+      const hash = config.hashOf(declared.get(procedure.name));
       const resolved = {
         actions: declaredValue(actions) ?? [],
         claimTokens: declaredValue(claimTokens) ?? {},
@@ -80,7 +80,7 @@ function usedProcedures(
         stopped: declaredValue(tables.stopped) ?? [],
         otherwise: declaredValue(otherwise) ?? null,
       };
-      return [proc.name, { ...resolved, checks: checkIds, hash }];
+      return [procedure.name, { ...resolved, checks: checkIds, hash }];
     }),
   );
 }
@@ -128,22 +128,22 @@ function resolvedVertex(
   resolved: { procedures: Map<string, procedures.Procedure>; routes: Record<string, model.RouteTarget> },
 ): model.ResolvedVertexJson | undefined {
   if (!typed || !allTyped(typed)) return undefined;
-  const proc = resolved.procedures.get(typed.procedure);
-  if (!proc) return undefined;
+  const procedure = resolved.procedures.get(typed.procedure);
+  if (!procedure) return undefined;
   const routing: [string, model.Routing][] = [];
   for (const [outcome, entry] of Object.entries(declared.routing)) {
     const routed = flow.typedRoute(typed.route, resolved.routes, outcome);
     if (!routed) return undefined;
     routing.push([outcome, { ...entry, target: routed.target }]);
   }
-  return { ...declared, ...typed, tests: proc.tests, routing: Object.fromEntries(routing) };
+  return { ...declared, ...typed, tests: procedure.tests, routing: Object.fromEntries(routing) };
 }
 
 // The Resolved Flow from the values its checks typed, or undefined when a check refused one.
 function resolvedFlow(declared: model.DeclaredFlowJson, used: checked.CheckedProcedure[], typed: TypedParts) {
   const { vertices, ...own } = typed;
   if (!allTyped(own)) return undefined;
-  const byName = new Map(used.map((proc) => [proc.name, proc]));
+  const byName = new Map(used.map((procedure) => [procedure.name, procedure]));
   const resolvedProcedures = narrowedEntries(Object.entries(declared.procedures), (name, procedure) => {
     const parts = byName.get(name)?.typed;
     return parts && allTyped(parts) ? { ...procedure, ...parts } : undefined;
@@ -183,7 +183,7 @@ export function checkedFlow(
     },
   };
   // In the order the Flow's Procedures are declared in its JSON, which puts integer-like names first, as pinning did.
-  const byName = new Map(used.map((proc) => [proc.name, proc]));
+  const byName = new Map(used.map((procedure) => [procedure.name, procedure]));
   const ordered = Object.keys(declared.procedures).flatMap((procedureName) => byName.get(procedureName) ?? []);
   const resolved: model.ResolvedFlowJson | undefined = resolvedFlow(declared, used, parts.typed);
   return { declared, resolved, uses: usesOf(parts.personas, ordered) };

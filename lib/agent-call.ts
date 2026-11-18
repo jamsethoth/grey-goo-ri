@@ -74,7 +74,7 @@ async function changedTests(
     executionRecord.testCommits.baseline ?? baseline.head,
     executionRecord.configurationSnapshot!.testPaths,
   );
-  const { tests } = state.proc;
+  const { tests } = state.procedure;
   if (typeof tests === 'object' && tests?.named) {
     const named = new Set(
       (referencePaths.read(
@@ -181,7 +181,7 @@ async function callViolations(
     protectedPaths: runContext.protectedPaths,
     database: runContext.database,
   });
-  if (access !== 'read-only' && running.state.proc.tests !== 'write') {
+  if (access !== 'read-only' && running.state.procedure.tests !== 'write') {
     const violation = await changedTests(runContext, running, baseline, { response });
     if (violation) violations.push(violation);
   }

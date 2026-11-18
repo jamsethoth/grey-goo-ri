@@ -98,7 +98,7 @@ function previousAttempt(
 // A recovery Brief's sections: each Check that failed in the pass before, with its output and how it failed (T4b). A
 // Check with no recoverBrief gets gg's own section.
 const sectionsOf = (runContext: RunContext, state: visitScope.RunningVisit): briefs.BriefSection[] =>
-  state.proc.actions
+  state.procedure.actions
     .filter((action) => action.do === 'check' && state.checks.get(action.id)?.state === 'failed')
     .map((action) => ({
       text: action.recoverBrief
@@ -116,7 +116,7 @@ async function briefOf(runContext: RunContext, briefed: Attempt, commands: Recor
   const { actionIdentity, action, state, nudge } = briefed;
   const recovering = actionIdentity.recovery > 0 && !nudge;
   const sections = recovering ? sectionsOf(runContext, state) : undefined;
-  const name = (recovering ? state.proc.recover!.brief : action.brief) as string;
+  const name = (recovering ? state.procedure.recover!.brief : action.brief) as string;
   const renderBrief = (recovering ? briefs.recoveryBrief : briefs.brief) as typeof briefs.recoveryBrief;
   const files = executionRecord.configurationSnapshot!.files;
   return renderBrief(nudge ? render.engineTemplate('nudge.md') : config.namedFile(files, name), {

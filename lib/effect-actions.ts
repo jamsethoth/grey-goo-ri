@@ -67,7 +67,7 @@ function refuseStale(
     checks: visitScope.resolverChecks([], stale),
     retries: {},
     token: visitScope.tokenOf(state),
-    procedure: state.proc,
+    procedure: state.procedure,
     scope: visitScope.scopeOf(
       runContext.record,
       actionIdentity,
