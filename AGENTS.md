@@ -154,7 +154,7 @@ leverage and a change lands in one place (locality).
 | `lib/locks.ts` | ticket, epic and repo locks as `node:sqlite` exclusive transactions |
 | `lib/harnesses/contract.ts` | the Harness contract check and shared Usage shape |
 | `lib/harnesses/shipped.ts` | the shipped Harnesses by name; the only module outside a Harness that names one |
-| `lib/harnesses/claude.ts` | **stub**: the Claude Code Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
+| `lib/harnesses/claude.ts` | the Claude Code Harness as a declaration, with no spawn yet: its Capabilities, `validate`, `resolveTools` (the tools, the permission rules for the platform's shell, each listed plugin's directory) and `launchArgs` (the launch profile's argv, environment and files), and the launch profile's name and version; `gg run` preflight runs `validate` and `resolveTools`, then still fails "not implemented" until #425 |
 | `lib/harnesses/codex.ts` | **stub**: the Codex Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
 | `lib/exec.ts` | process spawn (a nonzero exit rejects with a `CommandError`) and the shell runner, with its timeout and cleanup (ported) |
 | `lib/command-cleanup.ts` | Command Cleanup's decisions, with no I/O: the `ps` listing parse, the descendant closure, the watcher's update, the kill plans and their survivors, a job's leftovers, the `cleanup` report |

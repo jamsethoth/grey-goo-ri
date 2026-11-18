@@ -237,6 +237,7 @@ test("a read-only call launches with exactly the profile's flags and environment
     call: { resume: 'session-7' },
     harness: claude.createClaude({ configDirectory }),
   });
+  assert.equal(launch.argv[0], '-p', 'Claude runs headless');
   assert.deepEqual(launch.argv.filter((argument) => argument.startsWith('--')).sort(), [
     '--append-system-prompt-file',
     '--autocompact',

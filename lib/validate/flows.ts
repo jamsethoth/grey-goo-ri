@@ -158,6 +158,17 @@ function checkProcedureName(checking: FlowContext, location: string, procedure: 
   );
 }
 
+// An Agent asking for more access than its Procedure allows is refused, never capped, so the Harness sees the access
+// the call runs with (#424).
+function accessConflict(problems: report.Report, location: string, proc: { name: string }, use: unknown) {
+  const agent = typeof use === 'string' ? use : undefined;
+  const named = agent === undefined ? '' : ` ${JSON.stringify(agent)}`;
+  const message =
+    `Procedure ${JSON.stringify(proc.name)} is read-only but the Vertex's Agent${named} asks for workspace-write: ` +
+    'set "access": "read-only" on the Vertex or use a read-only Agent';
+  report.error(problems, location, 'access-conflict', message, { procedure: proc.name, ...(agent && { agent }) });
+}
+
 function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex: unknown) {
   const problems = checking.report;
   const location = `${state.location}.ticket.vertices.${id}`;
@@ -180,6 +191,7 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
   if (checking.failedAgents.has(vertex.use)) state.held = true;
   const use = agentChecks.checkUse(checking, location, vertex.use);
   const agent = agentChecks.vertexAgent(checking, { id, location }, vertex, { use, keys: ownKeys, proc });
+  if (proc?.access === 'read-only' && agent.access === 'workspace-write') accessConflict(problems, location, proc, use);
   state.personas.push(...procedures.filesAt('agent', agent.declared));
   const typed = inputs.checkInputs(problems, location, vertex.inputs, state.sources);
   const bound = routes.checkVertexRoutes(problems, location, vertex, state.vertices);

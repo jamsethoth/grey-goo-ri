@@ -162,7 +162,7 @@ The rule each code names:
 | `invalid-comment-target` | a `comment` Action's `target` is not `pr` or `ticket` |
 | `invalid-otherwise` | a Claim token's `otherwise` is not one it may name |
 | `invalid-procedure-access` | a Procedure's `access` is not `read-only` |
-| `access-conflict` | a Vertex's Agent asks for workspace-write on a read-only Procedure |
+| `access-conflict` | a Vertex's Agent asks for workspace-write on a read-only Procedure: set `"access": "read-only"` on the Vertex |
 | `invalid-reuse` | a Check's `reuse` is not `tree` |
 | `invalid-tests-setting` | `tests` is not `frozen`, `write` or `{ named }` |
 | `malformed-claim-token` | a Claim token is not of its declared shape |
@@ -272,6 +272,9 @@ vertex-needs-agent: object (report.ProblemParams)
 vertex-needs-agent.procedure: string
 vertex-takes-no-agent: object (report.ProblemParams)
 vertex-takes-no-agent.procedure: string
+access-conflict: object (report.ProblemParams)
+access-conflict.procedure: string
+access-conflict.agent?: string
 check-after-effect: object (report.ProblemParams)
 check-after-effect.id?: unknown
 check-after-effect.effect: string

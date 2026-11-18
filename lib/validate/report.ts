@@ -169,6 +169,7 @@ interface ProblemParams {
   'unused-agent': { agent: string };
   'vertex-needs-agent': { procedure: string };
   'vertex-takes-no-agent': { procedure: string };
+  'access-conflict': { procedure: string; agent?: string };
   'check-after-effect': { id?: unknown; effect: string; effectId?: unknown };
   'claim-enum-mismatch': { schema: string; enum?: string[]; tokens: string[] };
   'file-not-named': { key: string };
