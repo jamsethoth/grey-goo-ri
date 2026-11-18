@@ -16,7 +16,7 @@ export type TracedVisitEnd = { type: 'visit_end' } & Pick<
   'vertex' | 'visit' | 'outcome' | 'rule' | 'next' | 'edge' | 'count' | 'spent'
 >;
 // Reduces Action Events and visit_end Events, in the order appended, to what a golden trace asserts.
-export const trace = (traced: events.Event[]): (TracedAction | TracedVisitEnd)[] =>
+export const trace = (traced: events.ReadEvent[]): (TracedAction | TracedVisitEnd)[] =>
   traced.flatMap((event): (TracedAction | TracedVisitEnd)[] => {
     if (event.type === 'action') {
       const { vertex, action, recovery, attempt, outcome } = event;

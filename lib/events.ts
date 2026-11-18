@@ -16,9 +16,14 @@ type Declared<Fields, Shape> = eventDeclaration.Declared<Fields, Shape>;
 
 // The frozen Event schema version (docs/interfaces/events.md); a change to it needs a new ADR (#23).
 export const EVENT_SCHEMA_VERSION = 3;
-// A reader accepts the version before its own, without the fields its own added (ADR 0024).
+// A reader accepts the version before its own, without the fields its own added: a ReadEvent (ADR 0024, decision 8).
 export const PREVIOUS_EVENT_SCHEMA_VERSION = 2;
-export const ADDED_IN_VERSION = ['effectiveModel', 'effectiveEffort', 'repositoryDigest'];
+export const ADDED_IN_VERSION = ['effectiveModel', 'effectiveEffort', 'repositoryDigest'] as const;
+type Added = (typeof ADDED_IN_VERSION)[number];
+type Previous<Current> = Current extends unknown
+  ? Omit<Current, 'schemaVersion' | Added> & { schemaVersion: typeof PREVIOUS_EVENT_SCHEMA_VERSION }
+  : never;
+export type ReadEvent = Event | Previous<Event>;
 // Every Event's own header, ahead of its declared fields.
 interface EventHeader<Type extends string> {
   schemaVersion: typeof EVENT_SCHEMA_VERSION;

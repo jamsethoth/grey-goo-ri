@@ -34,7 +34,7 @@ function declaredFields(type: unknown, agent: unknown, previous: boolean): strin
   if (type === 'action') {
     if (typeof agent !== 'boolean') throw new Error('its agent is not true or false');
     const agentFields = Object.keys(events.AGENT).filter(
-      (field) => !(previous && events.ADDED_IN_VERSION.includes(field)),
+      (field) => !(previous && (events.ADDED_IN_VERSION as readonly string[]).includes(field)),
     );
     return ['agent', ...Object.keys(events.ACTION), ...(agent ? agentFields : [])];
   }
@@ -56,7 +56,7 @@ function checkFields(fields: Record<string, unknown>, declared: Set<string>): vo
 
 // What a row must hold to be read as an Event. tsc cannot follow a check over declared names, so the narrowing is
 // this assertion function's, and its body is the whole check.
-function assertEvent(value: unknown, row: EventRow): asserts value is events.Event {
+function assertEvent(value: unknown, row: EventRow): asserts value is events.ReadEvent {
   if (!isObject(value)) throw new Error('its JSON is not an object');
   const { schemaVersion, time, ...fields } = value;
   const previous = schemaVersion === events.PREVIOUS_EVENT_SCHEMA_VERSION;
@@ -74,7 +74,7 @@ function assertEvent(value: unknown, row: EventRow): asserts value is events.Eve
   }
 }
 
-function checked(row: EventRow): events.Event {
+function checked(row: EventRow): events.ReadEvent {
   const raw = String(row.json);
   const refused = (reason: string) =>
     new EventCorruptError(typeof row.id === 'number' ? row.id : String(row.id), String(row.type), reason, raw);
@@ -94,7 +94,7 @@ function checked(row: EventRow): events.Event {
 
 // The one read of the events table (lib/state-database/events.ts): each row checked, a refused one thrown, or handed to
 // `onRefused` and left out.
-export function checkedRows(rows: EventRow[], onRefused?: (err: EventCorruptError) => void): events.Event[] {
+export function checkedRows(rows: EventRow[], onRefused?: (err: EventCorruptError) => void): events.ReadEvent[] {
   return rows.flatMap((row) => {
     try {
       return [checked(row)];
@@ -111,7 +111,7 @@ export const ofExecution = (
   rows: EventRow[],
   execution: string,
   onRefused: (err: EventCorruptError) => void,
-): events.Event[] =>
+): events.ReadEvent[] =>
   checkedRows(rows, onRefused).filter((event) => ('execution' in event ? event.execution : null) === execution);
 
 // The real State Database's Event reads, for callers that take no seam; a Run's path reaches them through the database

@@ -172,15 +172,15 @@ export function loadAll(
 
 type Refused = (err: eventRead.EventCorruptError) => void;
 
-export const readEvents = (commonDir: string): events.Event[] =>
+export const readEvents = (commonDir: string): events.ReadEvent[] =>
   eventRead.checkedRows(eventsTable.all(open(commonDir)));
 
 // One Execution's Events, in the order they were appended.
-export const executionEvents = (commonDir: string, execution: string, onRefused?: Refused): events.Event[] =>
+export const executionEvents = (commonDir: string, execution: string, onRefused?: Refused): events.ReadEvent[] =>
   eventRead.checkedRows(eventsTable.ofExecution(open(commonDir), execution), onRefused);
 
 // `execution`'s Events, read from every row that may be its own (eventsTable.naming).
-export const rowsNaming = (commonDir: string, execution: string, onRefused: Refused): events.Event[] =>
+export const rowsNaming = (commonDir: string, execution: string, onRefused: Refused): events.ReadEvent[] =>
   eventRead.ofExecution(eventsTable.naming(open(commonDir), execution), execution, onRefused);
 
 // An Execution's Terminal has landed once a ticket_end of it passes the check. A refused one does not count, so the

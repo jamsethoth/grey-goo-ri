@@ -31,11 +31,11 @@ export const attemptMarker = (fixture: GoldenFixture, ...place: golden.MarkerPla
   golden.markerOf(fixture.executionRecord, ...place);
 
 export const isAction = (
-  event: events.Event,
+  event: events.ReadEvent,
   vertex: string,
   action: string,
   recovery: number,
-): event is events.ActionEvent =>
+): event is Extract<events.ReadEvent, { type: 'action' }> =>
   event.type === 'action' && event.vertex === vertex && event.action === action && event.recovery === recovery;
 
 export const actionEvent = (fixture: Readable, vertex: string, action: string, recovery = 0) =>

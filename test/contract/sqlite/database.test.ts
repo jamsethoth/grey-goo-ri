@@ -29,7 +29,7 @@ const ticketRecord = (commonDir: string, ticket: number) =>
     base: 'main',
   });
 
-const typesOf = (found: events.Event[]) => found.map((event) => event.type);
+const typesOf = (found: events.ReadEvent[]) => found.map((event) => event.type);
 
 for (const [name, databaseOf] of ADAPTERS) {
   test(`${name}: open passes a State Database gg init made, and refuses a missing one by name`, (t) => {

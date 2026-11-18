@@ -336,6 +336,10 @@ test('an event of the previous schema version still reads', (t) => {
       'ticket_resumed 2',
     ],
   );
+  const [first] = eventRead.readEvents(commonDir);
+  // @ts-expect-error a read Event may be of version 2, which lacks the fields version 3 added
+  const digest: unknown = first?.type === 'action' && first.agent ? first.repositoryDigest : null;
+  assert.equal(digest, undefined);
 });
 
 test('a row without its time is refused by name', (t) => {
