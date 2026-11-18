@@ -228,6 +228,113 @@ test('on linux the shell is Bash and every rule is a Bash rule', () => {
   assert.equal(offered(launch).has('PowerShell'), false);
 });
 
+// The tools and permission rules `resolveTools` gives `agent` on `platform`, without the hinted and plugin lists.
+function resolved(agent: model.Agent, platform: NodeJS.Platform) {
+  const { tools, allow, deny } = harness.resolveTools(agent, { commands: COMMANDS, platform });
+  return { tools, allow, deny };
+}
+
+// Each rule turns on one input (the shell and gg's read-only commands on platform, Edit and Write on access, the web
+// tools on network), and these five cases give each input each value, win32 as both reader and writer.
+test("on win32 a read-only Agent gets PowerShell, gg's read-only commands and no file-writing tool", () => {
+  assert.deepEqual(resolved({ ...READER, network: false }, 'win32'), {
+    tools: ['PowerShell', 'Read', 'Grep', 'Glob'],
+    allow: [
+      'PowerShell(npm test)',
+      'PowerShell(npm test:*)',
+      'PowerShell(npm run lint)',
+      'PowerShell(npm run lint:*)',
+      'PowerShell(git diff:*)',
+      'PowerShell(git log:*)',
+      'PowerShell(git show:*)',
+      'PowerShell(git status:*)',
+      'PowerShell(Get-ChildItem:*)',
+      'PowerShell(Get-Content:*)',
+      'PowerShell(Select-String:*)',
+    ],
+    deny: [
+      'PowerShell(git add:*)',
+      'PowerShell(git commit:*)',
+      'PowerShell(git push:*)',
+      'PowerShell(gh:*)',
+      'WebFetch',
+      'WebSearch',
+    ],
+  });
+});
+
+test('on win32 a writer with network gets Edit, Write and the web tools, and still no git write or gh', () => {
+  assert.deepEqual(resolved({ ...WRITER, network: true }, 'win32'), {
+    tools: ['PowerShell', 'Read', 'Grep', 'Glob', 'Edit', 'Write', 'WebFetch', 'WebSearch'],
+    allow: [
+      'PowerShell(npm test)',
+      'PowerShell(npm test:*)',
+      'PowerShell(npm run lint)',
+      'PowerShell(npm run lint:*)',
+      'PowerShell(git diff:*)',
+      'PowerShell(git log:*)',
+      'PowerShell(git show:*)',
+      'PowerShell(git status:*)',
+      'PowerShell(Get-ChildItem:*)',
+      'PowerShell(Get-Content:*)',
+      'PowerShell(Select-String:*)',
+    ],
+    deny: ['PowerShell(git add:*)', 'PowerShell(git commit:*)', 'PowerShell(git push:*)', 'PowerShell(gh:*)'],
+  });
+});
+
+test('on linux a read-only Agent with network gets the web tools and no file-writing tool', () => {
+  assert.deepEqual(resolved({ ...READER, network: true }, 'linux'), {
+    tools: ['Bash', 'Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch'],
+    allow: [
+      'Bash(npm test)',
+      'Bash(npm test:*)',
+      'Bash(npm run lint)',
+      'Bash(npm run lint:*)',
+      'Bash(git diff:*)',
+      'Bash(git log:*)',
+      'Bash(git show:*)',
+      'Bash(git status:*)',
+    ],
+    deny: ['Bash(git add:*)', 'Bash(git commit:*)', 'Bash(git push:*)', 'Bash(gh:*)'],
+  });
+});
+
+test('on darwin a writer without network gets Bash, Edit and Write, and the web tools denied', () => {
+  assert.deepEqual(resolved({ ...WRITER, network: false }, 'darwin'), {
+    tools: ['Bash', 'Read', 'Grep', 'Glob', 'Edit', 'Write'],
+    allow: [
+      'Bash(npm test)',
+      'Bash(npm test:*)',
+      'Bash(npm run lint)',
+      'Bash(npm run lint:*)',
+      'Bash(git diff:*)',
+      'Bash(git log:*)',
+      'Bash(git show:*)',
+      'Bash(git status:*)',
+    ],
+    deny: ['Bash(git add:*)', 'Bash(git commit:*)', 'Bash(git push:*)', 'Bash(gh:*)', 'WebFetch', 'WebSearch'],
+  });
+});
+
+test('an Agent that omits access and network is read-only with no network', () => {
+  const agent: model.Agent = { harness: 'claude', persona: 'reviewer.md', model: 'opus', effort: 'high' };
+  assert.deepEqual(resolved(agent, 'linux'), {
+    tools: ['Bash', 'Read', 'Grep', 'Glob'],
+    allow: [
+      'Bash(npm test)',
+      'Bash(npm test:*)',
+      'Bash(npm run lint)',
+      'Bash(npm run lint:*)',
+      'Bash(git diff:*)',
+      'Bash(git log:*)',
+      'Bash(git show:*)',
+      'Bash(git status:*)',
+    ],
+    deny: ['Bash(git add:*)', 'Bash(git commit:*)', 'Bash(git push:*)', 'Bash(gh:*)', 'WebFetch', 'WebSearch'],
+  });
+});
+
 // Every flag and environment variable of the launch profile, and no other (DoD line 1): a read-only call that resumes,
 // lists a plugin and sets a context budget carries each of them.
 test("a read-only call launches with exactly the profile's flags and environment", (t) => {
