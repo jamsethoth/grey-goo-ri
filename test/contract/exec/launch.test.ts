@@ -189,9 +189,12 @@ test('an aborted signal stops the process and says cancelled', UNSANDBOXED_CASE,
     command: process.execPath,
     args: [childScripts.LONG_LIVED, pidFile, 'started'],
     signal: controller.signal,
-    onLine: () => controller.abort(),
+    // The child prints before it writes its pid, so the abort waits for the pid the case checks.
+    onLine: () => {
+      void processProbe.waitFor(() => processProbe.pidIn(pidFile) > 0, t.signal).then(() => controller.abort());
+    },
   });
-  assert.deepEqual({ timedOut: result.timedOut, cancelled: result.cancelled }, { timedOut: null, cancelled: true });
+  assert.deepEqual(stopOf(result, pidFile), { timedOut: null, cancelled: true, alive: false, confirmed: true });
 });
 
 // The grandchild starts before its parent prints, so a launcher that contained the process only once it spoke would
@@ -318,7 +321,7 @@ test('a .cmd that is not an npm shim is refused, naming the file', WIN_CASE, asy
   writeFileSync(join(bin, 'gg-sh-shim.cmd'), readFileSync(SHIM, 'utf8').replace('_prog=node', '_prog=/bin/sh'));
   await assert.rejects(launch({ command: 'gg-sh-shim', args: [] }), /gg-sh-shim\.cmd is not an npm shim/);
   // cmd-shim's form for a node bin whose shebang sets a variable: gg would run it without the variable.
-  const envShim = readFileSync(SHIM, 'utf8').replace('SETLOCAL', 'SETLOCAL\r\n@SET NODE_OPTIONS=x');
+  const envShim = readFileSync(SHIM, 'utf8').replace('CALL :find_dp0', 'CALL :find_dp0\r\n@SET NODE_OPTIONS=x');
   writeFileSync(join(bin, 'gg-env-shim.cmd'), envShim);
   await assert.rejects(launch({ command: 'gg-env-shim', args: [] }), /gg-env-shim\.cmd is not an npm shim/);
 });
