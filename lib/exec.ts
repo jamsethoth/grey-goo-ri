@@ -126,12 +126,58 @@ export interface ShellOptions {
   testHooks?: TestHooks;
 }
 
-// run and runShell over kernel32, the FFI bin/gg.ts opens and passes down (ADR 0019); null runs Windows commands
-// uncontained. Given nothing, it opens the real one.
+// What launch runs: an argv with no shell, contained, under a stall clock, a wall clock and the Run's cancel signal.
+// onIdle answers when the stall clock runs out: the time (ms since the epoch) of the last activity the caller saw, from
+// which the clock re-arms for what is left of stallMs, or null.
+export interface LaunchOptions {
+  command: string;
+  args: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  input?: string;
+  stallMs?: number;
+  wallMs?: number;
+  signal?: AbortSignal;
+  onStarted?: (containment: commandCleanup.CleanupContainment) => void;
+  onLine?: (line: string) => void;
+  onIdle?: () => number | null | Promise<number | null>;
+}
+
+// What a launch ended with: how the process exited, which clock or the cancel stopped it, its stderr's end, and what
+// its Command Cleanup found.
+export interface LaunchResult {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  timedOut: 'stall' | 'wall' | null;
+  cancelled: boolean;
+  stderrTail: string;
+  cleanup: commandCleanup.CleanupReport;
+}
+
+// stub (#423 Red): runs nothing.
+function launch(options: LaunchOptions): Promise<LaunchResult> {
+  return Promise.resolve({
+    code: null,
+    signal: null,
+    timedOut: null,
+    cancelled: false,
+    stderrTail: '',
+    cleanup: {
+      confirmed: false,
+      survivors: [],
+      reason: `not implemented: ${options.command}`,
+      containment: { kind: 'none' },
+    },
+  });
+}
+
+// run, runShell and launch over kernel32, the FFI bin/gg.ts opens and passes down (ADR 0019); null runs Windows
+// commands uncontained. Given nothing, it opens the real one.
 export function createExec({ kernel32 = containment.openKernel32() }: { kernel32?: containment.Kernel32 | null } = {}) {
   return {
     run,
     runShell: (commandLine: string, options?: ShellOptions) => shell(kernel32, commandLine, options),
+    launch,
     cleanupConfirmed,
   };
 }
