@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import * as exec from '../../../lib/exec.ts';
 import * as caseEnv from '../../support/case-env.ts';
 import * as childScripts from '../../support/child-scripts.ts';
+import * as kernel32Doubles from '../../support/kernel32-doubles.ts';
 import * as processProbe from '../../support/process-probe.ts';
 import * as options from '../../support/shell-case-options.ts';
 
@@ -170,43 +171,6 @@ test('an aborted signal stops the process and says cancelled', UNSANDBOXED_CASE,
   assert.deepEqual({ timedOut: result.timedOut, cancelled: result.cancelled }, { timedOut: null, cancelled: true });
 });
 
-// A stop before the Windows gate answers still reports the containment first, once, and resolves as the stop.
-test(
-  'a signal aborted before the launch reports onStarted once and resolves cancelled',
-  UNSANDBOXED_CASE,
-  async (t) => {
-    const pidFile = join(scratch, 'pre-abort.pid');
-    t.after(() => processProbe.endProcessIn(pidFile));
-    let startedCalls = 0;
-    const result = await launch({
-      command: process.execPath,
-      args: [childScripts.LONG_LIVED, pidFile],
-      signal: AbortSignal.abort(),
-      onStarted: () => void startedCalls++,
-    });
-    assert.deepEqual(
-      { cancelled: result.cancelled, timedOut: result.timedOut, startedCalls, confirmed: result.cleanup.confirmed },
-      { cancelled: true, timedOut: null, startedCalls: 1, confirmed: true },
-    );
-  },
-);
-
-test('a wall clock that stops the launch before it starts reports onStarted once', UNSANDBOXED_CASE, async (t) => {
-  const pidFile = join(scratch, 'early-wall.pid');
-  t.after(() => processProbe.endProcessIn(pidFile));
-  let startedCalls = 0;
-  const result = await launch({
-    command: process.execPath,
-    args: [childScripts.LONG_LIVED, pidFile],
-    wallMs: 1,
-    onStarted: () => void startedCalls++,
-  });
-  assert.deepEqual(
-    { cancelled: result.cancelled, timedOut: result.timedOut, startedCalls, confirmed: result.cleanup.confirmed },
-    { cancelled: false, timedOut: 'wall', startedCalls: 1, confirmed: true },
-  );
-});
-
 // The grandchild starts before its parent prints, so a launcher that contained the process only once it spoke would
 // miss it; the parent's line cancels the launch.
 test('a grandchild started before the first output line is killed with its tree', UNSANDBOXED_CASE, async (t) => {
@@ -325,3 +289,110 @@ test('a .cmd that is not an npm shim is refused, naming the file', WIN_CASE, asy
   writeFileSync(join(bin, 'gg-plain-batch.cmd'), '@echo hi\r\n');
   await assert.rejects(launch({ command: 'gg-plain-batch', args: [] }), /gg-plain-batch\.cmd/);
 });
+
+// Every way a launch's startup meets a stop (#423 review round 2). Each settles; onStarted runs at most once, before
+// the result, and only when a process was started; a launch whose spawn failed rejects with that error. A row marked
+// prompt starts nothing gg must wait on, or meets a stop the job refused, so it settles within one turn of the event
+// loop after the spawn error or the stop: a launch still pending then would wait on a gate that may never answer.
+const windows = process.platform === 'win32';
+const STARTUP_ROWS: {
+  name: string;
+  skip?: string | false;
+  refused?: boolean;
+  launch: () => exec.LaunchOptions;
+  prompt: boolean;
+  expected: Record<string, unknown>;
+}[] = [
+  {
+    name: 'started, no stop',
+    launch: () => ({ command: process.execPath, args: ['-e', ''] }),
+    prompt: false,
+    expected: { outcome: 'resolved', cancelled: false, timedOut: null, events: ['started', 'result'] },
+  },
+  {
+    name: 'started, cancelled before the launch',
+    launch: () => ({
+      command: process.execPath,
+      args: ['-e', 'setTimeout(() => {}, 60_000)'],
+      signal: AbortSignal.abort(),
+    }),
+    prompt: false,
+    expected: { outcome: 'resolved', cancelled: true, timedOut: null, confirmed: true, events: ['started', 'result'] },
+  },
+  {
+    name: 'started, a 1 ms wall clock',
+    launch: () => ({ command: process.execPath, args: ['-e', 'setTimeout(() => {}, 60_000)'], wallMs: 1 }),
+    prompt: false,
+    expected: {
+      outcome: 'resolved',
+      cancelled: false,
+      timedOut: 'wall',
+      confirmed: true,
+      events: ['started', 'result'],
+    },
+  },
+  {
+    name: 'missing executable, no stop',
+    launch: () => ({ command: join(scratch, 'no-such-program'), args: [] }),
+    prompt: !windows,
+    expected: { outcome: 'rejected', code: 'ENOENT', events: ['result'] },
+  },
+  {
+    // On Windows the stop ends the gate before it tries the argv, so the stop is the result (D2).
+    name: 'missing executable, cancelled before the launch',
+    launch: () => ({ command: join(scratch, 'no-such-program'), args: [], signal: AbortSignal.abort() }),
+    prompt: !windows,
+    expected: windows
+      ? { outcome: 'resolved', cancelled: true, timedOut: null, events: ['started', 'result'] }
+      : { outcome: 'rejected', code: 'ENOENT', events: ['result'] },
+  },
+  {
+    name: 'missing working directory, cancelled before the launch',
+    launch: () => ({
+      command: process.execPath,
+      args: ['-e', ''],
+      cwd: join(scratch, 'no-such-dir'),
+      signal: AbortSignal.abort(),
+    }),
+    prompt: true,
+    expected: { outcome: 'rejected', code: 'ENOENT', events: ['result'] },
+  },
+  {
+    name: 'termination refused, cancelled before the launch',
+    skip: !windows && 'a Windows job only',
+    refused: true,
+    launch: () => ({ command: process.execPath, args: ['-e', ''], signal: AbortSignal.abort() }),
+    prompt: true,
+    expected: { outcome: 'resolved', cancelled: true, timedOut: null, confirmed: false, events: ['started', 'result'] },
+  },
+];
+
+for (const row of STARTUP_ROWS)
+  test(
+    `launch startup meets a stop: ${row.name}`,
+    { ...UNSANDBOXED_CASE, skip: UNSANDBOXED_CASE.skip || row.skip },
+    async (t) => {
+      const doubles = row.refused ? kernel32Doubles.refusedTermination() : null;
+      if (doubles) t.after(() => doubles.members.forEach(processProbe.endProcess));
+      const run = doubles ? exec.createExec({ kernel32: doubles.kernel32 }).launch : launch;
+      const events: string[] = [];
+      // From a Promise continuation, as a Harness calls it: a pre-aborted signal's stop comes before the spawn error.
+      const settled = Promise.resolve().then((): Promise<Record<string, unknown>> =>
+        run({ ...row.launch(), onStarted: () => void events.push('started') }).then(
+          (result) => ({
+            outcome: 'resolved',
+            cancelled: result.cancelled,
+            timedOut: result.timedOut,
+            ...('confirmed' in row.expected && { confirmed: result.cleanup.confirmed }),
+          }),
+          (err: NodeJS.ErrnoException) => ({ outcome: 'rejected', code: err.code }),
+        ),
+      );
+      const oneTurn = new Promise<Record<string, unknown>>((turned) =>
+        setImmediate(() => setImmediate(() => turned({ outcome: 'pending' }))),
+      );
+      const got = await (row.prompt ? Promise.race([settled, oneTurn]) : settled);
+      events.push('result');
+      assert.deepEqual({ ...got, events }, row.expected);
+    },
+  );
