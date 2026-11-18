@@ -18,7 +18,7 @@ test('golden: a failed green escalates to senior-green and reaches ready-for-qa'
     responses: {
       ...exampleRun.firstPass(),
       [call('green', 1, 'green')]: wrong,
-      [call('green', 1, 'recover')]: wrong,
+      [call('green', 1, 'green', { recovery: 1 })]: wrong,
       [call('senior-green', 1, 'green')]: { files: exampleRun.ADD, response: exampleRun.greenResponse() },
     },
   });

@@ -20,11 +20,18 @@ export interface RunStop {
   ticket: number;
   source?: string;
 }
-// What every Execution of a Run shares: its run stop, and the cooldown no remote Action launches before.
+// What every Execution of a Run shares: its run stop, the cooldown no remote Action launches before, and its cancel
+// signal, passed beside every Harness call, which nothing aborts until #220.
 export interface RunState {
   stop: RunStop | null;
   remoteNotBefore: number;
+  signal: AbortSignal;
 }
+export const createRunState = (): RunState => ({
+  stop: null,
+  remoteNotBefore: 0,
+  signal: new AbortController().signal,
+});
 
 // A remote Action's retry budget as the record saves it, under its Action key's `remote` (record.retries).
 export interface RemoteRetry {

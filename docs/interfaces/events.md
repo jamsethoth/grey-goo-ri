@@ -8,7 +8,10 @@ here outside the Reserved section needs a new ADR under `docs/adr/` and a versio
   (`RunStartEvent`, `RunEndEvent`, `TicketStartEvent`, `TicketEndEvent`, `LabelFailedEvent`, `VisitEndEvent`,
   `ConfigChangeEvent`), all in `lib/events.ts`, each derived from its declaration there (`ACTION`, `AGENT`,
   `LIFECYCLE`).
-- Version: `EVENT_SCHEMA_VERSION = 2`, saved as each Event's `schemaVersion`. A row of any other version is refused.
+- Version: `EVENT_SCHEMA_VERSION = 3`, saved as each Event's `schemaVersion`. A row of version 2, the one before, still
+  reads, without the fields version 3 added (ADR 0024). A row of any other version is refused.
+- Version 3 added the agent fields `effectiveModel`, `effectiveEffort` and `repositoryDigest`, and fills
+  `agentCliVersion` from the Harness Result (#422).
 
 `test/unit/freeze.test.ts` holds every block below to the code.
 
@@ -65,6 +68,9 @@ harness: required
 agentCliVersion: required
 model: required
 effort: required
+effectiveModel: required
+effectiveEffort: required
+repositoryDigest: required
 personaHash: required
 tools: required
 sessionInit: required
@@ -83,7 +89,7 @@ Every path, for each kind (`[]` a list's item, `*` a keyed name, `<form>` a unio
 out, the declaring type in parentheses):
 
 ```text paths:DeterministicActionEvent
-schemaVersion: 2 (events.DeterministicActionEvent)
+schemaVersion: 3 (events.DeterministicActionEvent)
 time: string (events.DeterministicActionEvent)
 type: "action" (events.DeterministicActionEvent)
 flow: string (events.DeterministicActionEvent)
@@ -176,7 +182,7 @@ agent: false (events.DeterministicActionEvent)
 ```
 
 ```text paths:AgentActionEvent
-schemaVersion: 2 (events.AgentActionEvent)
+schemaVersion: 3 (events.AgentActionEvent)
 time: string (events.AgentActionEvent)
 type: "action" (events.AgentActionEvent)
 flow: string (events.AgentActionEvent)
@@ -270,6 +276,9 @@ harness: string (events.AgentActionEvent)
 agentCliVersion: string | null (events.AgentActionEvent)
 model: string | null (events.AgentActionEvent)
 effort: string | null (events.AgentActionEvent)
+effectiveModel: string | null (events.AgentActionEvent)
+effectiveEffort: string | null (events.AgentActionEvent)
+repositoryDigest: string | null (events.AgentActionEvent)
 personaHash: string (events.AgentActionEvent)
 tools: JsonValue (events.AgentActionEvent)
 sessionInit: JsonValue (events.AgentActionEvent)
@@ -348,7 +357,7 @@ run: required
 ```
 
 ```text paths:RunStartEvent
-schemaVersion: 2 (events.RunStartEvent)
+schemaVersion: 3 (events.RunStartEvent)
 time: string (events.RunStartEvent)
 type: "run_start" (events.RunStartEvent)
 run: string (events.RunStartEvent)
@@ -363,7 +372,7 @@ failureClass: optional
 ```
 
 ```text paths:RunEndEvent
-schemaVersion: 2 (events.RunEndEvent)
+schemaVersion: 3 (events.RunEndEvent)
 time: string (events.RunEndEvent)
 type: "run_end" (events.RunEndEvent)
 run: string (events.RunEndEvent)
@@ -384,7 +393,7 @@ owner: required
 ```
 
 ```text paths:TicketStartEvent
-schemaVersion: 2 (events.TicketStartEvent)
+schemaVersion: 3 (events.TicketStartEvent)
 time: string (events.TicketStartEvent)
 type: "ticket_start" (events.TicketStartEvent)
 run: string (events.TicketStartEvent)
@@ -415,7 +424,7 @@ interrupted: optional
 ```
 
 ```text paths:TicketEndEvent
-schemaVersion: 2 (events.TicketEndEvent)
+schemaVersion: 3 (events.TicketEndEvent)
 time: string (events.TicketEndEvent)
 type: "ticket_end" (events.TicketEndEvent)
 run: string (events.TicketEndEvent)
@@ -496,7 +505,7 @@ run: optional
 ```
 
 ```text paths:LabelFailedEvent
-schemaVersion: 2 (events.LabelFailedEvent)
+schemaVersion: 3 (events.LabelFailedEvent)
 time: string (events.LabelFailedEvent)
 type: "label_failed" (events.LabelFailedEvent)
 ticket: number (events.LabelFailedEvent)
@@ -530,7 +539,7 @@ spent: required
 ```
 
 ```text paths:VisitEndEvent
-schemaVersion: 2 (events.VisitEndEvent)
+schemaVersion: 3 (events.VisitEndEvent)
 time: string (events.VisitEndEvent)
 type: "visit_end" (events.VisitEndEvent)
 run: string (events.VisitEndEvent)
@@ -571,7 +580,7 @@ to: required
 ```
 
 ```text paths:ConfigChangeEvent
-schemaVersion: 2 (events.ConfigChangeEvent)
+schemaVersion: 3 (events.ConfigChangeEvent)
 time: string (events.ConfigChangeEvent)
 type: "config_change" (events.ConfigChangeEvent)
 run: string (events.ConfigChangeEvent)
@@ -600,7 +609,7 @@ human: required
 ```
 
 ```text paths:TicketResolvedEvent
-schemaVersion: 2 (events.TicketResolvedEvent)
+schemaVersion: 3 (events.TicketResolvedEvent)
 time: string (events.TicketResolvedEvent)
 type: "ticket_resolved" (events.TicketResolvedEvent)
 run: string | null (events.TicketResolvedEvent)
@@ -631,7 +640,7 @@ superseded: required
 ```
 
 ```text paths:TicketResumedEvent
-schemaVersion: 2 (events.TicketResumedEvent)
+schemaVersion: 3 (events.TicketResumedEvent)
 time: string (events.TicketResumedEvent)
 type: "ticket_resumed" (events.TicketResumedEvent)
 run: string | null (events.TicketResumedEvent)

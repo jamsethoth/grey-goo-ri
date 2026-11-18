@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type * as sideEffect from '../../lib/effects/side-effect.ts';
+import * as sideEffect from '../../lib/effects/side-effect.ts';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.ts';
@@ -39,7 +39,7 @@ const PUSH_EVENT = {
 } satisfies events.EventInput<'action'>;
 
 // An Event as the State Database gives it back: its header, then its body.
-const saved = <Body extends object>(body: Body) => ({ schemaVersion: 2 as const, time: 't', ...body });
+const saved = <Body extends object>(body: Body) => ({ schemaVersion: 3 as const, time: 't', ...body });
 
 test("an Execution's run stop is its first Action Event whose class reaches the run", () => {
   const event = (action: string, failureClass: string | null) =>
@@ -149,7 +149,7 @@ test('a run stop beside a refused row of its Execution is still reported', async
   remoteFailures.pushThrough(fixture, () =>
     Promise.reject(remoteFailures.refusedPush("fatal: Authentication failed for 'https://github.com/o/r.git/'\n")),
   );
-  const runState: sideEffect.RunState = { stop: null, remoteNotBefore: 0 };
+  const runState = sideEffect.createRunState();
   const result = await interpreter
     .runExecution({ ...fixture.options, runState })
     .catch((err: unknown) => ({ rejected: String(err) }));

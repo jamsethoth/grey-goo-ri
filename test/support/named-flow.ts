@@ -195,7 +195,7 @@ export function validated(names: Names) {
 
 // The first Vertex's agent answers `claim`, writing lib/add.mjs.
 export const namedResponses = (names: Names, claim = 'ok'): fakeHarnessModule.ScriptedResponses => ({
-  [keys.responseKey(names.first, 1, names.ask, 1)]: {
+  [keys.responseKey({ vertex: names.first, visit: 1, action: names.ask })]: {
     files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' },
     response: { claim, summary: 'Add two numbers.' },
   },

@@ -15,12 +15,20 @@ const setup = async (options: fakeHarnessModule.FakeHarnessOptions = {}) => {
   return { harness: fakeHarnessModule.fakeHarness({ transcriptDir, ...options }), cwd };
 };
 
-const call = (cwd: string, overrides = {}) => ({
-  marker: 'gg:1:implement/1/red/1',
-  vertex: 'implement',
-  visit: 1,
-  phase: 'red',
-  attempt: 1,
+// The call's Action Marker names its own place, the Phase as its Action, unless a case gives one.
+const call = (cwd: string, overrides: Partial<fakeHarnessModule.HarnessCall> = {}) => {
+  const { vertex = 'implement', visit = 1, phase = 'red', attempt = 1 } = overrides;
+  return {
+    marker: `gg:e1:${vertex}:${visit}:${phase}:0:r1:${attempt}`,
+    vertex,
+    visit,
+    phase,
+    attempt,
+    ...callBody(cwd),
+    ...overrides,
+  };
+};
+const callBody = (cwd: string) => ({
   agent: { harness: 'fake' },
   persona: { bytes: '# implementer\n', hash: 'sha256:persona' },
   brief: 'write the failing tests',
@@ -32,7 +40,6 @@ const call = (cwd: string, overrides = {}) => ({
   tools: { plugins: ['tdd'] },
   timeouts: { stallMs: 1000, wallMs: 5000 },
   env: {},
-  ...overrides,
 });
 
 const pendingAfterTurn = (promise: Promise<unknown>) =>
@@ -51,7 +58,7 @@ const usage = (outcome: HarnessCallResult) => outcome.result.usage;
 test('a scripted response is returned and files are written into cwd', async () => {
   const { harness, cwd } = await setup({
     responses: {
-      'implement/1/red/1': { response: { claim: 'red', tests: ['t'] }, files: { 'test/a.test.mjs': 'x\n' } },
+      'implement/1/red/0/1': { response: { claim: 'red', tests: ['t'] }, files: { 'test/a.test.mjs': 'x\n' } },
     },
   });
   const { response, result, failure } = await harness.run(call(cwd));
@@ -62,7 +69,7 @@ test('a scripted response is returned and files are written into cwd', async () 
 });
 
 test('calls record brief, resume, tools and persona bytes', async () => {
-  const { harness, cwd } = await setup({ responses: { 'implement/1/red/1': { response: {} } } });
+  const { harness, cwd } = await setup({ responses: { 'implement/1/red/0/1': { response: {} } } });
   const harnessCall = call(cwd);
   await harness.run(harnessCall);
   assert.equal(harness.calls.length, 1);
@@ -94,16 +101,14 @@ test('a new session has a transcript file and resume keeps it', async () => {
   };
   const { harness, cwd } = await setup({
     responses: {
-      'implement/1/red/1': { response: {}, result: { usage: { delta: usage } } },
-      'implement/1/green/1': { response: {}, result: { usage: { delta: usage } } },
+      'implement/1/red/0/1': { response: {}, result: { usage: { delta: usage } } },
+      'implement/1/green/0/1': { response: {}, result: { usage: { delta: usage } } },
     },
   });
   const first = await harness.run(call(cwd));
   assert.match(first.result.sessionId ?? '', /^fake-session-\d+$/);
   assert.ok((await stat(first.result.transcriptPath ?? '')).isFile());
-  const second = await harness.run(
-    call(cwd, { phase: 'green', marker: 'gg:1:implement/1/green/1', resume: first.result.sessionId }),
-  );
+  const second = await harness.run(call(cwd, { phase: 'green', resume: first.result.sessionId }));
   assert.equal(second.result.sessionId, first.result.sessionId);
   assert.equal(second.result.transcriptPath, first.result.transcriptPath);
   assert.ok((cumulative(second).inputTokens ?? 0) >= (cumulative(first).inputTokens ?? 0));
@@ -115,9 +120,9 @@ test('concurrent new sessions get distinct ids, transcripts and usage', async ()
   const delta = (input: number) => ({ result: { usage: { delta: { inputTokens: input } } }, response: {} });
   const { harness, cwd } = await setup({
     responses: {
-      'a/1/red/1': delta(1),
-      'b/1/red/1': delta(100),
-      'a/1/green/1': delta(1),
+      'a/1/red/0/1': delta(1),
+      'b/1/red/0/1': delta(100),
+      'a/1/green/0/1': delta(1),
     },
   });
   const [first, second] = await Promise.all([
@@ -132,7 +137,7 @@ test('concurrent new sessions get distinct ids, transcripts and usage', async ()
 
 test('a scripted failure is a failed result, not a rejection', async () => {
   const { harness, cwd } = await setup({
-    responses: { 'implement/1/red/1': { failure: { failureClass: 'transient', retryAfterMs: 5 } } },
+    responses: { 'implement/1/red/0/1': { failure: { failureClass: 'transient', retryAfterMs: 5 } } },
   });
   const { result, failure } = await harness.run(call(cwd));
   assert.equal(result.status, 'failed');
@@ -141,7 +146,7 @@ test('a scripted failure is a failed result, not a rejection', async () => {
 });
 
 test('hang stays pending until cancel', async () => {
-  const { harness, cwd } = await setup({ responses: { 'implement/1/red/1': { hang: true } } });
+  const { harness, cwd } = await setup({ responses: { 'implement/1/red/0/1': { hang: true } } });
   const running = harness.run(call(cwd));
   assert.equal(await pendingAfterTurn(running), 'pending');
   harness.cancel();
@@ -151,7 +156,9 @@ test('hang stays pending until cancel', async () => {
 
 // A cancel that was lost leaves the call hung, which fails at the case timeout.
 test('cancel immediately after run still kills a hung call', { timeout: 120_000 }, async () => {
-  const { harness, cwd } = await setup({ responses: { 'implement/1/red/1': { hang: true, files: { 'a.txt': 'a' } } } });
+  const { harness, cwd } = await setup({
+    responses: { 'implement/1/red/0/1': { hang: true, files: { 'a.txt': 'a' } } },
+  });
   const running = harness.run(call(cwd));
   harness.cancel();
   const { result } = await running;
@@ -159,12 +166,12 @@ test('cancel immediately after run still kills a hung call', { timeout: 120_000 
 });
 
 test('throw rejects as an unexpected fault', async () => {
-  const { harness, cwd } = await setup({ responses: { 'implement/1/red/1': { throw: new Error('boom') } } });
+  const { harness, cwd } = await setup({ responses: { 'implement/1/red/0/1': { throw: new Error('boom') } } });
   await assert.rejects(harness.run(call(cwd)), /boom/);
 });
 
 test('a null response is a completed result without a structured response', async () => {
-  const { harness, cwd } = await setup({ responses: { 'implement/1/red/1': { response: null } } });
+  const { harness, cwd } = await setup({ responses: { 'implement/1/red/0/1': { response: null } } });
   const { response, result, failure } = await harness.run(call(cwd));
   assert.equal(response, null);
   assert.equal(result.status, 'completed');
@@ -174,7 +181,7 @@ test('a null response is a completed result without a structured response', asyn
 test('usage is null where the cost capability is absent', async () => {
   const { harness, cwd } = await setup({
     capabilities: { costReporting: false },
-    responses: { 'implement/1/red/1': { response: {} } },
+    responses: { 'implement/1/red/0/1': { response: {} } },
   });
   const outcome = await harness.run(call(cwd));
   assert.equal(usage(outcome).delta.costUsd, null);
@@ -185,14 +192,14 @@ test('an unscripted key throws naming it', async () => {
   const { harness, cwd } = await setup({ responses: {} });
   await assert.rejects(
     async () => harness.run(call(cwd, { vertex: 'review', phase: 'review' })),
-    /review\/1\/review\/1/,
+    /review\/1\/review\/0\/1/,
   );
 });
 
 test("a scripted costBasis comes back on the call's Usage delta", async () => {
   const { harness, cwd } = await setup({
     responses: {
-      'implement/1/red/1': { response: {}, result: { usage: { delta: { inputTokens: 1, costBasis: 'reported' } } } },
+      'implement/1/red/0/1': { response: {}, result: { usage: { delta: { inputTokens: 1, costBasis: 'reported' } } } },
     },
   });
   const outcome = await harness.run(call(cwd));

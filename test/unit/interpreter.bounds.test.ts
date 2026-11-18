@@ -20,11 +20,12 @@ type GoldenFixture = golden.GoldenFixture;
 type GoldenConfig = golden.GoldenConfig;
 // A configured Vertex's routes, as a case edits them.
 type Routes = Record<string, Record<string, unknown>>;
-const RED_CALL = keys.responseKey('red', 1, 'red', 1);
-const GREEN_CALL = keys.responseKey('green', 1, 'green', 1);
-const GREEN_RECOVERY = keys.responseKey('green', 1, 'recover', 1);
-const reviewCall = (visitNumber: number) => keys.responseKey('reviewer', visitNumber, 'review', 1);
-const fixCall = (vertex: string, visitNumber = 1) => keys.responseKey(vertex, visitNumber, 'fix', 1);
+const RED_CALL = keys.responseKey({ vertex: 'red', visit: 1, action: 'red' });
+const GREEN_CALL = keys.responseKey({ vertex: 'green', visit: 1, action: 'green' });
+const GREEN_RECOVERY = keys.responseKey({ vertex: 'green', visit: 1, action: 'green', recovery: 1 });
+const reviewCall = (visitNumber: number) =>
+  keys.responseKey({ vertex: 'reviewer', visit: visitNumber, action: 'review' });
+const fixCall = (vertex: string, visitNumber = 1) => keys.responseKey({ vertex, visit: visitNumber, action: 'fix' });
 const verticesOf = (configured: GoldenConfig) => configured.flows.golden!.ticket.vertices;
 
 // A Vertex max, the Action Cap and repeat routing (#117; request 3.3; T5, R4d, U5, V1).
@@ -231,7 +232,10 @@ test('the Action Cap ends the Ticket at needs-human', async (t) => {
 
 test("the Red Check compares untracked tests with the Visit's first baseline", async (t) => {
   const responses = firstVisitWith({
-    [keys.responseKey('red', 1, 'recover', 1)]: { files: {}, response: golden.redResponse },
+    [keys.responseKey({ vertex: 'red', visit: 1, action: 'red', recovery: 1 })]: {
+      files: {},
+      response: golden.redResponse,
+    },
   });
   responses[RED_CALL]!.files = {};
   const fixture = await golden.fixture(t, { responses });
@@ -417,7 +421,9 @@ async function workedExampleCrash(t: TestContext) {
     t,
     {
       [RED_CALL]: { response: null },
-      [keys.responseKey('red', 1, 'red', 2)]: structuredClone(golden.firstVisitResponses[RED_CALL]!),
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red', attempt: 2 })]: structuredClone(
+        golden.firstVisitResponses[RED_CALL]!,
+      ),
       [GREEN_CALL]: greenWrites({ 'lib/add.mjs': WRONG_ADD }),
       [GREEN_RECOVERY]: greenWrites({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
       [reviewCall(1)]: reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
@@ -545,7 +551,7 @@ test("a repeat Check ignores another Vertex's identical findings", async (t) => 
       [reviewCall(1)]: reviewed(review('changes', [MAJOR])),
       [fixCall('implementer-fix')]: fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
       [reviewCall(2)]: reviewed(review('ok', minor)),
-      [keys.responseKey('reviewer-2', 1, 'review', 1)]: reviewed(review('ok', minor)),
+      [keys.responseKey({ vertex: 'reviewer-2', visit: 1, action: 'review' })]: reviewed(review('ok', minor)),
     },
     {
       configure: (configured) => {

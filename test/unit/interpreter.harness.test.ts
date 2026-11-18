@@ -9,8 +9,8 @@ import { runFirstVisit } from '../support/golden-run.ts';
 import * as keys from '../support/keys.ts';
 
 // What an agent Action's Harness call carries beside its Brief, and what gg keeps of what the Harness reports (#422).
-const RED_CALL = keys.responseKey('red', 1, 'red', 1);
-const RED_RETRY = keys.responseKey('red', 1, 'red', 2);
+const RED_CALL = keys.responseKey({ vertex: 'red', visit: 1, action: 'red' });
+const RED_RETRY = keys.responseKey({ vertex: 'red', visit: 1, action: 'red', attempt: 2 });
 const TRANSIENT = { files: {}, response: null, failure: { failureClass: 'transient', retryAfterMs: 0 } };
 
 test("a resumed Attempt's call carries the Session's earlier cumulative Usage", async (t) => {
@@ -110,7 +110,8 @@ test('an aborted signal resolves a hung call as killed', { timeout: 60_000 }, as
     }
     return result;
   };
-  await interpreter.runExecution({ ...fixture.options, signal: controller.signal });
+  const runState = { stop: null, remoteNotBefore: 0, signal: controller.signal };
+  await interpreter.runExecution({ ...fixture.options, runState });
   assert.deepEqual(given, [controller.signal], "the hung call was given the Run's signal");
   const [hung] = attemptsOf(fixture, 'red', 'red');
   assert.equal(hung!.signals.harnessResult?.status, 'killed');

@@ -146,7 +146,9 @@ export function reviewStopReason(fixture: goldenRun.GoldenRun) {
 
 // GitHub writes and push retry recognised transient failures inside the Action, through the marker lookup (#66).
 export const PR = 7;
-export const okReview = { [keys.responseKey('reviewer', 1, 'review', 1)]: reviewed(review('ok')) };
+export const okReview = {
+  [keys.responseKey({ vertex: 'reviewer', visit: 1, action: 'review' })]: reviewed(review('ok')),
+};
 export const REVIEW_COMMENT = keys.retryKey({ vertex: 'reviewer', visit: 1, action: 'comment', recovery: 0 });
 export const commentPosts = (fixture: GoldenFixture, pr = PR) =>
   fixture.gh.calls.filter((call) => fakeGh.isCommentPost(call.args, pr));

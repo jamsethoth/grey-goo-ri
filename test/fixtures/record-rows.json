@@ -1,6 +1,6 @@
 {
   "execution": {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "repository": "o/r",
     "execution": "8.a1b2c3",
     "ticket": 8,
@@ -220,7 +220,11 @@
             "survivors": [{ "pid": 43, "created": null, "commandLine": null, "error": "not found" }],
             "reason": "1 process could not be confirmed gone",
             "containment": { "kind": "group", "pgid": 41 }
-          }
+          },
+          "repositoryDigest": "sha256:5e1f0c",
+          "agentCliVersion": "2.1.3",
+          "effectiveModel": "opus",
+          "effectiveEffort": null
         },
         "claim": { "valid": true, "token": "passed", "reason": null },
         "response": { "claim": "passed" },
@@ -623,7 +627,7 @@
     ]
   },
   "epic": {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "epic": 1,
     "planDecision": { "approved": [1, 2] },
     "approvalRequest": {

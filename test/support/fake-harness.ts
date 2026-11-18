@@ -1,17 +1,20 @@
 // A scripted stand-in for a Harness. It never spawns anything; a test drives it through `responses`, keyed by
-// keys.responseKey. test/contract/harness/ runs the Harness contract against it.
+// keys.responseKey: the call's Vertex, Visit and Attempt, and the Action and Recovery Number its Action Marker names.
+// test/contract/harness/ runs the Harness contract against it.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type * as commandCleanup from '../../lib/command-cleanup.ts';
 import type * as events from '../../lib/events.ts';
 import * as contract from '../../lib/harnesses/contract.ts';
+import * as marker from '../../lib/marker.ts';
 import type * as runContext from '../../lib/run-context.ts';
+import type * as visit from '../../lib/visit.ts';
 import * as keys from './keys.ts';
 
 type Usage = events.Usage;
 
 // The frozen version of the fake harness's scripting keys (docs/interfaces/harness.md); a change needs a new ADR (#23).
-export const FAKE_HARNESS_VERSION = 1;
+export const FAKE_HARNESS_VERSION = 2;
 
 const DEFAULT_CAPABILITIES = {
   skills: 'exact',
@@ -35,14 +38,14 @@ const DEFAULT_CAPABILITIES = {
 };
 
 // One Attempt's script: the files it writes, its Structured Response, and its result fields (`usage.delta` among them),
-// a failure it reports, an error it throws, or `hang` until cancel(); `cleanup` is what its Command Cleanup reports,
-// confirmed unless the script says otherwise.
+// a failure it reports, an error it throws, or `hang` until cancel() or the call's signal; `cleanup` is what its
+// Command Cleanup reports, confirmed unless the script says otherwise.
 export interface ScriptedResponse {
   cleanup?: commandCleanup.CleanupReport;
   files?: Record<string, string>;
   response?: unknown;
   result?: { usage?: { delta?: Partial<Usage> }; sessionInit?: object; [field: string]: unknown };
-  failure?: { kind?: string; retryAfterMs?: number | null; message?: string; [field: string]: unknown };
+  failure?: visit.HarnessFailure;
   throw?: unknown;
   hang?: boolean;
 }
@@ -55,7 +58,7 @@ export interface HarnessCall {
   phase: string;
   attempt: number;
   cwd: string;
-  marker?: string;
+  marker: string;
   brief?: string;
   resume?: string | null;
   tools?: unknown;
@@ -125,6 +128,10 @@ function outcomeOf({ script, scripted, session, delta }: Answered, status: strin
       transcriptPath: session.transcriptPath,
       exitCode: status === 'completed' ? 0 : 1,
       exitSignal: status === 'killed' ? 'SIGTERM' : null,
+      repositoryDigest: null,
+      agentCliVersion: null,
+      effectiveModel: null,
+      effectiveEffort: null,
       finalEventSubtype: status === 'completed' ? 'success' : null,
       sessionInit: { ...emptyInit(), ...sessionInit },
       permissionDenials: [],
@@ -208,14 +215,21 @@ export function fakeHarness({
 
   async function run(call: HarnessCall, hooks?: runContext.HarnessHooks) {
     calls.push(recordedCall(call));
-    const key = keys.responseKey(call.vertex, call.visit, call.phase, call.attempt);
+    const { action, recovery } = marker.partsOf(call.marker);
+    const key = keys.responseKey({ ...call, action, recovery: Number(recovery) });
     const script = responses[key];
     if (!script) throw new Error(`fake harness has no scripted response for ${key}`);
     if (script.throw) throw script.throw;
     // Its started report names the containment its cleanup reports, as gg's command runner does: a job or none.
     hooks?.started({ kind: (script.cleanup ?? CONFIRMED).containment.kind === 'job' ? 'job' : 'none' });
-    // Register before the first await so a cancel() during setup is not lost.
-    const cancelled = script.hang ? new Promise<void>((resolve) => hung.push(resolve)) : null;
+    // Register before the first await so a cancel() or an abort during setup is not lost.
+    const cancelled = script.hang
+      ? new Promise<void>((resolve) => {
+          hung.push(resolve);
+          if (hooks?.signal.aborted) resolve();
+          hooks?.signal.addEventListener('abort', () => resolve(), { once: true });
+        })
+      : null;
     await writeFiles(call.cwd, script.files ?? {});
     const session = await sessions.open(call.resume);
     const delta = deltaOf(script, contract.emptyUsage(fullCapabilities));
@@ -239,7 +253,7 @@ export function fakeHarness({
     metrics: sessions.metrics,
     doctor: () => ({ ok: true, checks: [] }),
     calls,
-    // Test-only: resolves every hung call as killed.
+    // Test-only: resolves every hung call as killed, as an aborted signal does its own call.
     cancel: () => {
       for (const resolve of hung.splice(0)) resolve();
     },

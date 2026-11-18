@@ -10,9 +10,9 @@ import * as keys from './keys.ts';
 
 type GoldenFixture = golden.GoldenFixture;
 
-export const GREEN_CALL = keys.responseKey('green', 1, 'green', 1);
-export const GREEN_RECOVERY = keys.responseKey('green', 1, 'recover', 1);
-export const SENIOR_CALL = keys.responseKey('senior-green', 1, 'green', 1);
+export const GREEN_CALL = keys.responseKey({ vertex: 'green', visit: 1, action: 'green' });
+export const GREEN_RECOVERY = keys.responseKey({ vertex: 'green', visit: 1, action: 'green', recovery: 1 });
+export const SENIOR_CALL = keys.responseKey({ vertex: 'senior-green', visit: 1, action: 'green' });
 
 // green writes this twice and fails its Check both times.
 export const FAILING_WORK = { 'lib/add.mjs': goldenRun.WRONG_ADD, 'notes.txt': 'what green tried\n' };
@@ -49,9 +49,9 @@ export const failingRed = (files: Record<string, string>): fakeHarness.ScriptedR
     response: golden.redResponse,
   };
   return {
-    [keys.responseKey('red', 1, 'red', 1)]: passing,
-    [keys.responseKey('red', 1, 'recover', 1)]: passing,
-    [keys.responseKey('senior-red', 1, 'red', 1)]: {
+    [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: passing,
+    [keys.responseKey({ vertex: 'red', visit: 1, action: 'red', recovery: 1 })]: passing,
+    [keys.responseKey({ vertex: 'senior-red', visit: 1, action: 'red' })]: {
       files: {},
       response: { ...golden.redResponse, claim: 'blocked', diagnosis: 'stuck' },
     },

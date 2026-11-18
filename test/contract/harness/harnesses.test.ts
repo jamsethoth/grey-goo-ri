@@ -91,8 +91,15 @@ test('every Harness declares the paths that configure it', async () => {
 
 // A Harness returns only once its processes are gone, or reports that it could not confirm it (L6, L11).
 test("a Harness's result reports its Command Cleanup", async () => {
-  const call = { vertex: 'v', visit: 1, phase: 'p', attempt: 1, cwd: dirs[0] ?? tmpdir() };
-  const harness = await fakeHarness({ responses: { 'v/1/p/1': { response: { claim: 'ok' } } } });
+  const call = {
+    marker: 'gg:e1:v:1:p:0:r1:1',
+    vertex: 'v',
+    visit: 1,
+    phase: 'p',
+    attempt: 1,
+    cwd: dirs[0] ?? tmpdir(),
+  };
+  const harness = await fakeHarness({ responses: { 'v/1/p/0/1': { response: { claim: 'ok' } } } });
   const { result } = await harness.run(call);
   assert.equal((result.cleanup as { confirmed: unknown }).confirmed, true);
   assert.deepEqual((result.cleanup as { survivors: unknown }).survivors, []);

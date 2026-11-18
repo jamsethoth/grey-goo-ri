@@ -28,11 +28,15 @@ const READ_FIELDS = ['failureClass', 'execution', 'run', 'head'];
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-// The fields an Event of this type declares after its header. A saved Event holds every one, an optional field null.
-function declaredFields(type: unknown, agent: unknown): string[] {
+// The fields an Event of this type declares after its header. A saved Event holds every one, an optional field null;
+// one of the previous version holds none its version added.
+function declaredFields(type: unknown, agent: unknown, previous: boolean): string[] {
   if (type === 'action') {
     if (typeof agent !== 'boolean') throw new Error('its agent is not true or false');
-    return ['agent', ...Object.keys(events.ACTION), ...(agent ? Object.keys(events.AGENT) : [])];
+    const agentFields = Object.keys(events.AGENT).filter(
+      (field) => !(previous && events.ADDED_IN_VERSION.includes(field)),
+    );
+    return ['agent', ...Object.keys(events.ACTION), ...(agent ? agentFields : [])];
   }
   // An own key only: `toString` would otherwise find Object.prototype's member and pass as a type.
   const shape = Object.entries(events.LIFECYCLE).find(([name]) => name === type)?.[1];
@@ -55,10 +59,12 @@ function checkFields(fields: Record<string, unknown>, declared: Set<string>): vo
 function assertEvent(value: unknown, row: EventRow): asserts value is events.Event {
   if (!isObject(value)) throw new Error('its JSON is not an object');
   const { schemaVersion, time, ...fields } = value;
-  if (schemaVersion !== events.EVENT_SCHEMA_VERSION) throw new Error(`unknown schemaVersion ${String(schemaVersion)}`);
+  const previous = schemaVersion === events.PREVIOUS_EVENT_SCHEMA_VERSION;
+  if (schemaVersion !== events.EVENT_SCHEMA_VERSION && !previous)
+    throw new Error(`unknown schemaVersion ${String(schemaVersion)}`);
   if (typeof time !== 'string') throw new Error('its time is not a string');
   const { type, ...body } = fields;
-  checkFields(body, new Set(declaredFields(type, fields.agent)));
+  checkFields(body, new Set(declaredFields(type, fields.agent, previous)));
   for (const column of COLUMNS) {
     const saved = fields[column] ?? null;
     if (row[column] !== saved)

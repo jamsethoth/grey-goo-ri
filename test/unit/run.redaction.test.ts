@@ -18,7 +18,7 @@ const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
 test('local paths in fault comments stay in the local Event only', async (t) => {
   const responses: fakeHarness.ScriptedResponses = {};
   const fixture = runFixture.fixture(t, { responses });
-  responses['red/1/red/1'] = {
+  responses['red/1/red/0/1'] = {
     throw: new Error(`Cannot read ${fixture.worktree}/secret.txt or ${fixture.commonDir}/gg/gg.db`),
   };
   const results = await run.runTarget(fixture.options);
@@ -100,7 +100,7 @@ test('truncated long Check output does not expose fragments of local paths', asy
 test('truncated fault output does not expose fragments of local paths', async (t) => {
   const responses: fakeHarness.ScriptedResponses = {};
   const fixture = runFixture.fixture(t, { responses });
-  responses['red/1/red/1'] = { throw: new Error(truncatedAt(fixture.commonDir)) };
+  responses['red/1/red/0/1'] = { throw: new Error(truncatedAt(fixture.commonDir)) };
   assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 1);
   const bodies = fixture.comments();
   assert.ok(bodies.length, 'the fault is reported');

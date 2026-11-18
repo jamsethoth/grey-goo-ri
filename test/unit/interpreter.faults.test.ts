@@ -18,11 +18,11 @@ import * as suiteRuns from '../support/suite-runs.ts';
 test('golden: an invalid structured response is retried once with a nudge then stops', async (t) => {
   const fixture = await golden.fixture(t, {
     responses: firstVisitWith({
-      [keys.responseKey('green', 1, 'green', 1)]: {
+      [keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })]: {
         files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' },
         response: null,
       },
-      [keys.responseKey('green', 1, 'green', 2)]: {
+      [keys.responseKey({ vertex: 'green', visit: 1, action: 'green', attempt: 2 })]: {
         files: {},
         response: { ...golden.greenResponse, claim: 'ok blocked' },
       },
@@ -65,11 +65,14 @@ test('a needs-replan reached with a rejected response is headed by its end, neve
   const claim = 'ok\n\n## Injected heading';
   const fixture = await golden.fixture(t, {
     responses: firstVisitWith({
-      [keys.responseKey('green', 1, 'green', 1)]: {
+      [keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })]: {
         files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' },
         response: null,
       },
-      [keys.responseKey('green', 1, 'green', 2)]: { files: {}, response: { ...golden.greenResponse, claim } },
+      [keys.responseKey({ vertex: 'green', visit: 1, action: 'green', attempt: 2 })]: {
+        files: {},
+        response: { ...golden.greenResponse, claim },
+      },
     }),
   });
   golden.configure(fixture, (configured) => {
@@ -87,8 +90,8 @@ test('a needs-replan reached with a rejected response is headed by its end, neve
 test('golden: a failing test Check is recovered once then fails with the Outcome failed', async (t) => {
   const fixture = await greenFixture(t, {
     responses: {
-      [keys.responseKey('green', 1, 'green', 1)]: greenWrites({ 'lib/add.mjs': WRONG_ADD }),
-      [keys.responseKey('green', 1, 'recover', 1)]: greenWrites({
+      [keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })]: greenWrites({ 'lib/add.mjs': WRONG_ADD }),
+      [keys.responseKey({ vertex: 'green', visit: 1, action: 'green', recovery: 1 })]: greenWrites({
         'lib/add.mjs': 'export const add = (a, b) => a - b;\n',
       }),
     },
@@ -145,11 +148,14 @@ test('golden: a failing test Check is recovered once then fails with the Outcome
 });
 
 test('a timed-out result gets one fresh attempt then needs-human', async (t) => {
-  const red = golden.firstVisitResponses[keys.responseKey('red', 1, 'red', 1)];
+  const red = golden.firstVisitResponses[keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })];
   const fixture = await golden.fixture(t, {
     responses: {
-      [keys.responseKey('red', 1, 'red', 1)]: { ...red, result: { status: 'timed-out' } },
-      [keys.responseKey('red', 1, 'red', 2)]: { ...red, result: { status: 'timed-out' } },
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: { ...red, result: { status: 'timed-out' } },
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red', attempt: 2 })]: {
+        ...red,
+        result: { status: 'timed-out' },
+      },
     },
   });
   const { outcome } = await interpreter.runExecution(fixture.options);
@@ -182,9 +188,9 @@ test('a transient failure is retried within budget honouring retryAfterMs', asyn
   const failed = { files: {}, response: null, failure: { failureClass: 'transient', retryAfterMs: 5 } };
   const fixture = await golden.fixture(t, {
     responses: {
-      [keys.responseKey('red', 1, 'red', 1)]: failed,
-      [keys.responseKey('red', 1, 'red', 2)]: failed,
-      [keys.responseKey('red', 1, 'red', 3)]: failed,
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: failed,
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red', attempt: 2 })]: failed,
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red', attempt: 3 })]: failed,
     },
   });
   const sleeps: number[] = [];
@@ -228,7 +234,11 @@ test('a transient failure is retried within budget honouring retryAfterMs', asyn
 test('an auth failure stops the run with its class', async (t) => {
   const fixture = await golden.fixture(t, {
     responses: {
-      [keys.responseKey('red', 1, 'red', 1)]: { files: {}, response: null, failure: { failureClass: 'auth' } },
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: {
+        files: {},
+        response: null,
+        failure: { failureClass: 'auth' },
+      },
     },
   });
   const result = await interpreter.runExecution(fixture.options);
@@ -251,7 +261,11 @@ test('an auth failure stops the run with its class', async (t) => {
 test('an auth failure keeps its run stop when the terminal comment fails', async (t) => {
   const fixture = await golden.fixture(t, {
     responses: {
-      [keys.responseKey('red', 1, 'red', 1)]: { files: {}, response: null, failure: { failureClass: 'auth' } },
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: {
+        files: {},
+        response: null,
+        failure: { failureClass: 'auth' },
+      },
     },
   });
   fixture.options.deps.gh = {
@@ -278,7 +292,11 @@ test(
   async (t) => {
     const fixture = await golden.fixture(t, {
       responses: {
-        [keys.responseKey('red', 1, 'red', 1)]: { files: {}, response: null, failure: { failureClass: 'auth' } },
+        [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: {
+          files: {},
+          response: null,
+          failure: { failureClass: 'auth' },
+        },
       },
     });
     const real = fixture.options.deps.gh.comment;
@@ -324,7 +342,7 @@ test(
 
 test('a hold over an interrupted blocked terminal posts its own comment', async (t) => {
   const responses = firstVisitWith();
-  responses[keys.responseKey('green', 1, 'green', 1)].response = {
+  responses[keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })].response = {
     ...golden.greenResponse,
     claim: 'blocked',
     diagnosis: 'The ticket contradicts itself.',
@@ -372,7 +390,9 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
 
 test('a crash inside the fault report replays its comment once on resume', async (t) => {
   const fixture = await golden.fixture(t, {
-    responses: { [keys.responseKey('red', 1, 'red', 1)]: { throw: new Error('harness exploded') } },
+    responses: {
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: { throw: new Error('harness exploded') },
+    },
   });
   const actionMarker = terminalMarker(fixture, 'fault-comment');
   await assert.rejects(
@@ -401,7 +421,11 @@ test('a crash inside the fault report replays its comment once on resume', async
 test('a pending fault report keeps its run stop when its comment lookup fails on resume', async (t) => {
   const fixture = await golden.fixture(t, {
     responses: {
-      [keys.responseKey('red', 1, 'red', 1)]: { files: {}, response: null, failure: { failureClass: 'auth' } },
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: {
+        files: {},
+        response: null,
+        failure: { failureClass: 'auth' },
+      },
     },
   });
   const real = fixture.options.deps.gh.comment;
@@ -447,7 +471,11 @@ test('a pending fault report keeps its run stop when its comment lookup fails on
 test('an unknown failure goes to needs-human without retry', async (t) => {
   const fixture = await golden.fixture(t, {
     responses: {
-      [keys.responseKey('red', 1, 'red', 1)]: { files: {}, response: null, failure: { failureClass: 'unknown' } },
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: {
+        files: {},
+        response: null,
+        failure: { failureClass: 'unknown' },
+      },
     },
   });
   const result = await interpreter.runExecution(fixture.options);
@@ -468,7 +496,9 @@ test('an unknown failure goes to needs-human without retry', async (t) => {
 
 test('a rejecting harness is an unexpected fault', async (t) => {
   const fixture = await golden.fixture(t, {
-    responses: { [keys.responseKey('red', 1, 'red', 1)]: { throw: new Error('harness exploded') } },
+    responses: {
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: { throw: new Error('harness exploded') },
+    },
   });
   const result = await interpreter.runExecution(fixture.options);
 
@@ -485,7 +515,9 @@ test('a rejecting harness is an unexpected fault', async (t) => {
 
 test('a fault whose terminal comment also fails is still recorded as a fault', async (t) => {
   const fixture = await golden.fixture(t, {
-    responses: { [keys.responseKey('red', 1, 'red', 1)]: { throw: new Error('harness exploded') } },
+    responses: {
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: { throw: new Error('harness exploded') },
+    },
   });
   fixture.options.deps.gh = {
     ...fixture.options.deps.gh,
@@ -505,7 +537,7 @@ test('a fault whose terminal comment also fails is still recorded as a fault', a
 
 test('a harness rejecting with an empty error is still a fault', async (t) => {
   const fixture = await golden.fixture(t, {
-    responses: { [keys.responseKey('red', 1, 'red', 1)]: { throw: new Error() } },
+    responses: { [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: { throw: new Error() } },
   });
   const result = await interpreter.runExecution(fixture.options);
 
@@ -518,7 +550,9 @@ test('a harness rejecting with an empty error is still a fault', async (t) => {
 
 test('a CrashError propagates untouched', async (t) => {
   const crash = new interpreter.CrashError('injected crash');
-  const fixture = await golden.fixture(t, { responses: { [keys.responseKey('red', 1, 'red', 1)]: { throw: crash } } });
+  const fixture = await golden.fixture(t, {
+    responses: { [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: { throw: crash } },
+  });
   await assert.rejects(interpreter.runExecution(fixture.options), (err) => err === crash);
 
   assert.equal(loadTicket(fixture).state, 'active');
@@ -529,7 +563,7 @@ test('a CrashError propagates untouched', async (t) => {
 test('golden: blocked after a red recovery pass stops', async (t) => {
   const fixture = await golden.fixture(t, {
     responses: firstVisitWith({
-      [keys.responseKey('red', 1, 'recover', 1)]: {
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red', recovery: 1 })]: {
         files: {},
         response: { ...golden.redResponse, claim: 'blocked', diagnosis: 'The tests cannot fail first.' },
       },
@@ -555,8 +589,8 @@ test('golden: blocked after a red recovery pass stops', async (t) => {
 test('a persona edit between green and its recovery pass does not reach the recovery call', async (t) => {
   const fixture = await greenFixture(t, {
     responses: {
-      [keys.responseKey('green', 1, 'green', 1)]: greenWrites({ 'lib/add.mjs': WRONG_ADD }),
-      [keys.responseKey('green', 1, 'recover', 1)]: greenWrites({
+      [keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })]: greenWrites({ 'lib/add.mjs': WRONG_ADD }),
+      [keys.responseKey({ vertex: 'green', visit: 1, action: 'green', recovery: 1 })]: greenWrites({
         'lib/add.mjs': 'export const add = (a, b) => a + b;\n',
       }),
     },

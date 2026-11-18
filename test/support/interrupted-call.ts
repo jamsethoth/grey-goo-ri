@@ -11,7 +11,7 @@ import type * as fakeHarness from './fake-harness.ts';
 import * as golden from './golden.ts';
 import * as keys from './keys.ts';
 
-export const callOf = (attempt: number) => keys.responseKey('red', 1, 'red', attempt);
+export const callOf = (attempt: number) => keys.responseKey({ vertex: 'red', visit: 1, action: 'red', attempt });
 
 // What an interrupted Attempt leaves: a tracked change, an untracked file, an untracked test and an ignored Protected
 // File, which only the rescue's own restore keeps.

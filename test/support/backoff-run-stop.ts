@@ -1,5 +1,5 @@
 // A run stop that lands while a golden Execution backs off: another Ticket's harness call fails with class auth.
-import type * as sideEffect from '../../lib/effects/side-effect.ts';
+import * as sideEffect from '../../lib/effects/side-effect.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import type * as record from '../../lib/record.ts';
 import * as executionReads from './execution-reads.ts';
@@ -11,7 +11,7 @@ export async function runStoppedInBackoff(
   fixture: golden.GoldenFixture,
   { retryKey, executionRecord }: { retryKey?: string; executionRecord?: record.ExecutionRecord },
 ) {
-  const runState: sideEffect.RunState = { stop: null, remoteNotBefore: 0 };
+  const runState = sideEffect.createRunState();
   let saved: sideEffect.RemoteRetry | undefined;
   const stop = () => {
     runState.stop = { failureClass: 'auth', ticket: 21 };

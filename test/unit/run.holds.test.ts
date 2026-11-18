@@ -307,7 +307,7 @@ test('a crash between admission and its hold keeps the decision and its one tick
 test('an Interrupted Attempt hold warns before its record is deleted, then and on the next Run', async (t) => {
   const responses = {
     ...golden.firstVisitResponses,
-    'red/1/red/1': { throw: new interpreter.CrashError('gg died during the call') },
+    'red/1/red/0/1': { throw: new interpreter.CrashError('gg died during the call') },
   };
   const fixture = runFixture.fixture(t, { responses, labels: [IN_PROGRESS_LABEL] });
   await runFixture.seedExecution(fixture);

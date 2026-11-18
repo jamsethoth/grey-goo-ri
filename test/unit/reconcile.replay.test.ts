@@ -47,7 +47,7 @@ for (const point of Object.keys(crashResume.POINTS) as (keyof typeof crashResume
     const fixture = await golden.fixture(t, {
       responses: {
         ...structuredClone(golden.firstVisitResponses),
-        'green/1/green/1': {
+        'green/1/green/0/1': {
           files: {},
           response: { ...golden.greenResponse, claim: 'misscoped', diagnosis: DIAGNOSIS },
         },

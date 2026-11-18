@@ -24,7 +24,7 @@ import * as resetInterruption from '../support/reset-interruption.ts';
 // the reset, or after it.
 async function crashedViolation(t: TestContext, when: 'before reset' | 'after reset') {
   const responses = structuredClone(golden.firstVisitResponses);
-  (responses['red/1/red/1']?.files as Record<string, string>)['.agents/injected.json'] = '{}\n';
+  (responses['red/1/red/0/1']?.files as Record<string, string>)['.agents/injected.json'] = '{}\n';
   const fixture = await golden.fixture(t, { responses, integrity: 'real', git: 'real' });
   const git = fixture.options.deps.git;
   fixture.options.deps.git = resetInterruption.crashingReset(git, { after: when === 'after reset' });
@@ -276,7 +276,7 @@ test('an interrupted recovery pass and the routed failure after its retry keep t
     [1, 'interrupted.txt'],
     [2, 'retry.txt'],
   ] as const)
-    responses[keys.responseKey('red', 1, 'recover', attempt)] = {
+    responses[keys.responseKey({ vertex: 'red', visit: 1, action: 'red', recovery: 1, attempt })] = {
       files: { 'lib/add.mjs': goldenRun.RIGHT_ADD, [file]: `${file}\n` },
       response: golden.redResponse,
     };

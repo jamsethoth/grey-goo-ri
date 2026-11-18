@@ -15,8 +15,8 @@ code.
 | `capabilities` | the Capability matrix below |
 | `protectedPaths` | the paths that configure the Harness, each a directory with a trailing `/` or a file |
 | `validate(agent)` | checks an Agent against the matrix; returns a typed result, never throws |
-| `resolveTools(agent, ctx)` | the tools the Harness will pass for this Agent, hint fields marked, as JSON returned at once, never a Promise; gg passes no `ctx` yet |
-| `run(call, hooks)` | runs one Attempt; reports it has started through `hooks.started`; resolves `{ response, result, failure }` |
+| `resolveTools(agent, { commands, platform })` | the tools the Harness will pass for this Agent, hint fields marked, as JSON returned at once, never a Promise; `commands` are the Declared Commands the Agent may run (the repository's at preflight, the Visit's pinned ones at a call) and `platform` is gg's `process.platform` (`ToolsContext`, `lib/run-context.ts`) |
+| `run(call, hooks)` | runs one Attempt; reports it has started through `hooks.started`; ends the Attempt when `hooks.signal` aborts; resolves `{ response, result, failure }` |
 | `interactiveArgs(agent, opening, opts)` | argv for an interactive session opened with `opening` |
 | `metrics(session)` | cumulative Usage of a Session |
 | `doctor(cfg)` | behaviour probes for `gg doctor` |
@@ -81,9 +81,12 @@ backgroundWork
 ## `run(call, hooks)`
 
 The call gg passes is `SentCall` (`lib/agent-action.ts`): `{ marker, vertex, visit, phase, attempt?, agent, persona:
-{ name, bytes, hash }, brief, schema, cwd, resume, access, network?, tools, timeouts, env }`. `agent` is the pinned Agent
-with its keys (`harness`, `persona`, `model`, `effort`, `network?`, and any other the Agent declares); `resume` is the
-Session to resume, or null; `timeouts` is the Agent's own, as configured (`{ stallMs, wallMs }`), or `{}`. The Harness
+{ name, bytes, hash }, brief, schema, cwd, resume, previousUsage, runDirectory, access, network?, tools, timeouts, env }`.
+`agent` is the pinned Agent with its keys (`harness`, `persona`, `model`, `effort`, `network?`, and any other the Agent
+declares); `resume` is the Session to resume, or null; `previousUsage` is that Session's cumulative Usage as gg saved it
+after its last call, or null when `resume` is null, so the Harness can give this call's share; `runDirectory` is the
+Run's directory, `<common dir>/gg/runs/<run>`, where a Harness keeps what it writes for the Run's calls, such as a
+persona file (request 3.2); `timeouts` is the Agent's own, as configured (`{ stallMs, wallMs }`), or `{}`. The Harness
 receives the Persona bytes, never a path. Every path of the call:
 
 ```text paths:SentCall
@@ -129,6 +132,19 @@ schema.min?: number (referencePaths.SchemaNode)
 schema.max?: number (referencePaths.SchemaNode)
 cwd: string
 resume: string | null
+previousUsage: object | null
+previousUsage.inputTokens: number | null (events.Usage)
+previousUsage.cacheReadTokens: number | null (events.Usage)
+previousUsage.cacheWriteTokens: number | null (events.Usage)
+previousUsage.outputTokens: number | null (events.Usage)
+previousUsage.reasoningTokens: number | null (events.Usage)
+previousUsage.costUsd: number | null (events.Usage)
+previousUsage.peakContextTokens: number | null (events.Usage)
+previousUsage.turns: number | null (events.Usage)
+previousUsage.toolCalls: number | null (events.Usage)
+previousUsage.compactions: number | null (events.Usage)
+previousUsage.costBasis?: "reported" | "priced" | null (events.Usage)
+runDirectory: string
 access: string
 network?: boolean
 tools: JsonValue
@@ -136,10 +152,16 @@ timeouts: JsonValue
 env: JsonValue
 ```
 
-`hooks` is `{ started(report) }` (`HarnessHooks`, `lib/run-context.ts`). Once the Attempt's processes have started, and
-before `run` resolves, the Harness calls `started` with what contains them (#68, N1): `kind` is `job` when a Windows job
-ends them all with gg (ADR 0021), else `none`, an open string. gg saves it into the call's intent by a second write, so
-at resume an Interrupted Attempt is reset and retried only under a `job`; a Harness that never calls it is uncontained.
+`hooks` is `{ started(report), signal }` (`HarnessHooks`, `lib/run-context.ts`). Once the Attempt's processes have
+started, and before `run` resolves, the Harness calls `started` with what contains them (#68, N1): `kind` is `job` when a
+Windows job ends them all with gg (ADR 0021), else `none`, an open string. gg saves it into the call's intent by a second
+write, so at resume an Interrupted Attempt is reset and retried only under a `job`; a Harness that never calls it is
+uncontained.
+
+`signal` is the Run's one `AbortSignal`, always given, beside the call rather than inside it, since the Harness gets a
+copy of the call and a copy of a signal is `{}` (ADR 0024). When it aborts, the Harness ends the Attempt's processes and
+resolves `killed`, which the Transition Table reads as it does a timeout until #220 gives a cancel its own route.
+Nothing aborts it yet: #220 wires run stops and overrides to it.
 
 ```text paths:HarnessStarted
 kind: string (runContext.HarnessStarted)
@@ -156,7 +178,12 @@ It resolves:
   as opaque JSON.
 - `result`: the Harness Result (`HarnessResult`, `lib/run-context.ts`) `{ status: 'completed' | 'failed' | 'timed-out'
   | 'killed', sessionId, transcriptPath, usage: { cumulative, delta }, exitCode?, exitSignal?, finalEventSubtype?,
-  sessionInit?, permissionDenials?, commandsRun?, cleanup? }`. `sessionInit` is `{ plugins, pluginErrors, mcpServers,
+  sessionInit?, permissionDenials?, commandsRun?, cleanup?, repositoryDigest?, agentCliVersion?, effectiveModel?,
+  effectiveEffort? }`. `sessionId` is the id the call's Session reported; gg saves a fresh call's and keeps it when a
+  resumed call reports another (request 3.2). `repositoryDigest` is the Harness's digest of the repository's own
+  configuration for it (for Claude Code, its `.claude` directory), `agentCliVersion` the version of the CLI it ran, and
+  `effectiveModel` and `effectiveEffort` the model and effort the call ran with, as the Harness saw them; each is null,
+  or left out, where it reported none, and gg carries each to the agent Action Event. `sessionInit` is `{ plugins, pluginErrors, mcpServers,
   mcpServerErrors, capabilities }` as the Harness's stream reported it. `exitSignal` is the OS signal that ended the
   process, or null. `sessionInit`, `permissionDenials` and `commandsRun` are diagnostic only. Outcomes are classified
   from the final event, not the exit code.
@@ -220,6 +247,10 @@ cleanup.containment<kind=job>.kind: "job"
 cleanup.containment<kind=group>.kind: "group"
 cleanup.containment<kind=group>.pgid: number
 cleanup.containment<kind=none>.kind: "none"
+repositoryDigest?: string | null (runContext.HarnessResult)
+agentCliVersion?: string | null (runContext.HarnessResult)
+effectiveModel?: string | null (runContext.HarnessResult)
+effectiveEffort?: string | null (runContext.HarnessResult)
 ```
 
 ```text paths:HarnessFailure
@@ -264,19 +295,23 @@ is refused (`events.Usage`, `events.md`).
 ## The fake harness
 
 `test/support/fake-harness.ts` stands in for a Harness in every test: it never spawns anything, and a test scripts it.
-Its scripting version is `FAKE_HARNESS_VERSION = 1`, and every scripting key below is frozen with it.
+Its scripting version is `FAKE_HARNESS_VERSION = 2`, and every scripting key below is frozen with it. Its result holds
+null for `repositoryDigest`, `agentCliVersion`, `effectiveModel` and `effectiveEffort` unless a script gives one.
 
 Beyond `HARNESS_METHODS`, the fake has only these test-only members: `calls`, every call it was given, and `cancel()`,
-which resolves every hung call as `killed`.
+which resolves every hung call as `killed`, as an aborted `hooks.signal` does its own call.
 
 ```text list:fake-harness-test-only
 calls
 cancel
 ```
 
-A test gives it `responses`, keyed `<vertex>/<visit>/<phase>/<attempt>` (`keys.responseKey`), each a
-`ScriptedResponse`: the files the Attempt writes, its Structured Response, its result fields (`usage.delta` among
-them), a failure it reports, an error it throws, or `hang` until `cancel()`, and the cleanup its Command Cleanup
+A test gives it `responses`, keyed `<vertex>/<visit>/<action>/<recovery>/<attempt>` (`keys.responseKey`): the call's
+Vertex, Visit and Attempt, and the Action and Recovery Number its Action Marker names, so each recovery pass of an
+Action has its own key though every pass's Phase is `recover`. Each is a `ScriptedResponse`: the files the Attempt
+writes, its Structured Response, its result fields (`usage.delta` among them), a failure it reports (a
+`HarnessFailure`, its class under `failureClass`), an error it throws, or `hang` until `cancel()` or the call's signal
+aborts, and the cleanup its Command Cleanup
 reports, confirmed unless the script says otherwise (`closeJob` is a function, as a real report's is; `throw` is any value
 thrown, an `Error` among them). Every path a script may hold:
 
@@ -315,11 +350,10 @@ result.usage.delta.compactions?: number | null
 result.usage.delta.costBasis?: "reported" | "priced" | null
 result.sessionInit?: object
 result.*: unknown
-failure?: open object (fakeHarness.ScriptedResponse)
-failure.kind?: string
-failure.retryAfterMs?: number | null
-failure.message?: string
-failure.*: unknown
+failure?: object (fakeHarness.ScriptedResponse)
+failure.failureClass: string (visit.HarnessFailure)
+failure.retryAfterMs?: number | null (visit.HarnessFailure)
+failure.message?: string (visit.HarnessFailure)
 throw?: unknown (fakeHarness.ScriptedResponse)
 hang?: boolean (fakeHarness.ScriptedResponse)
 ```

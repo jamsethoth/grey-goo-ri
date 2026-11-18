@@ -11,6 +11,7 @@ import * as config from './config.ts';
 import type * as integrity from './integrity.ts';
 import * as jsonValue from './json-value.ts';
 import * as marker from './marker.ts';
+import * as paths from './paths.ts';
 import type * as outcome from './outcome.ts';
 import * as record from './record.ts';
 import * as render from './render.ts';
@@ -172,7 +173,7 @@ function callAttempt(runContext: RunContext, running: Attempt): Promise<ActionRe
       outputs: { ...(claim.valid && { response }), cleanup: result.cleanup },
     }),
     finish: (called, { call, own }) => {
-      saveSession(executionRecord, actionIdentity, called.result, own);
+      saveSession(executionRecord, { ...running, result: called.result }, own);
       return settleAttempt(runContext, running, { call, own, called });
     },
   });
@@ -180,13 +181,15 @@ function callAttempt(runContext: RunContext, running: Attempt): Promise<ActionRe
 type Prepared = { call: SentCall; own: Own };
 
 // `access` is the Vertex's, which the validator resolved (H9): read-only unless its Agent allows more and its
-// Procedure does not cap it. The Phase is the agent Action's id, and a recovery pass's call is the Phase recover.
+// Procedure does not cap it. The Phase is the agent Action's id, and a recovery pass's call is the Phase recover. A
+// resumed call carries its Session's saved total, so the Harness can log this call's share; a fresh one has none.
 function callOf(
   runContext: RunContext,
   { actionIdentity, action, resume }: Attempt,
   { pinned, brief, actionMarker, harness }: CallParts,
 ) {
   const agentPinned = pinned.agent as Agent;
+  const commands = pinned.commands as Record<string, string>;
   const schema = JSON.parse(config.namedFile(pinned.files, action.schema));
   briefs.assertStrict(schema);
   return {
@@ -201,10 +204,12 @@ function callOf(
     schema,
     cwd: runContext.record.worktree,
     resume,
+    previousUsage: resume ? (runContext.record.sessions[sessionKey(actionIdentity)]?.cumulativeUsage ?? null) : null,
+    runDirectory: paths.runDirectory(runContext.record.commonDir, runContext.run),
     access: pinned.access,
     network: agentPinned.network,
     // A copy, as the Harness's answer is: the Harness keeps the tools it returns and may change them later.
-    tools: structuredClone(harness.resolveTools(agentPinned)),
+    tools: structuredClone(harness.resolveTools(agentPinned, { commands, platform: process.platform })),
     timeouts: agentPinned.timeouts ?? {},
     env: {},
   };
@@ -213,14 +218,17 @@ type CallParts = { pinned: visit.ConfigurationSnapshot; brief: string; actionMar
 type SentCall = ReturnType<typeof callOf>;
 type Own = { actionMarker: string; agent: Agent; persona: Persona };
 
+// A fresh call's Session id is the one saved; a resumed call may report another, which never replaces it (request 3.2).
+// Its total is saved either way, so the next resume's previous Usage is this call's.
 function saveSession(
   executionRecord: record.ExecutionRecord,
-  actionIdentity: visitScope.Running['actionIdentity'],
-  result: HarnessResult,
+  { actionIdentity, resume, result }: Pick<Attempt, 'actionIdentity' | 'resume'> & { result: HarnessResult },
   { agent: pinned, persona }: Own,
 ) {
-  executionRecord.sessions[sessionKey(actionIdentity)] = {
-    sessionId: result.sessionId,
+  const key = sessionKey(actionIdentity);
+  const stored = resume ? executionRecord.sessions[key]?.sessionId : undefined;
+  executionRecord.sessions[key] = {
+    sessionId: stored ?? result.sessionId,
     harness: pinned.harness,
     personaHash: persona.hash,
     transcriptPath: result.transcriptPath,
@@ -334,15 +342,18 @@ export async function completeHeld(
 const agentFields = ({ agent: pinned, persona }: Own, tools: jsonValue.JsonValue) => ({
   agent: true,
   harness: pinned.harness,
-  agentCliVersion: null,
   model: pinned.model,
   effort: pinned.effort,
   personaHash: persona.hash,
   tools,
 });
 
-// What the Harness reported of the call's Session and process.
+// What the Harness reported of the call's Session and process, and of its own run: null where it reported none.
 const harnessFields = (result: HarnessResult, sessionLineage: string | null) => ({
+  agentCliVersion: result.agentCliVersion ?? null,
+  effectiveModel: result.effectiveModel ?? null,
+  effectiveEffort: result.effectiveEffort ?? null,
+  repositoryDigest: result.repositoryDigest ?? null,
   sessionInit: result.sessionInit,
   sessionId: result.sessionId,
   sessionLineage,

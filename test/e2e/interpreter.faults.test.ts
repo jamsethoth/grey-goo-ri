@@ -12,8 +12,8 @@ import * as gitShell from '../support/git-shell.ts';
 import * as harnessRuns from '../support/harness-runs.ts';
 import * as keys from '../support/keys.ts';
 
-const GREEN_CALL = keys.responseKey('green', 1, 'green', 1);
-const GREEN_RECOVERY = keys.responseKey('green', 1, 'recover', 1);
+const GREEN_CALL = keys.responseKey({ vertex: 'green', visit: 1, action: 'green' });
+const GREEN_RECOVERY = keys.responseKey({ vertex: 'green', visit: 1, action: 'green', recovery: 1 });
 const violationsOf = (event: events.ActionEvent) => event.integrityViolations as integrity.IntegrityViolation[];
 
 test('golden: an integrity violation restores the baseline and stops at needs-human', async (t) => {

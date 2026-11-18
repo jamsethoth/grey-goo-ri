@@ -771,7 +771,8 @@ test("another Ticket's run stop leaves a Pending request as it was", async (t) =
 // A failed save at a call's completion rolls the call's result back with its Event, leaving its intent open (#68).
 test("a run stopped by a failed save at a call's completion is rescued and retried at the next run", async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses[keys.responseKey('red', 1, 'red', 2)] = responses[keys.responseKey('red', 1, 'red', 1)]!;
+  responses[keys.responseKey({ vertex: 'red', visit: 1, action: 'red', attempt: 2 })] =
+    responses[keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]!;
   const fixture = await golden.fixture(t, { responses });
   const undo = caseDatabase.failAppends(t, (event) => event.type === 'action' && event.action === 'red');
   await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof record.RecordSaveError);

@@ -27,8 +27,8 @@ const responseOf = (responses: typeof golden.firstVisitResponses, key: string) =
 test('local paths in captured Check output and agent text do not reach PR bodies', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   const fixture = runFixture.fixture(t, { git: 'real', responses });
-  responseOf(responses, 'green/1/green/1').summary = `Updated ${fixture.worktree}/lib/add.mjs`;
-  responseOf(responses, 'red/1/red/1').summary = `Tested ${fixture.worktree}/test/add.test.mjs`;
+  responseOf(responses, 'green/1/green/0/1').summary = `Updated ${fixture.worktree}/lib/add.mjs`;
+  responseOf(responses, 'red/1/red/0/1').summary = `Tested ${fixture.worktree}/test/add.test.mjs`;
   suitePrints(fixture, `${fixture.worktree}/test/add.test.mjs`);
   assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 0);
   const prBody = fixture.gh.pr()?.body as string;
@@ -83,8 +83,8 @@ function assertNoLocalName(fixture: RunFixture) {
 test('encoded and JSON-escaped local paths reach no done publication', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   const fixture = encodedFixture(t, responses);
-  responseOf(responses, 'red/1/red/1').summary = `Tested ${forms(join(fixture.worktree, 'test', 'add.test.mjs'))}`;
-  responseOf(responses, 'green/1/green/1').summary = `Updated ${forms(join(fixture.worktree, 'lib', 'add.mjs'))}`;
+  responseOf(responses, 'red/1/red/0/1').summary = `Tested ${forms(join(fixture.worktree, 'test', 'add.test.mjs'))}`;
+  responseOf(responses, 'green/1/green/0/1').summary = `Updated ${forms(join(fixture.worktree, 'lib', 'add.mjs'))}`;
   suitePrints(fixture, forms(fixture.worktree));
 
   assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 0);
@@ -95,7 +95,7 @@ test('encoded and JSON-escaped local paths reach no done publication', async (t)
 test('encoded and JSON-escaped local paths reach no fault publication', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   const fixture = encodedFixture(t, responses);
-  responses['red/1/red/1'] = { throw: new Error(`Cannot read ${forms(fixture.commonDir)}`) };
+  responses['red/1/red/0/1'] = { throw: new Error(`Cannot read ${forms(fixture.commonDir)}`) };
 
   assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 1);
   assertNoLocalName(fixture);

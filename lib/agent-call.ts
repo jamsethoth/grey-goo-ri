@@ -109,7 +109,10 @@ export async function guardedCall(
   // Neither side keeps an object the other may change: the Harness gets a copy of the call, and gg keeps a copy of the
   // answer, taken before anything reads or keeps it, since every save writes the whole record again.
   const answered = await withHeartbeat(runContext, () =>
-    harness.run(structuredClone(call), { started: savedContainment(runContext, call.marker as string) }),
+    harness.run(structuredClone(call), {
+      started: savedContainment(runContext, call.marker as string),
+      signal: runContext.runState.signal,
+    }),
   );
   // The job handle is no data, and a copy throws on a function it can see, so it comes off the report by name, however
   // the Harness attached it, and is carried over to close the call's processes.

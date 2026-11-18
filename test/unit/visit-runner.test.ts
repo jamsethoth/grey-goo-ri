@@ -141,8 +141,10 @@ const prBodies = (executionRecord: record.ExecutionRecord) =>
 test('a Visit pins the bytes and hash of every file its Procedure names', async (t) => {
   const fixture = await goldenRun.greenFixture(t, {
     responses: {
-      [keys.responseKey('green', 1, 'green', 1)]: goldenRun.greenWrites({ 'lib/add.mjs': goldenRun.WRONG_ADD }),
-      [keys.responseKey('green', 1, 'recover', 1)]: goldenRun.greenWrites({
+      [keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })]: goldenRun.greenWrites({
+        'lib/add.mjs': goldenRun.WRONG_ADD,
+      }),
+      [keys.responseKey({ vertex: 'green', visit: 1, action: 'green', recovery: 1 })]: goldenRun.greenWrites({
         'lib/add.mjs': 'export const add = (a, b) => a + b;\n',
       }),
     },
@@ -168,8 +170,10 @@ test('a Visit pins the bytes and hash of every file its Procedure names', async 
 test('a recovery pass resumed by a later Run reads every file its Visit entered with', async (t) => {
   const fixture = await goldenRun.greenFixture(t, {
     responses: {
-      [keys.responseKey('green', 1, 'green', 1)]: goldenRun.greenWrites({ 'lib/add.mjs': goldenRun.WRONG_ADD }),
-      [keys.responseKey('green', 1, 'recover', 1)]: goldenRun.greenWrites({
+      [keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })]: goldenRun.greenWrites({
+        'lib/add.mjs': goldenRun.WRONG_ADD,
+      }),
+      [keys.responseKey({ vertex: 'green', visit: 1, action: 'green', recovery: 1 })]: goldenRun.greenWrites({
         'lib/add.mjs': 'export const add = (a, b) => a + b;\n',
       }),
     },
@@ -201,7 +205,7 @@ test('a recovery pass resumed by a later Run reads every file its Visit entered 
 test("a stopped Visit's comment renders the template its Visit entered with", async (t) => {
   const fixture = await goldenRun.greenFixture(t, {
     responses: {
-      [keys.responseKey('green', 1, 'green', 1)]: {
+      [keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })]: {
         files: {},
         response: { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The test is wrong.' },
       },
@@ -223,7 +227,9 @@ test("a stopped Visit's comment renders the template its Visit entered with", as
 
 test('a comment Action renders the body its Visit entered with', async (t) => {
   const fixture = await reviewFlow.reviewFixture(t, {
-    [keys.responseKey('reviewer', 1, 'review', 1)]: reviewFlow.reviewed(reviewFlow.review('ok')),
+    [keys.responseKey({ vertex: 'reviewer', visit: 1, action: 'review' })]: reviewFlow.reviewed(
+      reviewFlow.review('ok'),
+    ),
   });
   const run = fixture.harness.run;
   fixture.harness.run = async (call) => {

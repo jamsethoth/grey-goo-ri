@@ -19,3 +19,7 @@ export const pathKey = (path: string): string =>
 
 // The State Database's file in a repository's git common directory (lib/state-database/).
 export const stateDatabaseFile = (commonDir: string): string => join(commonDir, 'gg', 'gg.db');
+
+// A Run's directory in the common directory: its Resolved Flow, Config Hash and log, and what a Harness keeps for the
+// Run's calls, the persona file among them (request 3.2).
+export const runDirectory = (commonDir: string, run: string): string => join(commonDir, 'gg', 'runs', run);

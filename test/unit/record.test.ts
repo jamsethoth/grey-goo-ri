@@ -52,7 +52,7 @@ test('a fresh Execution Record declares every field it can hold', async (t) => {
   assert.notEqual(knownRecord(commonDir).execution, executionRecord.execution);
   assert.equal(executionRecord.commonDir, commonDir);
   const expected = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     repository: 'o/r',
     execution: executionRecord.execution,
     ticket: 8,
@@ -235,7 +235,7 @@ test('decidedBy is exactly one of a hold, a State Label or an Action, and any of
 test('a fresh Epic Record declares every field it can hold', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const epicRecord = record.createEpicRecord({ commonDir, epic: 1 });
-  const expected = { schemaVersion: 1, epic: 1, planDecision: null, approvalRequest: null };
+  const expected = { schemaVersion: 2, epic: 1, planDecision: null, approvalRequest: null };
   assert.deepEqual(withoutCommonDir(epicRecord), expected);
   assert.deepEqual(Object.keys(withoutCommonDir(epicRecord)), Object.keys(expected));
 });

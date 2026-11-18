@@ -25,7 +25,7 @@ const INSPECT_ADVICE =
 test('a flow mixing harnesses runs each vertex on its own harness', async (t) => {
   const responses = {
     ...structuredClone(golden.firstVisitResponses),
-    'reviewer/1/review/1': {
+    'reviewer/1/review/0/1': {
       files: {},
       response: {
         claim: 'ok',

@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import type * as commandCleanup from '../../lib/command-cleanup.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as recordJson from '../../lib/record-json.ts';
+import * as sideEffect from '../../lib/effects/side-effect.ts';
 import { laterRun } from '../support/approval-flow.ts';
 import * as caseDatabase from '../support/case-database.ts';
 import { actionEvent, attemptsOf, intents, loadTicket } from '../support/execution-reads.ts';
@@ -17,9 +18,9 @@ import * as keys from '../support/keys.ts';
 import { editRuns } from '../support/suite-runs.ts';
 
 const CLEANUP_LABEL = 'gg:await:cleanup';
-const GREEN_CALL = keys.responseKey('green', 1, 'green', 1);
-const GREEN_RETRY = keys.responseKey('green', 1, 'green', 2);
-const RED_CALL = keys.responseKey('red', 1, 'red', 1);
+const GREEN_CALL = keys.responseKey({ vertex: 'green', visit: 1, action: 'green' });
+const GREEN_RETRY = keys.responseKey({ vertex: 'green', visit: 1, action: 'green', attempt: 2 });
+const RED_CALL = keys.responseKey({ vertex: 'red', visit: 1, action: 'red' });
 const UNCONFIRMED: commandCleanup.CleanupReport = {
   confirmed: false,
   survivors: [
@@ -412,7 +413,7 @@ test('a run stop met while a hold finishes its report leaves the hold Pending', 
     (err) => err instanceof interpreter.CrashError,
   );
   fixture.options.deps.exec.cleanupConfirmed = () => false;
-  const runState = { stop: { failureClass: 'auth', ticket: 99 }, remoteNotBefore: 0 };
+  const runState = { ...sideEffect.createRunState(), stop: { failureClass: 'auth', ticket: 99 } };
 
   assert.equal((await laterRun(fixture, { runState })).outcome, 'pending');
   const saved = loadTicket(fixture);
@@ -424,7 +425,7 @@ test('a run stop met while a hold finishes its report leaves the hold Pending', 
 test('a stopped Run confirms no hold, and the next Run goes on', async (t) => {
   const fixture = await heldCheck(t);
   await interpreter.runExecution(fixture.options);
-  const runState = { stop: { failureClass: 'auth', ticket: 99 }, remoteNotBefore: 0 };
+  const runState = { ...sideEffect.createRunState(), stop: { failureClass: 'auth', ticket: 99 } };
 
   assert.equal((await laterRun(fixture, { runState })).outcome, 'pending');
   const saved = loadTicket(fixture);

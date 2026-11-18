@@ -22,8 +22,8 @@ import * as gitShell from '../support/git-shell.ts';
 import * as keys from '../support/keys.ts';
 
 const RIGHT_ADD = 'export const add = (a, b) => a + b;\n';
-const reviewKey = (visit: number) => keys.responseKey('reviewer', visit, 'review', 1);
-const fixKey = (visit: number) => keys.responseKey('implementer-fix', visit, 'fix', 1);
+const reviewKey = (visit: number) => keys.responseKey({ vertex: 'reviewer', visit, action: 'review' });
+const fixKey = (visit: number) => keys.responseKey({ vertex: 'implementer-fix', visit, action: 'fix' });
 
 test('a fix that changes an unnamed test is an integrity violation', async (t) => {
   const fixture = await runReviewFlow(

@@ -22,12 +22,12 @@ test('a recovery pass after fix resumes the fix session', async (t) => {
   const fixture = await runReviewFlow(
     t,
     {
-      [keys.responseKey('reviewer', 1, 'review', 1)]: reviewed(review('changes', [MAJOR])),
-      [keys.responseKey('implementer-fix', 1, 'fix', 1)]: fixed({ 'lib/add.mjs': WRONG_ADD }),
-      [keys.responseKey('implementer-fix', 1, 'recover', 1)]: fixed({
+      [keys.responseKey({ vertex: 'reviewer', visit: 1, action: 'review' })]: reviewed(review('changes', [MAJOR])),
+      [keys.responseKey({ vertex: 'implementer-fix', visit: 1, action: 'fix' })]: fixed({ 'lib/add.mjs': WRONG_ADD }),
+      [keys.responseKey({ vertex: 'implementer-fix', visit: 1, action: 'fix', recovery: 1 })]: fixed({
         'lib/add.mjs': 'export const add = (a, b) => a + b; // fixed\n',
       }),
-      [keys.responseKey('reviewer', 2, 'review', 1)]: reviewed(review('ok')),
+      [keys.responseKey({ vertex: 'reviewer', visit: 2, action: 'review' })]: reviewed(review('ok')),
     },
     // The suite passes only once lib/add.mjs adds, so the wrong fix fails its Green Check.
     { exec: addSuite.addSuite({ worktree: '', checksSum: true }) },
@@ -49,7 +49,9 @@ test('a recovery pass after fix resumes the fix session', async (t) => {
 test('misscoped lands in replan with the diagnosis on ticket and epic', async (t) => {
   const diagnosis = 'The ticket asks add to both sum and concatenate.';
   const fixture = await reviewFixture(t, {
-    [keys.responseKey('reviewer', 1, 'review', 1)]: reviewed(review('misscoped', [], { diagnosis })),
+    [keys.responseKey({ vertex: 'reviewer', visit: 1, action: 'review' })]: reviewed(
+      review('misscoped', [], { diagnosis }),
+    ),
   });
   fixture.gh.labels.add('gg:state:in-progress');
   const result = await interpreter.runExecution(fixture.options);

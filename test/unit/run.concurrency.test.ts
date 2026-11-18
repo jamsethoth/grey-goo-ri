@@ -90,7 +90,7 @@ test('a failed label update reaches the log, the event and the exit code', async
 test('a crashed ticket keeps the reason from the later lines of the error', async (t) => {
   const fixture = runFixture.fixture(t, {
     responses: {
-      'red/1/red/1': { throw: new Error('git push origin x exited 1\nremote: Permission to o/r denied to u') },
+      'red/1/red/0/1': { throw: new Error('git push origin x exited 1\nremote: Permission to o/r denied to u') },
     },
   });
   const results = await run.runTarget(fixture.options);
@@ -215,7 +215,7 @@ test('an auth failure stops every active ticket and records the class on run_end
   });
   // A's red call fails with auth while B is inside its own red call; B's call returns once A has ended.
   epicRun.ticketHarnesses(fixture, [21, 22], {
-    responses: { 21: { 'red/1/red/1': { failure: { failureClass: 'auth', message: 'Not logged in' } } } },
+    responses: { 21: { 'red/1/red/0/1': { failure: { failureClass: 'auth', message: 'Not logged in' } } } },
     before: async (ticket, call) => {
       if (call.phase !== 'red') return;
       if (ticket === 21) await bInCall.wait();
@@ -323,7 +323,7 @@ test('a run stop skips queued tickets without admitting them', { timeout: 120_00
   fixture.options.target = EPIC;
   fixture.options.config.user.maxParallel = 1;
   const fakes = epicRun.ticketHarnesses(fixture, [21, 22], {
-    responses: { 21: { 'red/1/red/1': { failure: { failureClass: 'auth', message: 'Not logged in' } } } },
+    responses: { 21: { 'red/1/red/0/1': { failure: { failureClass: 'auth', message: 'Not logged in' } } } },
   });
 
   const results = await run.runTarget(fixture.options);

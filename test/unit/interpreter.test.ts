@@ -14,6 +14,7 @@ import * as record from '../../lib/record.ts';
 import type * as runContext from '../../lib/run-context.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as stateDatabase from '../../lib/state-database/index.ts';
+import * as sideEffect from '../../lib/effects/side-effect.ts';
 import * as addSuite from '../support/add-suite.ts';
 import * as approvalFlow from '../support/approval-flow.ts';
 import * as caseDatabase from '../support/case-database.ts';
@@ -35,8 +36,8 @@ type Routes = Record<string, unknown>;
 type ConfiguredProcedure = GoldenConfig['procedures'][string] & {
   claimTokens: Record<string, Record<string, unknown>>;
 };
-const RED_CALL = keys.responseKey('red', 1, 'red', 1);
-const GREEN_CALL = keys.responseKey('green', 1, 'green', 1);
+const RED_CALL = keys.responseKey({ vertex: 'red', visit: 1, action: 'red' });
+const GREEN_CALL = keys.responseKey({ vertex: 'green', visit: 1, action: 'green' });
 
 test('the green call is a fresh session with the full brief', async (t) => {
   const fixture = await runFirstVisit(t);
@@ -438,10 +439,10 @@ test("the PR's provenance counts a retried Attempt and a resumed Session once ea
     responses: {
       // A parse retry: two Attempts of red, each one call.
       [RED_CALL]: { ...red, response: null, result: usage(10, 2) },
-      [keys.responseKey('red', 1, 'red', 2)]: { ...red, result: usage(100, 20) },
+      [keys.responseKey({ vertex: 'red', visit: 1, action: 'red', attempt: 2 })]: { ...red, result: usage(100, 20) },
       // the recovery pass resumes green's Session, whose cumulative usage then holds green's tokens too.
       [GREEN_CALL]: { ...greenWrites({ 'lib/add.mjs': WRONG_ADD }), result: usage(200, 40) },
-      [keys.responseKey('green', 1, 'recover', 1)]: {
+      [keys.responseKey({ vertex: 'green', visit: 1, action: 'green', recovery: 1 })]: {
         ...greenWrites({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
         result: usage(50, 5),
       },
@@ -523,7 +524,11 @@ test('pr-ready holds when only the remote PR head moved after the push', async (
 
 const timedOut = {
   [GREEN_CALL]: { files: {}, response: null, result: { status: 'timed-out' } },
-  [keys.responseKey('green', 1, 'green', 2)]: { files: {}, response: null, result: { status: 'timed-out' } },
+  [keys.responseKey({ vertex: 'green', visit: 1, action: 'green', attempt: 2 })]: {
+    files: {},
+    response: null,
+    result: { status: 'timed-out' },
+  },
 };
 
 test('an unrouted harness-timeout ends at needs-human', async (t) => {
@@ -699,8 +704,8 @@ test("an agent call's confirmed cleanup is recorded in its Event and its output"
 test("unconfirmed cleanup keeps the worktree busy through the hold comment's backoff", async (t) => {
   const fixture = await golden.fixture(t, {
     responses: firstVisitWith({
-      [keys.responseKey('green', 1, 'green', 1)]: {
-        ...golden.firstVisitResponses[keys.responseKey('green', 1, 'green', 1)],
+      [keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })]: {
+        ...golden.firstVisitResponses[keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })],
         cleanup: UNCONFIRMED,
       },
     }),
@@ -709,7 +714,7 @@ test("unconfirmed cleanup keeps the worktree busy through the hold comment's bac
   fixture.clock.onSleep = () => {
     during.push(fixture.executionRecord.activity.busy);
   };
-  const runState = { stop: null, remoteNotBefore: fixture.clock.now() + 60_000 };
+  const runState = { ...sideEffect.createRunState(), remoteNotBefore: fixture.clock.now() + 60_000 };
   const result = await interpreter.runExecution({ ...fixture.options, runState });
   assert.equal(result.outcome, 'pending');
   assert.deepEqual(during, [true], 'still busy while the comment waits');
@@ -731,7 +736,7 @@ for (const claim of ['ok', 'halt'] as const) {
 
 test("the reply reaches the next Vertex's Brief through its input", async (t) => {
   const responses = firstVisitWith({
-    [keys.responseKey('green', 2, 'green', 1)]: {
+    [keys.responseKey({ vertex: 'green', visit: 2, action: 'green' })]: {
       files: { 'lib/add.mjs': 'export const add = (a, b) => b + a;\n' },
       response: golden.greenResponse,
     },

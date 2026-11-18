@@ -164,7 +164,9 @@ async function faulted(
 ) {
   const scripted = {
     ...structuredClone(golden.firstVisitResponses),
-    [keys.responseKey('green', 1, 'green', 1)]: goldenRun.greenWrites({ 'lib/add.mjs': goldenRun.WRONG_ADD }),
+    [keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })]: goldenRun.greenWrites({
+      'lib/add.mjs': goldenRun.WRONG_ADD,
+    }),
     ...responses,
   };
   const fixture = runFixture.fixture(t, {
@@ -364,7 +366,9 @@ test('gg work resume refuses a Vertex the pinned Flow lacks', async (t) => {
 
 test('gg work resume refuses a Vertex whose required inputs were never produced, naming them', async (t) => {
   // red has no scripted response, so the Execution stops at its first Visit with no output saved.
-  const fixture = await faulted(t, { responses: { [keys.responseKey('red', 1, 'red', 1)]: undefined } });
+  const fixture = await faulted(t, {
+    responses: { [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: undefined },
+  });
   const before = loaded(fixture);
   assert.deepEqual(before.outputs, [], 'no Visit produced an output');
   const [result] = await run.runTarget({ ...fixture.options, resume: { vertex: 'publish' } });
@@ -378,7 +382,7 @@ test('gg work resume refuses a Vertex whose required inputs were never produced,
 test('resume keeps the Visit and Action Cap counts', async (t) => {
   const green2 = goldenRun.greenWrites({ 'lib/add.mjs': goldenRun.RIGHT_ADD });
   const fixture = await faulted(t, {
-    responses: { [keys.responseKey('green', 2, 'green', 1)]: green2 },
+    responses: { [keys.responseKey({ vertex: 'green', visit: 2, action: 'green' })]: green2 },
     // red's route to green is a bounded Edge, so the first Run counts one traversal the resume must keep.
     configure: ({ options }) => {
       const flow = options.config.repository.flows.default as golden.ConfiguredFlow;
@@ -438,7 +442,9 @@ const openIntentMarkers = (fixture: runFixture.RunFixture) =>
 // A person's needs-human label abandons the Execution; gg work resume takes that label down, so the Run that resumes it
 // must read the issue as it is after, not the read from before the resume.
 test('gg work resume of a Ticket a person abandoned runs it, not abandons it again', async (t) => {
-  const fixture = await faulted(t, { responses: { [keys.responseKey('green', 2, 'green', 1)]: green2 } });
+  const fixture = await faulted(t, {
+    responses: { [keys.responseKey({ vertex: 'green', visit: 2, action: 'green' })]: green2 },
+  });
   const executionRecord = loaded(fixture);
   // An active record with no label intent of gg's own, so the needs-human label reads as the person's.
   executionRecord.writeAheadLog = executionRecord.writeAheadLog.filter((entry) => entry.effect !== 'label');
@@ -456,7 +462,7 @@ test('gg work resume of a Ticket a person abandoned runs it, not abandons it aga
 // A Vertex's Visit Bound holds on a resume as it does on a route (L12: the bounds still hold).
 test('gg work resume refuses a Vertex that has used its Visit Bound', async (t) => {
   const fixture = await faulted(t, {
-    responses: { [keys.responseKey('green', 2, 'green', 1)]: green2 },
+    responses: { [keys.responseKey({ vertex: 'green', visit: 2, action: 'green' })]: green2 },
     configure: ({ options }) => {
       const flow = options.config.repository.flows.default as golden.ConfiguredFlow;
       Object.assign(flow.ticket.vertices.green!, { max: 1, exhausted: { end: 'needs-human' } });
@@ -502,7 +508,9 @@ test('gg work done finishes a close that landed before its evidence', async (t) 
 // The overridden intents are completed in the save that writes ticket_resumed, so a resume that fails before it keeps
 // them open, and the next resume names them.
 test('a resume that fails to take its labels down keeps the open intents for the next resume', async (t) => {
-  const fixture = await faulted(t, { responses: { [keys.responseKey('green', 2, 'green', 1)]: green2 } });
+  const fixture = await faulted(t, {
+    responses: { [keys.responseKey({ vertex: 'green', visit: 2, action: 'green' })]: green2 },
+  });
   const open = openIntentMarkers(fixture);
   assert.equal(open.length, 1, 'the interrupted agent call');
   fixture.gh.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'edit', status: 502 });
@@ -749,7 +757,9 @@ test('a Run that cannot read GitHub over an unfinished gg work done keeps the Ti
 
 // The person chose to override an interrupted agent Attempt, so resume says what to check first (Q1 A, ADR 0011).
 test('gg work resume of an interrupted agent Attempt prints the advice to check its files first', async (t) => {
-  const fixture = await faulted(t, { responses: { [keys.responseKey('green', 2, 'green', 1)]: green2 } });
+  const fixture = await faulted(t, {
+    responses: { [keys.responseKey({ vertex: 'green', visit: 2, action: 'green' })]: green2 },
+  });
   assert.equal(openIntentMarkers(fixture).length, 1, 'an interrupted agent call');
   await run.runTarget({ ...fixture.options, resume: { vertex: 'green' } });
   assert.equal(fixture.logs.filter((line) => line.includes(reconcile.INTERRUPTED_ADVICE)).length, 1);

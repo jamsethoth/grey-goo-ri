@@ -9,7 +9,9 @@ import * as paths from './paths.ts';
 import type * as visit from './visit.ts';
 
 // The frozen schema version of both records' rows (docs/interfaces/record.md); a change to it needs a new ADR (#23).
-export const RECORD_SCHEMA_VERSION = 1;
+export const RECORD_SCHEMA_VERSION = 2;
+// A row of the version before reads too: each field its version added is optional (ADR 0024).
+const PREVIOUS_RECORD_SCHEMA_VERSION = 1;
 
 export class RecordCorruptError extends Error {
   declare file: string;
@@ -38,12 +40,14 @@ export type ExecutionRecordJson = Omit<record.ExecutionRecord, 'commonDir' | 'vi
 };
 
 // The record's only Map conversion. Object.fromEntries defines own keys, so a name such as __proto__ stays data, and a
-// spread over an existing key keeps the key's place, so the row keeps the record's field order.
+// spread over an existing key keeps the key's place, so the row keeps the record's field order. A row is saved at the
+// current version, whichever it was read at, so its version says which fields it may hold.
 export function toJson(executionRecord: record.ExecutionRecord): ExecutionRecordJson {
   const { commonDir, ...data } = executionRecord;
   const { visitState } = data;
   return {
     ...data,
+    schemaVersion: RECORD_SCHEMA_VERSION,
     visits: Object.fromEntries(data.visits),
     traversals: Object.fromEntries(data.traversals),
     visitState: visitState && {
@@ -72,7 +76,10 @@ export function fromJson(json: ExecutionRecordJson, commonDir: string): record.E
 
 // The Epic Record as its row saves it: it holds no Map, so only commonDir is left out.
 export type EpicRecordJson = Omit<record.EpicRecord, 'commonDir'>;
-export const epicJson = ({ commonDir, ...row }: record.EpicRecord): EpicRecordJson => row;
+export const epicJson = ({ commonDir, ...row }: record.EpicRecord): EpicRecordJson => ({
+  ...row,
+  schemaVersion: RECORD_SCHEMA_VERSION,
+});
 
 export interface RecordRow {
   kind: 'ticket' | 'epic';
@@ -95,7 +102,10 @@ export function parseRow(
     throw corrupt(err instanceof Error ? err.message : String(err));
   }
   const version = referencePaths.isRecord(data) ? data.schemaVersion : undefined;
-  if (!referencePaths.isRecord(data) || version !== RECORD_SCHEMA_VERSION)
+  if (
+    !referencePaths.isRecord(data) ||
+    (version !== RECORD_SCHEMA_VERSION && version !== PREVIOUS_RECORD_SCHEMA_VERSION)
+  )
     throw corrupt(`unknown schemaVersion ${String(version)}`);
   try {
     if (kind === 'epic') return { ...recordRead.epicRecord({ value: data, path: '' }), commonDir };
