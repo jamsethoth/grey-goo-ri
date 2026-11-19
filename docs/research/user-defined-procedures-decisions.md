@@ -1139,24 +1139,31 @@ exact admission must be, or which way it may be wrong.
   warn about one that only some runs produce, and then says so: `input <name> is optional, but no route to <vertex>
   is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs`.
   Amends T9. Issue #107.
-- H6. A Flow's graph checks run only when every check outside any Flow (Procedures, their schemas, the configuration's
-  top level) and every other check of that Flow has passed, since a malformed Procedure or route would cascade into
-  misleading graph errors. An Agent's error holds only the Flows that use it. Another Flow's errors do not hold them:
-  Flows share no graph, and so the output does not depend on the order the Flows are declared in. Each Vertex's
-  routing is still resolved, for `gg doctor`. Issue #107.
+- H6. A Flow's graph checks wait on the values they read, since a malformed Procedure or route would cascade into
+  misleading graph errors; (d) states what each waits on. Another Flow's errors do not hold them: Flows share no graph,
+  and so the output does not depend on the order the Flows are declared in. Each Vertex's routing is still resolved,
+  for `gg doctor`. Issue #107; narrowed by #449.
   - (a) Every declared Agent, used or not, is checked once at `agents.<name>`: it is an object, and it names a
     registered harness. The validator sees the configuration after every Layer is merged, so no Layer can still supply
     a missing one (P2), and a Vertex's own `harness` does not excuse it. An Agent no Vertex uses is a warning, and its
-    errors hold no Flow. A harness the Vertex sets itself, or the Agent of a Vertex with no `use`, is checked at the
+    errors hold no check. A harness the Vertex sets itself, or the Agent of a Vertex with no `use`, is checked at the
     Vertex. Issue #170.
   - (b) In the user's directory, a Procedure that names a command the repository does not declare holds only the Flows
     whose Vertices name it, which do not fit the repository (Q21); the user's other Flows pass every graph check before
-    they are admitted. A malformed command, any other error of a Procedure's own checks, and every such error in the
-    repository still hold every Flow of their source. Issue #433.
+    they are admitted. Issue #433. That any other Procedure error held every Flow of its source is reversed by (d).
   - (c) An `unknown-outcome` holds no route-map check: they read a route only for an Outcome in the Vertex's list,
     never a key outside it. `unknown-outcome` and `unrouted-outcome` wait only on their own Vertex, and the Flow's
     default keys on every Vertex: `gg doctor` reports every failure in one run, and docs/interfaces/problems.md lists
     what waits (owner, 2026-11-19, D2 A, D3 C). Issue #436.
+  - (d) Each check waits only on what it reads, so an error elsewhere shows beside it in one run. A Vertex waits while
+    its Procedure, its Agent or the Vertex itself, route targets aside, has an error; that holds its own checks
+    (`unknown-outcome`, `unrouted-outcome`, `write-without-commit`, `commit-without-check`). The route map leaves out a
+    Vertex that waits or whose route targets are refused, with its edges, and checks the rest for cycles, exhausted
+    loops, `pr-ready-skippable` and `required-input-unsure`, which the parts left out could only add to; the entry holds
+    only the last two, and a malformed `vertices` or `routes` or a refused target of the Flow's `routes` holds all four.
+    `unreachable-vertex` and `optional-input-unsure` wait while any Vertex waits, since a route left out makes them
+    appear falsely. A Procedure's error, in either source, holds only the Vertices that name it (owner, 2026-11-19, Q1
+    A, Q2 A, Q3 A). Issue #449.
 - H7. An Outcome's route is the first of these that the configuration names:
   1. the Vertex's `route` for that Outcome;
   2. the Flow's `routes` for that Outcome;
