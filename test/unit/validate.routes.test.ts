@@ -621,11 +621,11 @@ test("a null Rule Table holds its Vertices' route keys and the Flow defaults, no
 // A table too large to analyse drops its default from the Outcome list, so its Procedure holds its Vertices' keys.
 test("a Rule Table too large to analyse holds its Vertices' route keys, not a real key's report", () => {
   const config = exampleLayer.config();
-  const files = exampleLayer.schemas() as any;
+  const files = exampleLayer.schemas();
   const values = Array.from({ length: 200 }, (_, i) => `v${i}`);
   for (const field of ['e1', 'e2']) {
-    files['review.schema.json'].properties[field] = { type: 'string', enum: values };
-    files['review.schema.json'].required.push(field);
+    exampleLayer.putAt(files['review.schema.json'], ['properties', field], { type: 'string', enum: values });
+    files['review.schema.json'].required!.push(field);
     for (const value of values.slice(1))
       config.procedures.review.passed.push({ when: { [`response.${field}`]: value }, outcome: 'retest' });
   }
