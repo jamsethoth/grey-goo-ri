@@ -225,7 +225,9 @@ export function pinnedConfiguration({
 export function launchEntry(harness: runContext.Harness): PinnedLaunchProfile {
   const { name = null, version = null } = harness.launchProfile ?? {};
   // Known crash, left so a broken Harness is refused, not hashed: a Harness with no capabilities (a stub module)
-  // throws a TypeError here, reached only by a call that skips gg run's preflight, which refuses it first (#428 D5).
+  // throws a TypeError here and in the Action Event's profile. gg run's preflight refuses it before the pin; a call
+  // that skips preflight reaches it, and so does a resume whose saved snapshot names such a Harness, which preflight
+  // does not check: the fault's Event then fails too, and the Ticket gets no State Label (#428 D5, D6).
   return { name, version, confinement: harness.capabilities.confinement ?? null };
 }
 
