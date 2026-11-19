@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type * as config from '../../lib/config.ts';
 import * as configurationCheck from '../../lib/configuration-check.ts';
+import * as procedureKinds from '../../lib/procedures.ts';
 import * as report from '../../lib/validate/report.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
 import type * as golden from '../support/golden.ts';
@@ -292,6 +293,173 @@ test('a user Flow that does not fit the repository is a misfit, kept out of the 
         `${REPOSITORY_FILE} does not declare, so it cannot run in this repository [undeclared-command]`,
     ],
   );
+});
+
+type Repository = ReturnType<typeof repositorySource>;
+type Flow = Repository['flows'][string];
+
+// A user source: the run fixture's Procedures and Agents with the machine settings and no repository contract, whose
+// Flows are `flows`, each a copy of the fixture's Flow that `change` may edit.
+function userSource(flows: string[], change: (user: Repository, flow: Record<string, Flow>) => void = () => {}) {
+  const user = { ...structuredClone(repositorySource()), ...MACHINE_SETTINGS } as Repository;
+  for (const key of ['commands', 'testPaths', 'labelPrefix', 'baseBranch']) delete user[key];
+  const fixtureFlow = user.flows.default!;
+  user.flows = Object.fromEntries(flows.map((name) => [name, structuredClone(fixtureFlow)]));
+  change(user, user.flows);
+  return user;
+}
+
+// The Check kinds that name a Declared Command, each of which can name one the repository lacks.
+const COMMAND_KINDS = Object.entries(procedureKinds.CHECK_KEYS)
+  .filter(([, keys]) => keys.includes('command'))
+  .map(([kind]) => kind);
+
+// Procedure `misfit`: a copy of the first fixture Procedure with a Check of `kind`, whose Check names `command`, a
+// command the repository does not declare when it is a string. Flow `strict`, when declared, runs it in place of the
+// Procedure it copies.
+function addMisfit(source: Repository, kind: string, command: unknown = 'lint') {
+  const isKind = (action: Record<string, unknown>) => action.do === 'check' && action.kind === kind;
+  const copied = Object.keys(source.procedures).find((name) => source.procedures[name]!.actions.some(isKind))!;
+  const misfit = structuredClone(source.procedures[copied]!);
+  misfit.actions.find(isKind)!.command = command;
+  source.procedures.misfit = misfit;
+  for (const vertex of Object.values(source.flows.strict?.ticket.vertices ?? {}))
+    if (vertex.procedure === copied) vertex.procedure = 'misfit';
+}
+
+const loopCycle = 'the cycle through red, green has no edge or Vertex with max; the Action Cap does not bound a cycle';
+
+// A misfit keeps out only the Flows that use it, so the user's other Flows pass every graph check before gg run admits
+// them (H6), in gg doctor and preflight alike, which both read this check.
+test("a user misfit does not skip the graph checks of the user's other Flows", async () => {
+  const user = userSource(['strict', 'loop'], (source, flows) => {
+    flows.loop!.ticket.vertices.green!.route = { ok: 'red' };
+    addMisfit(source, 'command');
+  });
+  const checked = await checkOf(sources(repositorySource(), user));
+  assert.deepEqual(errorLines(checked), [`error: user:flows.loop.ticket: ${loopCycle} [unbounded-cycle]`]);
+  assert.deepEqual([...checked.misfits.keys()], ['user:strict']);
+});
+
+// Each graph check's code in lib/validate/graph.ts, read from its source so a new one joins the case below.
+const GRAPH_CODES = report.PROBLEM_CODES.filter((code) =>
+  readFileSync(join(fileURLToPath(new URL('../../', import.meta.url)), 'lib/validate/graph.ts'), 'utf8').includes(
+    `'${code}'`,
+  ),
+);
+
+// A change to Flow `other` that fires each graph check.
+const GRAPH_CASES: Record<string, (user: Repository, other: Flow) => void> = {
+  'unrouted-outcome': (_user, other) => {
+    other.ticket.routes = {};
+  },
+  'write-without-commit': (user, other) => {
+    const { implement } = user.procedures;
+    user.procedures.uncommitted = { ...implement!, actions: implement!.actions.filter(({ id }) => id !== 'commit') };
+    other.ticket.vertices.green!.procedure = 'uncommitted';
+  },
+  'commit-without-check': (user, other) => {
+    const unchecked = structuredClone(user.procedures.implement!);
+    (unchecked as unknown as { claimTokens: { ok: { requires: string[] } } }).claimTokens.ok.requires = [];
+    user.procedures.unchecked = unchecked;
+    other.ticket.vertices.green!.procedure = 'unchecked';
+  },
+  'unbounded-cycle': (_user, other) => {
+    other.ticket.vertices.green!.route = { ok: 'red' };
+  },
+  'exhausted-loop': (_user, other) => {
+    Object.assign(other.ticket.vertices.red!, { max: 1, exhausted: 'green' });
+    Object.assign(other.ticket.vertices.green!, { max: 1, exhausted: 'red' });
+  },
+  'pr-ready-skippable': (_user, other) => {
+    other.ticket.vertices.red!.route = { ok: { end: 'ready-for-qa' } };
+  },
+  'required-input-unsure': (_user, other) => {
+    (other.ticket.vertices.green!.inputs as Record<string, unknown>).previous = { from: 'green.commit.files' };
+  },
+  'optional-input-unsure': (_user, other) => {
+    const previous = { from: 'green.commit.files', optional: true };
+    (other.ticket.vertices.green!.inputs as Record<string, unknown>).previous = previous;
+  },
+  'unreachable-vertex': (_user, other) => {
+    other.ticket.vertices.orphan = { use: 'implementer', procedure: 'tests-fail', route: { ok: 'green' } };
+  },
+};
+
+// The codes the check reports at user Flow `other`, its errors' and its warnings'.
+const codesAtOther = (checked: configurationCheck.CheckedConfiguration) =>
+  [...checked.configurationErrors, ...checked.warnings]
+    .filter((problem) => problem.at.startsWith('user:flows.other'))
+    .map((problem): string => problem.code);
+
+// A missing command holds only the Flows that use it: every graph check still runs on each other user Flow, for every
+// Check kind that names a command, whether a Flow runs the misfit or none does.
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('every graph check runs on a user Flow beside a misfit of every command-naming Check kind, used or not', async () => {
+  assert.deepEqual(Object.keys(GRAPH_CASES).sort(), [...GRAPH_CODES].sort());
+  assert.deepEqual(COMMAND_KINDS, ['command', 'tests-fail']);
+  const missed: string[] = [];
+  for (const [code, change] of Object.entries(GRAPH_CASES)) {
+    const alone = userSource(['other'], (user, flows) => change(user, flows.other!));
+    // The case fires its check without a misfit, so a code missing below is a check the misfit skipped.
+    assert.ok(codesAtOther(await checkOf(sources(repositorySource(), alone))).includes(code), code);
+    for (const kind of COMMAND_KINDS) {
+      for (const flows of [['strict', 'other'], ['other']]) {
+        const user = userSource(flows, (source, declared) => {
+          change(source, declared.other!);
+          addMisfit(source, kind);
+        });
+        const checked = await checkOf(sources(repositorySource(), user));
+        if (!codesAtOther(checked).includes(code))
+          missed.push(`${code} beside a ${kind} misfit in ${flows.join(', ')}`);
+      }
+    }
+  }
+  assert.deepEqual(missed, []);
+});
+
+// A Flow that uses a misfit stays a misfit, a warning in gg doctor (Q21): its own graph checks wait, as before #433, so
+// none of their problems becomes an error that refuses every Run. The hold skips every graph check at once.
+test('a user Flow that uses a misfit is held from its own graph checks', async () => {
+  for (const kind of COMMAND_KINDS) {
+    const user = userSource(['strict'], (source, flows) => {
+      flows.strict!.ticket.vertices.green!.route = { ok: 'red' };
+      addMisfit(source, kind);
+    });
+    const checked = await checkOf(sources(repositorySource(), user));
+    const atStrict = [...checked.configurationErrors, ...checked.warnings].filter((problem) =>
+      problem.at.startsWith('user:flows.strict'),
+    );
+    assert.deepEqual(atStrict, [], kind);
+    assert.deepEqual([...checked.misfits.keys()], ['user:strict'], kind);
+  }
+});
+
+// A Check whose command is not a name is an error in any repository, so it still holds every Flow of the user's source.
+test('a user Check whose command is not a name holds the graph checks of every user Flow', async () => {
+  const user = userSource(['loop'], (source, flows) => {
+    flows.loop!.ticket.vertices.green!.route = { ok: 'red' };
+    addMisfit(source, 'command', ['lint']);
+  });
+  assert.deepEqual(
+    (await checkOf(sources(repositorySource(), user))).configurationErrors.map(
+      (problem) => `${problem.at} ${problem.code}`,
+    ),
+    ['user:procedures.misfit.actions[1] undeclared-command'],
+  );
+});
+
+// The repository's own error refuses every Run, so its missing command still holds the graph checks of every one of
+// its Flows (#433's Definition of done).
+test("a repository Procedure's missing command holds the graph checks of every repository Flow", async () => {
+  const repository = repositorySource();
+  repository.flows.loop = structuredClone(repository.flows.default!);
+  repository.flows.loop.ticket.vertices.green!.route = { ok: 'red' };
+  addMisfit(repository, 'command');
+  assert.deepEqual(errorLines(await checkOf(sources(repository))), [
+    'error: procedures.misfit.actions[1]: Check test names command "lint", which the repository does not declare ' +
+      '[undeclared-command]',
+  ]);
 });
 
 // A record gg run would resume whose Flow is gone is kept for a person (A2): gg doctor lists it as an error, and gg run
