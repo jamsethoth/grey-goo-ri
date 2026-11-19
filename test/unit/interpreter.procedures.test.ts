@@ -260,7 +260,7 @@ test('a passed row does not count a Check that passed on an older tree', async (
     configured.flows.golden!.ticket = {
       entry: 'look',
       routes: { '*': { end: 'needs-human' } },
-      vertices: { look: { use: 'implementer', procedure: 'look' } },
+      vertices: { look: { use: 'implementer', procedure: 'look', access: 'read-only' } },
     };
   });
   // Every command passes; touch also changes the worktree after gate checked it.

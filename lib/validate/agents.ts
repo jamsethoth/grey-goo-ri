@@ -210,7 +210,7 @@ export interface VertexPlace {
 }
 // What a Vertex itself gives its Agent: its Procedure, its own Agent keys as written and as checked.
 interface OwnAgentKeys {
-  proc: checked.CheckedProcedure;
+  procedure: checked.CheckedProcedure;
   overrides: Value;
   keys: AgentKeys;
 }
@@ -258,13 +258,14 @@ function agentWith(merged: Value, harness: string | Reported, keys: AgentKeys): 
 
 // A Vertex's Agent from its own Agent keys alone, which name its harness and persona.
 function ownAgent(checking: AgentContext, place: VertexPlace, own: OwnAgentKeys): VertexAgent {
-  const { proc, overrides } = own;
+  const { procedure, overrides } = own;
   if (!Object.keys(overrides).length) {
-    const message = `procedure ${proc.name} has an agent Action, so the Vertex needs an Agent`;
-    const procedure = proc.name;
+    const message = `procedure ${procedure.name} has an agent Action, so the Vertex needs an Agent`;
     return {
       ...NO_AGENT,
-      typed: report.error(checking.report, place.location, 'vertex-needs-agent', message, { procedure }),
+      typed: report.error(checking.report, place.location, 'vertex-needs-agent', message, {
+        procedure: procedure.name,
+      }),
     };
   }
   const harness = checkHarness(checking, { vertex: place.id }, overrides.harness, place.location);
@@ -301,20 +302,21 @@ export function vertexAgent(
   checking: AgentContext,
   place: VertexPlace,
   vertex: Value,
-  own: { use: string | null | Reported; keys: AgentKeys; proc?: checked.CheckedProcedure },
+  own: { use: string | null | Reported; keys: AgentKeys; procedure?: checked.CheckedProcedure },
 ): VertexAgent {
-  const { use, proc } = own;
+  const { use, procedure } = own;
   const overrides = Object.fromEntries(Object.entries(vertex).filter(([key]) => AGENT_KEYS.includes(key)));
   if (report.isReported(use)) return { ...NO_AGENT, typed: use };
-  if (proc && !proc.agent && (use !== null || Object.keys(overrides).length)) {
-    const message = `procedure ${proc.name} has no agent Action, so the Vertex takes no Agent`;
-    const procedure = proc.name;
+  if (procedure && !procedure.agent && (use !== null || Object.keys(overrides).length)) {
+    const message = `procedure ${procedure.name} has no agent Action, so the Vertex takes no Agent`;
     return {
       ...NO_AGENT,
-      typed: report.error(checking.report, place.location, 'vertex-takes-no-agent', message, { procedure }),
+      typed: report.error(checking.report, place.location, 'vertex-takes-no-agent', message, {
+        procedure: procedure.name,
+      }),
     };
   }
-  if (!proc?.agent) return NO_AGENT;
-  const keys = { proc, overrides, keys: own.keys };
+  if (!procedure?.agent) return NO_AGENT;
+  const keys = { procedure, overrides, keys: own.keys };
   return use === null ? ownAgent(checking, place, keys) : usedAgent(checking, place, use, keys);
 }

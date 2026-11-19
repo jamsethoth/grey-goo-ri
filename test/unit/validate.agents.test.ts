@@ -88,3 +88,43 @@ test('an empty persona names no file, and a null one is only a null', () => {
     { at: 'agents.reviewer.persona', code: 'file-not-named' },
   ]);
 });
+
+// An Agent asking for more access than its Procedure allows is refused, never capped, so the Harness sees the access
+// the call runs with (#424, Q1 A).
+test('a workspace-write Agent on a read-only Procedure is an access-conflict that names the fix', () => {
+  const config = exampleLayer.config();
+  config.agents.reviewer.access = 'workspace-write';
+  const { errors } = exampleLayer.check(config);
+  assert.deepEqual(exampleLayer.firedRules(errors), [{ at: `${VERTICES}.reviewer`, code: 'access-conflict' }]);
+  assert.ok(errors[0]!.message.includes('"review"'), errors[0]!.message);
+  assert.ok(errors[0]!.message.includes('"reviewer"'), errors[0]!.message);
+  assert.ok(errors[0]!.message.includes('set "access": "read-only" on the Vertex'), errors[0]!.message);
+  assert.deepEqual(errors[0]!.params, { procedure: 'review', agent: 'reviewer' });
+});
+
+// Every combination of the Procedure's, the Agent's and the Vertex's access: a Vertex either runs with the access its
+// Agent asks for, or, asking for workspace-write on a read-only Procedure, is an access-conflict at the Vertex. Only
+// access-conflict is read: a review that may write breaks the review Procedure's other rules.
+test('every Vertex runs with the access its Agent asks for, or is an access-conflict', () => {
+  const accesses = [undefined, 'read-only', 'workspace-write'];
+  const wrong: string[] = [];
+  for (const procedureAccess of [undefined, 'read-only'])
+    for (const agentAccess of accesses)
+      for (const vertexAccess of accesses) {
+        const config = exampleLayer.config();
+        exampleLayer.putAt(config, ['procedures', 'review', 'access'], procedureAccess);
+        exampleLayer.putAt(config, ['agents', 'reviewer', 'access'], agentAccess);
+        exampleLayer.putAt(config, ['flows', 'default', 'ticket', 'vertices', 'reviewer', 'access'], vertexAccess);
+        const { errors, flows } = exampleLayer.check(config);
+        const asked = vertexAccess ?? agentAccess ?? 'read-only';
+        const fired = JSON.stringify(exampleLayer.firedRules(errors.filter(({ code }) => code === 'access-conflict')));
+        const runs = flows.default?.ticket.vertices.reviewer?.access;
+        const conflict = procedureAccess === 'read-only' && asked === 'workspace-write';
+        const expected = conflict ? JSON.stringify([{ at: `${VERTICES}.reviewer`, code: 'access-conflict' }]) : '[]';
+        if (fired !== expected || (!conflict && runs !== asked))
+          wrong.push(
+            `procedure ${procedureAccess}, agent ${agentAccess}, vertex ${vertexAccess}: ${fired}, runs ${runs}`,
+          );
+      }
+  assert.deepEqual(wrong, []);
+});

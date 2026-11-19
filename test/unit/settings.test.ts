@@ -388,7 +388,7 @@ test('the repository contract problems are its commands, testPaths, approvers, l
 
 // Settings when the two files hold no error, the errors otherwise, never both: tsc then stops a caller reading Settings
 // it has not checked (#362, decision 4).
-test('the parse gives every Setting when the settings hold no error, and only the errors otherwise', () => {
+test('the parse gives every Setting with no error, else the errors and the Declared Commands that hold none', () => {
   const configuration = (repository: object) => ({
     repository: { ...SETTINGS.repository, approvers: ['some-login'], ...repository, files: {} },
     user: { ...SETTINGS.user, files: {} },
@@ -412,9 +412,12 @@ test('the parse gives every Setting when the settings hold no error, and only th
     undefined,
   );
   const failed = settings.parse(configuration({ labelPrefix: 'a:b' }));
-  assert.deepEqual(Object.keys(failed), ['errors']);
+  assert.deepEqual(Object.keys(failed), ['errors', 'commands']);
+  assert.deepEqual(failed.commands, { test: 'npm test' });
   assert.deepEqual(
     failed.errors?.map((problem) => problem.code),
     ['invalid-name'],
   );
+  const commandsFailed = settings.parse(configuration({ labelPrefix: 'a:b', commands: { test: '' } }));
+  assert.deepEqual(Object.keys(commandsFailed), ['errors']);
 });

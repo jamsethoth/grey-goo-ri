@@ -43,14 +43,14 @@ function runningVisit(): visitScope.RunningVisit {
     settled: null,
     unconfirmedCleanup: null,
   };
-  const proc: Pick<model.Procedure, 'actions'> = {
+  const procedure: Pick<model.Procedure, 'actions'> = {
     actions: [
       { id: 'red', do: 'agent' },
       { id: 'lint', do: 'check' },
       { id: 'red-check', do: 'check' },
     ],
   };
-  Object.defineProperty(state, 'proc', { value: proc, enumerable: false });
+  Object.defineProperty(state, 'procedure', { value: procedure, enumerable: false });
   Object.defineProperty(state, 'claimTokens', { value: new Map(), enumerable: false });
   return state as visitScope.RunningVisit;
 }

@@ -15,7 +15,7 @@ import type * as visit from './visit.ts';
 // The Visit's saved progress (visit.VisitState), with its Procedure and Claim tokens, which runVisit adds as
 // non-enumerable properties so they stay out of the saved record.
 export interface RunningVisit extends visit.VisitState {
-  readonly proc: model.Procedure;
+  readonly procedure: model.Procedure;
   readonly claimTokens: model.Procedure['claimTokens'];
 }
 
@@ -181,13 +181,13 @@ export function settle(
   const failing = token.stop ? [] : token.requires.filter((id) => state.checks.get(id)?.state !== 'passed');
   if (!token.stop && !failing.length) return resolution;
   const recoverable =
-    failing.some((id) => checkRun(state, id).recoverable) && state.recovery < (state.proc.recover?.max ?? 0);
+    failing.some((id) => checkRun(state, id).recoverable) && state.recovery < (state.procedure.recover?.max ?? 0);
   const [first] = failing;
   const decided = outcome.decide({
     ...input,
     checks: resolverChecks([], [...state.checks.values()]),
     token,
-    procedure: state.proc,
+    procedure: state.procedure,
     scope: scopeOf(executionRecord, actionIdentity, state),
     recoverable,
   });

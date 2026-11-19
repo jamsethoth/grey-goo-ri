@@ -166,7 +166,7 @@ test('a review that changes the tree is an integrity violation', async (t) => {
   assert.match(fixture.gh.comments.at(-1)!.body, /\btree\b/);
 });
 
-test('a review on a workspace-write agent is still read-only', async (t) => {
+test('a review on a workspace-write agent set read-only at its Vertex is read-only', async (t) => {
   const fixture = await reviewFixture(
     t,
     {
@@ -176,6 +176,7 @@ test('a review on a workspace-write agent is still read-only', async (t) => {
   );
   golden.configure(fixture, (configured) => {
     configured.agents.reviewer!.access = 'workspace-write';
+    configured.flows.golden!.ticket.vertices.reviewer!.access = 'read-only';
   });
   const result = await interpreter.runExecution(fixture.options);
 

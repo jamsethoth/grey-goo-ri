@@ -164,9 +164,9 @@ function prBodyScope(action: Record<string, unknown>, visitScope: Scope): Scope 
   return { ...visitScope, ...bound, ticket: TICKET, provenance: ANY_LIST, marker: procedures.STRING };
 }
 
-function actionTemplates(reading: Reading, proc: checked.CheckedProcedure, visitScope: Scope) {
+function actionTemplates(reading: Reading, procedure: checked.CheckedProcedure, visitScope: Scope) {
   const brief = { ...visitScope, ...BRIEF };
-  proc.actions.forEach((action, index) => {
+  procedure.actions.forEach((action, index) => {
     if (!referencePaths.isRecord(action)) return;
     const where = `actions[${index}]`;
     if (action.do === 'agent') readTemplate(reading, { where, key: 'brief' }, action.brief, brief);
@@ -175,7 +175,7 @@ function actionTemplates(reading: Reading, proc: checked.CheckedProcedure, visit
     if (action.do === 'pr-upsert')
       readTemplate(reading, { where, key: 'body' }, action.body, prBodyScope(action, visitScope));
     if (action.do === 'comment') {
-      const scope = { ...visitScope, ...(proc.agent && { agent: AGENT }), marker: procedures.STRING };
+      const scope = { ...visitScope, ...(procedure.agent && { agent: AGENT }), marker: procedures.STRING };
       readTemplate(reading, { where, key: 'body' }, action.body, scope);
     }
   });
@@ -183,21 +183,21 @@ function actionTemplates(reading: Reading, proc: checked.CheckedProcedure, visit
 
 // Each name every template of the Procedure reads, in a Vertex's scope (`inputs` its inputs).
 export function templateReferences(
-  proc: checked.CheckedProcedure,
+  procedure: checked.CheckedProcedure,
   inputs: referencePaths.SchemaNode,
   reader: TemplateReader | null,
 ) {
   if (!reader) return [];
   const reading: Reading = { reader, found: [] };
-  const visitScope: Scope = references.visitScopeSchema(proc, 'passed', inputs);
-  actionTemplates(reading, proc, visitScope);
-  if (referencePaths.isRecord(proc.recover)) {
+  const visitScope: Scope = references.visitScopeSchema(procedure, 'passed', inputs);
+  actionTemplates(reading, procedure, visitScope);
+  if (referencePaths.isRecord(procedure.recover)) {
     const scope = { ...visitScope, ...BRIEF, sections: procedures.STRING_LIST };
-    readTemplate(reading, { where: 'recover', key: 'brief' }, proc.recover.brief, scope);
+    readTemplate(reading, { where: 'recover', key: 'brief' }, procedure.recover.brief, scope);
   }
-  for (const [token, claimToken] of Object.entries(proc.claimTokens)) {
+  for (const [token, claimToken] of Object.entries(procedure.claimTokens)) {
     if (claimToken.stop) {
-      const scope = { ...references.ownScope(proc, inputs), ...STOP };
+      const scope = { ...references.ownScope(procedure, inputs), ...STOP };
       readTemplate(reading, { where: `claimTokens.${token}`, key: 'comment' }, claimToken.comment, scope);
     }
   }

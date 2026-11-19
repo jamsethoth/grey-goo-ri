@@ -140,7 +140,7 @@ export const missingFlowAdvice = (flow: string, ticket: number): string =>
 // A Harness module as preflight checks it: the shipped modules declare only their paths until slices 2 and 3.
 interface PreflightHarness {
   run?: unknown;
-  validate(agent: unknown): Promise<{ ok: boolean; errors: string[] }>;
+  validate?(agent: unknown): Promise<{ ok: boolean; errors: string[] }>;
   resolveTools: runContext.Harness['resolveTools'];
 }
 
@@ -157,16 +157,17 @@ async function harnessProblems(
     if (typeof harnessName !== 'string' || !Object.hasOwn(harnesses, harnessName)) continue;
     const harness = harnesses[harnessName] as PreflightHarness;
     try {
-      // shortcut: the shipped Harness modules declare only their paths until slices 2 and 3; drop this when each
-      // implements the contract.
-      if (!harness.run) throw new Error('not implemented');
-      contract.assertHarness(harness);
+      // shortcut: a shipped Harness module declares only what its slice has built, so preflight runs what it has
+      // and then stops it, until slices 2 and 3 end; drop this when each implements the contract.
+      if (harness.run) contract.assertHarness(harness);
+      if (!harness.validate) throw new Error('not implemented');
       const { ok, errors } = await harness.validate(agent);
-      if (!ok) throw new Error(errors.join(', '));
+      if (!ok) throw new Error(errors.join('; '));
       // The agent Action copies what it returns, so a value it could not copy, a Promise among them, fails here.
       const tools: unknown = harness.resolveTools(agent, { commands, platform: process.platform });
       if (tools instanceof Promise) tools.catch(() => {});
       jsonValue.checked(tools, 'resolveTools');
+      if (!harness.run) throw new Error('not implemented');
     } catch (err) {
       const reason = (err as Error).message.split('\n')[0];
       const location = `flows.${flow.name}.ticket.vertices.${id}`;
@@ -242,8 +243,9 @@ export async function check({
   const environment = report.newReport();
   if (commonDir !== undefined) stateDatabaseProblems(environment, commonDir);
   const readable = commonDir !== undefined && !environment.errors.length;
-  // Settings with an error give no Declared Commands, so the Harnesses resolve their tools with none.
-  const commands = parsed.settings?.commands ?? {};
+  // Declared Commands that hold no error are kept when another setting has one, so the Harnesses resolve their tools
+  // with them (D5 of #422).
+  const commands = parsed.settings?.commands ?? parsed.commands ?? {};
   for (const [, { declared }] of admitted) await harnessProblems(environment, declared, { harnesses, commands });
   return {
     flows: declared.flows,

@@ -153,8 +153,8 @@ leverage and a change lands in one place (locality).
 | `lib/approval.ts` | Pending Instance, Approval Digest, timeline read, consumption |
 | `lib/locks.ts` | ticket, epic and repo locks as `node:sqlite` exclusive transactions |
 | `lib/harnesses/contract.ts` | the Harness contract check and shared Usage shape |
-| `lib/harnesses/shipped.ts` | the shipped Harnesses by name, as declared (`HARNESSES`), and each built from the `exec` `bin/gg.ts` passes (`shipped(exec)`); the only module outside a Harness that names one |
-| `lib/harnesses/claude.ts` | **stub**: the Claude Code Harness; exports only `protectedPaths` and an empty `createCli(exec)`, so `gg run` preflight fails "not implemented" |
+| `lib/harnesses/shipped.ts` | the shipped Harnesses by name, as declared (`HARNESSES`), and each built from the `exec` `bin/gg.ts` passes (`shipped(exec)`), holding only the contract's members of each declaration; the only module outside a Harness that names one |
+| `lib/harnesses/claude.ts` | the Claude Code Harness as a declaration, with no spawn yet: its Capabilities, `validate`, `resolveTools` (the tools, the permission rules for the platform's shell, each listed plugin's directory) and `launchArgs` (the launch profile's argv, environment and files), the launch profile's name and version, and an empty `createCli(exec)`; `gg run` preflight runs `validate` and `resolveTools`, then still fails "not implemented" until #425 |
 | `lib/harnesses/codex.ts` | **stub**: the Codex Harness; exports only `protectedPaths` and an empty `createCli(exec)`, so `gg run` preflight fails "not implemented" |
 | `lib/exec.ts` | process spawn (a nonzero exit rejects with a `CommandError`), the shell runner, with its timeout and cleanup (ported), and `launch`, an argv run contained with no shell under its stall and wall clocks and the cancel signal, its tree taken down (#423) |
 | `lib/command-shim.ts` | what an argv starts as with no shell, for `run` and `launch`: on Windows an npm `.cmd` shim for a node bin read for the script it names, any other `.cmd` refused |

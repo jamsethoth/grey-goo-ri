@@ -370,9 +370,9 @@ none exists.
 _Avoid_: isolation, sandboxing (alone)
 
 **Trusted-Command Mode**:
-The Confinement on Claude under native Windows: Declared Commands run without a sandbox, Integrity Assertions detect
-changes to the checked surfaces, and writes elsewhere or network effects of commands are neither prevented nor
-observed.
+The Confinement on Claude, on every platform until it adopts Claude's sandbox (ADR 0025): Declared Commands run
+without a sandbox, Integrity Assertions detect changes to the checked surfaces, and writes elsewhere or network
+effects of commands are neither prevented nor observed.
 _Avoid_: unsandboxed mode, Windows mode
 
 **Session**:

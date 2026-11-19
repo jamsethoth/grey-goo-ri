@@ -149,8 +149,11 @@ function sourceProblems({ repository, user, repositoryFile, userFile }: config.C
 }
 
 // The two gg.json files' settings: Settings when they hold no error, else the errors, never both, so tsc stops a
-// caller reading Settings it has not checked (#362).
-type ParsedSettings = { settings: config.Settings; errors?: never } | { errors: report.Problem[]; settings?: never };
+// caller reading Settings it has not checked (#362). Beside the errors come the Declared Commands when none of the
+// errors is theirs, so preflight still checks each Harness with them (D5 of #422).
+type ParsedSettings =
+  | { settings: config.Settings; errors?: never; commands?: never }
+  | { errors: report.Problem[]; settings?: never; commands?: Record<string, string> };
 
 const isStrings = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === 'string');
@@ -170,7 +173,10 @@ export function parse(configuration: config.Configuration): ParsedSettings {
     isCommands(commands) &&
     isStrings(testPaths) &&
     (approvers === undefined || isStrings(approvers));
-  if (errors.length || !valid) return { errors };
+  if (errors.length || !valid) {
+    const commandsHold = isCommands(commands) && !commandProblems(commands, configuration.repositoryFile).length;
+    return { errors, ...(commandsHold && { commands }) };
+  }
   return {
     settings: {
       labelPrefix,

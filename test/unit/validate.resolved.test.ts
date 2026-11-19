@@ -111,18 +111,18 @@ const tokenForm = (token: procedures.ClaimToken) => {
 };
 
 // The forms of a Procedure's values, by the closed set each is drawn from.
-function procedureForms(add: Add, proc: procedures.Procedure) {
-  for (const action of proc.actions) {
+function procedureForms(add: Add, procedure: procedures.Procedure) {
+  for (const action of procedure.actions) {
     add('action', action.do);
     if (action.kind !== undefined) add('check', action.kind);
   }
-  add('tests', typeof proc.tests === 'string' ? proc.tests : 'named');
-  add('procedure access', proc.access);
-  add('recover', presence(proc.recover));
-  add('otherwise', presence(proc.otherwise));
-  for (const token of Object.values(proc.claimTokens)) add('token', tokenForm(token));
-  for (const table of procedureChecks.TABLES) if (proc[table].length) add('rows', table);
-  for (const row of [...proc.passed, ...proc.failed, ...proc.stopped])
+  add('tests', typeof procedure.tests === 'string' ? procedure.tests : 'named');
+  add('procedure access', procedure.access);
+  add('recover', presence(procedure.recover));
+  add('otherwise', presence(procedure.otherwise));
+  for (const token of Object.values(procedure.claimTokens)) add('token', tokenForm(token));
+  for (const table of procedureChecks.TABLES) if (procedure[table].length) add('rows', table);
+  for (const row of [...procedure.passed, ...procedure.failed, ...procedure.stopped])
     for (const condition of Object.values(row.when))
       if (typeof condition === 'object' && condition !== null)
         Object.keys(condition).forEach((op) => add('condition', op));
@@ -167,7 +167,7 @@ function formsOf(flow: model.ResolvedFlowJson, layer: exampleLayer.Layer) {
     else target('vertex exhausted', vertex.exhausted);
     vertexForms(add, vertex, written[id]!);
   }
-  for (const proc of Object.values(flow.procedures)) procedureForms(add, proc);
+  for (const procedure of Object.values(flow.procedures)) procedureForms(add, procedure);
   return found;
 }
 

@@ -39,16 +39,18 @@ const typeKey = (node: referencePaths.SchemaNode) =>
   });
 
 // `<vertex>.<action id>.<output>` and `<vertex>.rescue`, for every input's `from`.
-export function sourceScope(procs: Map<string, checked.CheckedProcedure | undefined>, vertices: Value) {
+export function sourceScope(checkedProcedures: Map<string, checked.CheckedProcedure | undefined>, vertices: Value) {
   return procedures.object(
     Object.fromEntries(
       Object.entries(vertices).map(([id, vertex]) => {
-        const proc = referencePaths.isRecord(vertex) ? procs.get(vertex.procedure as string) : undefined;
-        if (!proc) return [id, referencePaths.ANY];
-        const actions = proc.actions.filter(
+        const procedure = referencePaths.isRecord(vertex)
+          ? checkedProcedures.get(vertex.procedure as string)
+          : undefined;
+        if (!procedure) return [id, referencePaths.ANY];
+        const actions = procedure.actions.filter(
           (action) => referencePaths.isRecord(action) && typeof action.id === 'string',
         ) as procedures.Action[];
-        const outputs = actions.map((action) => [action.id, procedures.outputs(action, proc.schema)]);
+        const outputs = actions.map((action) => [action.id, procedures.outputs(action, procedure.schema)]);
         return [id, procedures.object({ rescue: procedures.RESCUE, ...Object.fromEntries(outputs) })];
       }),
     ),
