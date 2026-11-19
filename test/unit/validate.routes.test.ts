@@ -617,3 +617,30 @@ test("a null Rule Table holds its Vertices' route keys and the Flow defaults, no
     { at: `${VERTICES}.green.route.pased`, code: 'unknown-outcome' },
   ]);
 });
+
+// A table too large to analyse drops its default from the Outcome list, so its Procedure holds its Vertices' keys.
+test("a Rule Table too large to analyse holds its Vertices' route keys, not a real key's report", () => {
+  const config = exampleLayer.config();
+  const files = exampleLayer.schemas() as any;
+  const values = Array.from({ length: 200 }, (_, i) => `v${i}`);
+  for (const field of ['e1', 'e2']) {
+    files['review.schema.json'].properties[field] = { type: 'string', enum: values };
+    files['review.schema.json'].required.push(field);
+    for (const value of values.slice(1))
+      config.procedures.review.passed.push({ when: { [`response.${field}`]: value }, outcome: 'retest' });
+  }
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config, files).errors), [
+    { at: 'procedures.review.passed', code: 'rule-table-too-large' },
+  ]);
+});
+
+// A route target changes no Outcome, so an error there holds none of the Vertex's keys (D2 A).
+test('a route target naming no Vertex does not hold a misspelt key beside it', () => {
+  const config = exampleLayer.config();
+  config.flows.default.ticket.vertices.green.route.pased = 'reviewer';
+  config.flows.default.ticket.vertices.green.route.failed = 'nosuch';
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: `${VERTICES}.green.route.failed`, code: 'unknown-vertex' },
+    { at: `${VERTICES}.green.route.pased`, code: 'unknown-outcome' },
+  ]);
+});
