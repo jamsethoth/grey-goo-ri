@@ -7,7 +7,7 @@ import type * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as golden from '../support/golden.ts';
 import { actionEvent } from '../support/execution-reads.ts';
-import { WRONG_ADD, greenFixture, greenWrites, stopReason } from '../support/golden-run.ts';
+import { WRONG_ADD, greenFixture, greenWrites, stopReason, fullTrace } from '../support/golden-run.ts';
 import * as gitShell from '../support/git-shell.ts';
 import * as harnessRuns from '../support/harness-runs.ts';
 import * as keys from '../support/keys.ts';
@@ -30,6 +30,12 @@ test('golden: an integrity violation restores the baseline and stops at needs-hu
   const { outcome } = await interpreter.runExecution(fixture.options);
 
   assert.equal(outcome, 'needs-human');
+  assert.deepEqual(fullTrace(fixture), [
+    'red/red/r0/a1/integrity-violation',
+    'red integrity-violation -> needs-human',
+    'needs-human/end-comment/r0/a1/ok',
+    'needs-human/end-label/r0/a1/ok',
+  ]);
   const red = actionEvent(fixture, 'red', 'red')!;
   assert.equal(red.outcome, 'integrity-violation');
   assert.equal(red.direction, 'stop');

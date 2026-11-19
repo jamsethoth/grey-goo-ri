@@ -28,6 +28,7 @@ import {
   greenWrites,
   runFirstVisit,
   terminalReasonOf,
+  fullTrace,
   type GoldenRun,
 } from '../support/golden-run.ts';
 import * as actionSignals from '../support/action-signals.ts';
@@ -308,6 +309,17 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
   const { outcome } = await interpreter.runExecution(fixture.options);
 
   assert.equal(outcome, 'needs-human');
+  assert.deepEqual(fullTrace(fixture), [
+    'red/red/r0/a1/ok',
+    'red/red-check/r0/a1/ok',
+    'red/commit/r0/a1/ok',
+    'red ok -> green',
+    'green/green/r0/a1/blocked',
+    'green/test/r0/a1/blocked',
+    'green blocked -> needs-human',
+    'needs-human/end-comment/r0/a1/ok',
+    'needs-human/end-label/r0/a1/ok',
+  ]);
   assert.equal(fixture.gh.comments.length, 1, 'exactly one blocked comment');
   const [comment] = fixture.gh.comments;
   assert.equal(comment!.target, 'issue');
