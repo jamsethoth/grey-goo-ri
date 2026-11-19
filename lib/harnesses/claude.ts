@@ -2,10 +2,12 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import type * as events from '../events.ts';
 import type * as exec from '../exec.ts';
 import type * as model from '../model.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
+import * as contract from './contract.ts';
 
 // The paths that configure Claude Code, which gg protects from every agent (request 3.2).
 export const protectedPaths: string[] = ['.claude/', '.mcp.json', 'CLAUDE.md'];
@@ -229,9 +231,36 @@ export function createClaude({ configDirectory }: { configDirectory: string }) {
 }
 
 // Claude Code's own configuration directory, as the CLI finds it.
-export const { resolveTools } = createClaude({
-  configDirectory: process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'),
-});
+const CONFIG_DIRECTORY = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');
 
-// stub: the members that start the CLI, built from the exec shipped.ts is given (run and doctor are to come).
-export const createCli = (_runner: Pick<exec.Exec, 'launch'>) => ({});
+export const { resolveTools } = createClaude({ configDirectory: CONFIG_DIRECTORY });
+
+// The members that start the CLI: run, and the three later slices fill (interactiveArgs, metrics, doctor).
+export interface ClaudeCli {
+  run: runContext.Harness['run'];
+  interactiveArgs(agent: unknown, opening: string, options?: unknown): string[];
+  metrics(session: string): events.Usage | null;
+  doctor(config?: unknown): unknown;
+}
+
+// stub: #425 Green builds run over runner.launch, and doctor, absent here so preflight still stops Claude; the
+// configuration directory is where the CLI writes its transcripts.
+export const createCli = (
+  _runner: Pick<exec.Exec, 'launch'>,
+  _options: { configDirectory?: string } = { configDirectory: CONFIG_DIRECTORY },
+): ClaudeCli =>
+  ({
+    run: () =>
+      Promise.resolve({
+        response: null,
+        result: {
+          status: 'failed',
+          sessionId: null,
+          transcriptPath: null,
+          usage: { cumulative: contract.emptyUsage(capabilities), delta: contract.emptyUsage(capabilities) },
+        },
+        failure: null,
+      }),
+    interactiveArgs: () => [],
+    metrics: () => null,
+  }) as unknown as ClaudeCli;
