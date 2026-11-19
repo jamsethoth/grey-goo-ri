@@ -81,7 +81,10 @@ function sessionInitOf(init: Line): SessionInit {
     plugins: sent(init.plugins),
     pluginErrors: sent(init.plugin_errors ?? []),
     mcpServers: sent(mcpServers),
-    mcpServerErrors: sent(mcpServers.filter((server) => server.status !== 'connected')),
+    mcpServerErrors: sent([
+      ...(Array.isArray(init.mcp_server_errors) ? init.mcp_server_errors : []),
+      ...mcpServers.filter((server) => server.status !== 'connected'),
+    ]),
     capabilities: sent(init.capabilities),
   };
 }

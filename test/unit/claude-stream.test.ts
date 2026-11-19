@@ -86,6 +86,17 @@ test("the init line's plugin errors and failed MCP servers fail the stream as un
   );
 });
 
+// Request 3.2 names the init line's own array; Claude Code 2.1.328 never sends it, so no recording carries it.
+test("the init line's MCP server errors fail the stream as unknown and are reported", () => {
+  const entry = { server: 'x', message: 'boom' };
+  const init = withField(lineOf(SUCCESS, 'system/init'), 'mcp_server_errors', [entry]);
+  const read = claudeStream.read([init, ...SUCCESS.slice(1)]);
+  assert.deepEqual(
+    { failure: failureOf(read), mcpServerErrors: read.sessionInit?.mcpServerErrors },
+    { failure: { failureClass: 'unknown', retryAfterMs: null }, mcpServerErrors: [entry] },
+  );
+});
+
 test('the last api_retry line before a failing result gives its class and delay', () => {
   const read = claudeStream.read(without(lines('api-retry'), 'assistant'));
   assert.deepEqual(failureOf(read), { failureClass: 'rate-limited', retryAfterMs: 2014 });
