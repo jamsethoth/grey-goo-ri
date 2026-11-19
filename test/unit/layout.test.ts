@@ -203,6 +203,36 @@ test('no module outside lib/harnesses names a Harness', () => {
   assert.deepEqual(named, []);
 });
 
+// A Harness starts its CLI only through the exec shipped builds it from (ADR 0019, #423): a launcher it imported could
+// start a process outside the deps bin/gg.ts builds. A type-only import starts nothing.
+const LAUNCHERS = String.raw`(?:node:)?child_process|(?:\.\.?\/)+(?:lib\/)?(?:exec|containment|process-tree)\.ts`;
+const LAUNCHER_IMPORT = new RegExp(
+  String.raw`(?:^|[;\n])\s*(?:import|export)\s+(?!type\b)[^;]*?\bfrom\s*['"](?:${LAUNCHERS})['"]` +
+    String.raw`|\bimport\s*['"](?:${LAUNCHERS})['"]|\b(?:import|getBuiltinModule)\(\s*['"](?:${LAUNCHERS})['"]`,
+);
+
+test('no Harness module imports a launcher', () => {
+  const samples = [
+    "import * as exec from '../exec.ts';",
+    "import { spawn } from 'node:child_process';",
+    "import {\n  start,\n} from '../containment.ts';",
+    "export { takeDown } from '../process-tree.ts';",
+    "const { spawn } = process.getBuiltinModule('child_process');",
+    "const tree = await import('../process-tree.ts');",
+    "import type * as exec from '../exec.ts';\nimport * as contract from './contract.ts';",
+  ];
+  assert.deepEqual(
+    samples.map((text) => LAUNCHER_IMPORT.test(text)),
+    [true, true, true, true, true, true, false],
+  );
+  const harnessModules = repoFiles('lib/harnesses/');
+  assert.ok(harnessModules.includes('lib/harnesses/claude.ts'), `scanned ${harnessModules.join(', ')}`);
+  assert.deepEqual(
+    harnessModules.filter((path) => LAUNCHER_IMPORT.test(readFileSync(root + path, 'utf8'))),
+    [],
+  );
+});
+
 // The one JavaScript file: ESLint 10.14 loads a .ts config only through the optional jiti package or an unstable flag.
 // Revisit when ESLint loads TypeScript configs natively.
 const LEGACY_MJS = ['eslint.config.mjs'];

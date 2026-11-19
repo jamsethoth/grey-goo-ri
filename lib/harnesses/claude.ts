@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import type * as exec from '../exec.ts';
 import type * as model from '../model.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
@@ -232,3 +233,6 @@ export function createClaude({ configDirectory }: { configDirectory: string }) {
 export const { resolveTools } = createClaude({
   configDirectory: process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'),
 });
+
+// stub: the members that start the CLI, built from the exec shipped.ts is given (run and doctor are to come).
+export const createCli = (_runner: Pick<exec.Exec, 'launch'>) => ({});

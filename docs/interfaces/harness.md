@@ -1,7 +1,9 @@
 # Harness interface
 
-Frozen (#23). Every Harness module (`lib/harnesses/claude.ts`, `lib/harnesses/codex.ts`, and the test fake in
-`test/support/fake-harness.ts`) exports an object with the same contract. `assertHarness(obj)` in
+Frozen (#23). Every shipped Harness module (`lib/harnesses/claude.ts`, `lib/harnesses/codex.ts`) exports its
+declaration as plain values and `createCli(exec)`, which builds from `exec` the members that start its CLI (`run`,
+`doctor`); `shipped(exec)` in `lib/harnesses/shipped.ts` joins the two, without `createCli`, into an object with the
+same contract as the test fake's (`test/support/fake-harness.ts`) (#423, Q1 A). `assertHarness(obj)` in
 `lib/harnesses/contract.ts` checks it and throws naming the first missing method or Capability field. Behaviour is
 decided by request section 3.2; Usage token rules by section 3.7. A change to anything listed here outside the Reserved
 section needs a new ADR under `docs/adr/` and a version bump; `test/unit/freeze.test.ts` holds every block below to the
@@ -35,7 +37,8 @@ metrics
 doctor
 ```
 
-`lib/harnesses/shipped.ts` lists every shipped Harness by name. The Protected Files (request 3.6) are gg's own paths
+`lib/harnesses/shipped.ts` lists every shipped Harness by name, and `bin/gg.ts` builds them once with `shipped(exec)`
+from the `exec` it passes down (ADR 0019), so no Harness module imports a launcher (`test/unit/layout.test.ts`). The Protected Files (request 3.6) are gg's own paths
 plus every shipped Harness's `protectedPaths`, whichever Harnesses the Agents use; `bin/gg.ts` builds that union with
 `protectedFiles` (`lib/interpreter.ts`) and passes it to the Run, so the interpreter imports no Harness module.
 `protectedFiles` fails, naming the Harness, when a `protectedPaths` is not an array of paths. No module outside

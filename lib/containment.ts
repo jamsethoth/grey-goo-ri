@@ -4,6 +4,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type * as ffi from 'node:ffi';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 import * as commandCleanup from './command-cleanup.ts';
 
 // The struct offsets below are 64-bit Windows', the only Windows Node 26 is built for (x64 and arm64).
@@ -206,6 +207,20 @@ export function createJob(kernel32: Kernel32, pid: number): Job {
 // The command, running; its job, or null with the reason it runs uncontained.
 export type Started = { child: ChildProcess; job: Job | null; containmentError?: string };
 
+// child put in a new job: with no kernel32, or a job that cannot be set up, it runs uncontained.
+function contain(kernel32: Kernel32 | null, child: ChildProcess): Started {
+  let job: Job | null = null;
+  let reason: string | undefined = kernel32 ? undefined : 'node:ffi is unavailable';
+  if (kernel32 && child.pid !== undefined)
+    try {
+      job = createJob(kernel32, child.pid);
+    } catch (err) {
+      reason = (err as Error).message;
+    }
+  if (!reason) return { child, job };
+  return { child, job, containmentError: `job object unavailable (${reason}): orphaned descendants are not contained` };
+}
+
 // Starts commandLine through cmd.exe, which waits on a gate line of stdin, puts cmd.exe in a new job, and then opens
 // the gate, so nothing the command starts is outside the job. The gate swallows any stdin written with it, so the
 // command reads only EOF. The gate line is not empty, since an empty one leaves the error level at 1, and the gate
@@ -219,16 +234,38 @@ export function start(kernel32: Kernel32 | null, commandLine: string, cwd: strin
     windowsVerbatimArguments: true,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
-  let job: Job | null = null;
-  let reason: string | undefined = kernel32 ? undefined : 'node:ffi is unavailable';
-  if (kernel32 && child.pid !== undefined)
-    try {
-      job = createJob(kernel32, child.pid);
-    } catch (err) {
-      reason = (err as Error).message;
-    }
+  const started = contain(kernel32, child);
   child.stdin.on('error', () => {}); // cmd.exe already gone: its exit reports it
   child.stdin.end('go\n');
-  if (!reason) return { child, job };
-  return { child, job, containmentError: `job object unavailable (${reason}): orphaned descendants are not contained` };
+  return started;
+}
+
+const GATE = fileURLToPath(new URL('./containment-gate.ts', import.meta.url));
+
+// An argv started with no shell: the node gate (lib/containment-gate.ts) starts first, is put in a new job, and only
+// then is sent the argv, which it starts on its own stdio, so nothing the argv starts is outside the job. spawned
+// settles once the gate has answered: null when the argv started, else the error that stopped it. Uncontained as start
+// is.
+export function startArgv(
+  kernel32: Kernel32 | null,
+  argv: { command: string; args: string[] },
+  { cwd, env }: { cwd?: string; env?: NodeJS.ProcessEnv },
+): Started & { spawned: Promise<Error | null> } {
+  const child = spawn(process.execPath, [GATE], {
+    cwd,
+    env,
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+  });
+  const spawned = new Promise<Error | null>((answer) => {
+    child.on('message', (message) => {
+      const { error } = message as { error?: { message: string; code?: string } };
+      answer(error ? Object.assign(new Error(error.message), { code: error.code }) : null);
+    });
+    child.on('disconnect', () => answer(new Error(`the launch gate ended before it started ${argv.command}`)));
+    child.on('error', answer);
+  });
+  const started = contain(kernel32, child);
+  if (child.connected) child.send(argv);
+  return { ...started, spawned };
 }

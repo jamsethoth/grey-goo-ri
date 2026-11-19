@@ -57,7 +57,8 @@ export function requiresSuite({ worktree, onRun = () => {} }: { worktree: string
     ].join('\n');
     return { code: failed ? 1 : 0, output, timedOut: false, cleanup: addSuite.CONFIRMED };
   };
-  return { runShell, cleanupConfirmed: () => true } as unknown as runContext.Deps['exec'];
+  const launch = () => Promise.reject(new Error('the example-run fixture runs no launch'));
+  return { runShell, cleanupConfirmed: () => true, launch } as unknown as runContext.Deps['exec'];
 }
 
 // The example's Agents on the fake Harness, each Persona its own file.
