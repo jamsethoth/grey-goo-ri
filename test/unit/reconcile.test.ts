@@ -220,8 +220,9 @@ const CHANGES = [
 for (const [change, harnessNow] of CHANGES)
   for (const moved of [false, true])
     for (const pending of [false, true]) {
-      const where = `${moved ? 'moved to another Harness' : 'still on it'}, ${pending ? 'an agent call pending' : 'after the commit'}`;
-      test(`a resumed Visit whose Harness's ${change}, its Flow ${where}`, async (t) => {
+      const flowAt = moved ? 'moved to another Harness' : 'still on it';
+      const point = pending ? 'an agent call pending' : 'after the commit';
+      test(`a resumed Visit whose Harness's ${change}, its Flow ${flowAt}, ${point}`, async (t) => {
         const fixture = await golden.fixture(t, pending ? { responses: RETRIED } : {});
         const { pinned } = fixture.options;
         stateDatabase.savePinnedConfiguration(fixture.commonDir, pinned.hash, {

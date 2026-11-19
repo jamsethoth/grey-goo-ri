@@ -212,14 +212,19 @@ export function pinnedConfiguration({
 }): PinnedConfiguration {
   const used = Object.values(flow.ticket.vertices).flatMap(({ agent }) => (agent ? [agent.harness] : []));
   const launchProfile = Object.fromEntries(
-    used.map((harnessName): [string, PinnedLaunchProfile] => {
-      const harness = harnesses[harnessName] as runContext.Harness;
-      const { name = null, version = null } = harness.launchProfile ?? {};
-      return [harnessName, { name, version, confinement: harness.capabilities.confinement ?? null }];
-    }),
+    used.map((harnessName): [string, PinnedLaunchProfile] => [
+      harnessName,
+      launchEntry(harnesses[harnessName] as runContext.Harness),
+    ]),
   );
   const { commands, testPaths, approvers } = settings;
   return { flow, files, harnesses: {}, launchProfile, commands, testPaths, approvers };
+}
+
+// One Harness's entry in the Pinned Configuration's launch profile: what the Config Hash pins of how it launches.
+export function launchEntry(harness: runContext.Harness): PinnedLaunchProfile {
+  const { name = null, version = null } = harness.launchProfile ?? {};
+  return { name, version, confinement: harness.capabilities.confinement ?? null };
 }
 
 // What an Execution runs under: a Pinned Configuration, its Resolved Flow in memory and its Config Hash, one value so

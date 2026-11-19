@@ -249,7 +249,8 @@ export type ReconcileOptions = ({ record: record.ExecutionRecord } | { corrupt: 
   cwd?: string;
   find?: effects.FindEffect;
   database?: Database;
-  launchProfile?: config.PinnedConfiguration['launchProfile'];
+  // The launch entry of the Harness a resumed Visit's Agent runs on in this Run, whether or not the Flow still uses it.
+  launch?: config.PinnedLaunchProfile | null;
 };
 
 // Labels decide whether an Execution continues, the record where (request 3.5). The record is never discarded.
@@ -270,7 +271,8 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
   const issueLabels = gh.labelNames(await gh.viewIssue(executionRecord.ticket, cwd));
   const overridden = humanOverride(executionRecord, issueLabels, labelPrefix);
   if (overridden) return overridden;
-  const held = configurationHold(executionRecord, flow) ?? launchHold(executionRecord, database, options.launchProfile);
+  const held =
+    configurationHold(executionRecord, flow) ?? launchHold(executionRecord, database, options.launch ?? null);
   if (held) return held;
   const hold = (reason: string): Hold => ({
     next: 'hold',
@@ -347,11 +349,10 @@ function configurationHold(executionRecord: record.ExecutionRecord, flow: Reconc
 function launchHold(
   executionRecord: record.ExecutionRecord,
   database: Database,
-  launchProfile: config.PinnedConfiguration['launchProfile'],
+  now: config.PinnedLaunchProfile | null,
 ): Hold | null {
   const { cursor, configurationSnapshot } = executionRecord;
   const harness = configurationSnapshot?.agent?.harness;
-  const now = harness && launchProfile?.[harness];
   if (cursor.action === null || configurationSnapshot?.vertex !== cursor.vertex || !harness || !now) return null;
   const then = pinnedEntry(
     database.loadPinnedConfiguration(executionRecord.commonDir, executionRecord.configHash),
