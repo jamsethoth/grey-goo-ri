@@ -93,6 +93,12 @@ function reportNulls(problems: report.Report, value: unknown, location: string) 
   }
 }
 
+// A null is refused at its key, so it fails its Agent or Procedure like any other error there (#449, Q1 A, D3 A).
+function failNulled(nulls: report.Problem[], config: Value, section: 'agents' | 'procedures', failed: Set<unknown>) {
+  for (const [name] of report.entries(config[section]))
+    if (nulls.some((problem) => problem.at.startsWith(`${section}.${name}.`))) failed.add(name);
+}
+
 export function validate(config: unknown, { harnesses, readSchema, readTemplate, contract }: Sources) {
   const problems = report.newReport();
   if (!referencePaths.isRecord(config)) {
@@ -119,6 +125,8 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate,
       "no Flow is declared; run gg init to write the example Flow into the repository's .agents/gg/",
     );
   }
+  failNulled(nulls.errors, config, 'procedures', procedureChecks.failedProcedures);
+  failNulled(nulls.errors, config, 'agents', failedAgents);
   const reader = templates.templateReader(readTemplate);
   const checking = {
     report: problems,
@@ -126,6 +134,7 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate,
     labelPrefix,
     ...procedureChecks,
     failedAgents,
+    nulls: nulls.errors,
     agents,
     harnesses,
     reader,

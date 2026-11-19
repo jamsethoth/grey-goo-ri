@@ -236,7 +236,9 @@ test('a sound exhausted target of a mapped Vertex adds its landing to the map', 
   exampleTicket(config).vertices.red.route['no-test'] = 'senior-dev';
   exampleTicket(config).vertices['senior-dev'].exhausted = 'senior-red';
   const fired = exampleLayer.firedRules(exampleLayer.check(config).errors);
-  assert.ok(fired.some(({ code }) => code === 'required-input-unsure'));
+  assert.ok(
+    fired.some(({ at, code }) => code === 'required-input-unsure' && at === `${VERTICES}.senior-red.inputs.findings`),
+  );
 });
 
 // A Vertex that is not an object has no routes the map can read, so the warnings wait (#449, Q2 A).
@@ -244,4 +246,30 @@ test('a Vertex that is not an object holds the warnings', () => {
   const config = exampleLayer.config();
   exampleTicket(config).vertices.green = 7;
   assert.deepEqual(routeMapWarnings(exampleLayer.check(config).warnings), []);
+});
+
+// A null is refused at its key, so it holds the cycle through its Vertex like any error there (#449, Q1 A, D3 A).
+test("a null on a Vertex's own key or its Agent holds the cycle through it", () => {
+  for (const [owner, key] of [
+    [(config: Layer) => config.agents.implementer, 'model'],
+    [(config: Layer) => config.agents.implementer, 'persona'],
+    [(config: Layer) => exampleTicket(config).vertices.green, 'effort'],
+  ] as const) {
+    const config = exampleLayer.config();
+    owner(config)[key] = null;
+    exampleTicket(config).vertices.green.route['bad-test'] = 'red';
+    const [only, ...rest] = exampleLayer.firedRules(exampleLayer.check(config).errors);
+    assert.deepEqual([only?.code, rest], ['null-value', []], key);
+  }
+});
+
+// senior runs no Vertex of the cycle through red and green, so its null holds none of the cycle's checks.
+test('a null on an Agent outside a cycle holds none of its checks', () => {
+  const config = exampleLayer.config();
+  config.agents.senior.model = null;
+  exampleTicket(config).vertices.green.route['bad-test'] = 'red';
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'agents.senior.model', code: 'null-value' },
+    { at: 'flows.default.ticket', code: 'unbounded-cycle' },
+  ]);
 });

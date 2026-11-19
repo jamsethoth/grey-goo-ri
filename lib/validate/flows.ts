@@ -41,6 +41,8 @@ export interface FlowContext {
   // and leave its Outcomes unknown (#449).
   failedAgents: Set<unknown>;
   failedProcedures: Set<unknown>;
+  // The nulls, which no check of a Vertex counts, though each is refused at its key (#449, D3 A).
+  nulls: report.Problem[];
   agents: Map<string, agentChecks.CheckedAgent>;
   harnesses: unknown;
   reader: templates.TemplateReader | null;
@@ -182,13 +184,15 @@ function accessConflict(problems: report.Report, location: string, procedure: { 
 }
 
 // A Vertex's Outcome list is whole when its Procedure's checks, its Agent's and its own, in the Procedure's scope too,
-// raised no error since `before`; an error at a route target changes no Outcome (#436, D3 C; #449, Q1 A).
+// raised no error since `before` and it holds no null; an error at a route target changes no Outcome (#436, D3 C; #449,
+// Q1 A).
 function markWhole(checking: FlowContext, state: FlowState, vertex: { id: string; location: string }, before: number) {
   const procedure = state.vertexProcedures.get(vertex.id);
   const use = state.typed.get(vertex.id)?.use;
   if (!procedure || checking.failedProcedures.has(procedure.name) || checking.failedAgents.has(use)) return;
   const atRoute = `${vertex.location}.route.`;
-  if (checking.report.errors.slice(before).every((problem) => problem.at.startsWith(atRoute)))
+  const nulls = checking.nulls.filter((problem) => problem.at.startsWith(`${vertex.location}.`));
+  if ([...checking.report.errors.slice(before), ...nulls].every((problem) => problem.at.startsWith(atRoute)))
     state.whole.add(vertex.id);
 }
 
