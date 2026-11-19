@@ -179,7 +179,7 @@ const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
 // The margin above contextBudget at which Claude compacts, a backstop behind gg's own hand-off (#430).
 const AUTOCOMPACT_PERCENT = 125;
 // The window --autocompact accepts, in tokens (Claude Code docs, model-config, read 2026-11-18); a budget above 800,000
-// compacts less than 25% past it, at the 1,000,000 cap.
+// compacts less than 25% past it, at the 1,000,000 cap, and a budget above 1,000,000 compacts before gg's hand-off.
 const AUTOCOMPACT_RANGE = { least: 100_000, most: 1_000_000 };
 const autocompactAt = (budget: number) =>
   Math.min(AUTOCOMPACT_RANGE.most, Math.max(AUTOCOMPACT_RANGE.least, Math.ceil((budget * AUTOCOMPACT_PERCENT) / 100)));
