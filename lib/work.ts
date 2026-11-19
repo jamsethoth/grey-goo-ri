@@ -224,6 +224,8 @@ async function reposition(options: ResumeOptions): Promise<void> {
     approvalRequest: null,
     visitState: null,
     cursor: { vertex, visit: (executionRecord.visits.get(vertex) ?? 0) + 1, action: null, recovery: 0, attempt: 1 },
+    // The tests the person left are the ones the next Attempts are held to (Test Immutability).
+    testCommits: { ...executionRecord.testCommits, baseline: head },
   });
   const { execution, owner } = executionRecord;
   database.save(executionRecord, () =>

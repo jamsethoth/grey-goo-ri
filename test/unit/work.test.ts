@@ -2,6 +2,7 @@ import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as checks from '../../lib/checks.ts';
 import * as effects from '../../lib/effects/index.ts';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
@@ -22,6 +23,7 @@ import * as golden from '../support/golden.ts';
 import * as goldenRun from '../support/golden-run.ts';
 import * as keys from '../support/keys.ts';
 import * as runFixture from '../support/run-fixture.ts';
+import * as stoppedTicket from '../support/stopped-ticket.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
 const TICKET = 7;
@@ -119,7 +121,7 @@ test('gg work abandon keeps the record when its in-progress label cannot be remo
 // gg work done is handed a database, so its check that the State Database is there, before the ticket lock, goes
 // through it like every read it makes (#367).
 test('gg work done checks the State Database through the database it is handed, before it starts', async (t) => {
-  const fixture = await faulted(t);
+  const fixture = await stoppedTicket.faulted(t);
   const before = loaded(fixture).state;
   const options = doneOptions(fixture, true);
   options.deps = {
@@ -147,37 +149,6 @@ test('gg work abandon refuses a missing State Database before it takes the ticke
   assert.equal(existsSync(join(commonDir, 'gg')), false, 'no gg directory: no lock file and no database');
   assert.deepEqual(fake.calls, [], 'no gh call');
 });
-
-// Ticket 15 run once by gg run over a suite that checks the sum: its green writes a wrong add and finds no recovery, so
-// the Execution ends at fault with red's commit and green's outputs saved and an agent call left open. `onRun` sees
-// each suite run of every later Run.
-// `configure` edits the fixture before its Run, and `fixtureOptions` go to the run fixture.
-interface Faulting {
-  responses?: Record<string, unknown>;
-  onRun?: () => void;
-  configure?: (fixture: runFixture.RunFixture) => void;
-  fixtureOptions?: runFixture.RunFixtureOptions;
-}
-async function faulted(
-  t: TestContext,
-  { responses = {}, onRun = () => {}, configure = () => {}, fixtureOptions = {} }: Faulting = {},
-) {
-  const scripted = {
-    ...structuredClone(golden.firstVisitResponses),
-    [keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })]: goldenRun.greenWrites({
-      'lib/add.mjs': goldenRun.WRONG_ADD,
-    }),
-    ...responses,
-  };
-  const fixture = runFixture.fixture(t, {
-    responses: scripted as golden.GoldenOptions['responses'],
-    ...fixtureOptions,
-  });
-  configure(fixture);
-  fixture.options.deps.exec = addSuite.addSuite({ worktree: fixture.worktree, checksSum: true, onRun });
-  await run.runTarget(fixture.options);
-  return fixture;
-}
 
 const loaded = (fixture: runFixture.RunFixture) => record.load(fixture.commonDir, 'ticket', runFixture.TICKET)!;
 const stateLabelsOf = (fixture: runFixture.RunFixture) =>
@@ -218,7 +189,7 @@ function prIn(fixture: runFixture.RunFixture, state: string) {
 }
 
 test('gg work done records the human end and swaps the label', async (t) => {
-  const fixture = await faulted(t);
+  const fixture = await stoppedTicket.faulted(t);
   fixture.gh.repoLabels.delete('gg:state:done');
   const text = await work.done(doneOptions(fixture, true));
   const executionRecord = loaded(fixture);
@@ -258,7 +229,7 @@ test('gg work done closes the issue only when its PR is merged or --close is giv
     { pr: null, close: true, closed: true },
   ];
   for (const given of cases) {
-    const fixture = await faulted(t);
+    const fixture = await stoppedTicket.faulted(t);
     if (given.pr) prIn(fixture, given.pr);
     const name = `PR ${given.pr ?? 'none'}, --close ${given.close}`;
     if (given.refused) {
@@ -275,29 +246,28 @@ test('gg work done closes the issue only when its PR is merged or --close is giv
 
 // Every record state an Execution lands in, and the ones each verb takes (owner, 2026-11-06).
 const RECORD_STATES = ['active', ...labels.END_STATES, 'held', 'fault', 'abandoned', 'done'];
-const STOPPED = ['needs-human', 'needs-replan', 'held', 'fault', 'abandoned'];
 
 test('gg work done and gg work resume take a Ticket in each stopped state and refuse every other state', async (t) => {
   assert.deepEqual(
-    RECORD_STATES.filter((state) => !STOPPED.includes(state)),
+    RECORD_STATES.filter((state) => !stoppedTicket.STOPPED.includes(state)),
     ['active', 'ready-for-qa', 'done'],
     'the states both verbs refuse',
   );
   for (const state of RECORD_STATES) {
-    const resolving = await faulted(t);
+    const resolving = await stoppedTicket.faulted(t);
     landedIn(resolving, state);
     const resolved = work.done(doneOptions(resolving, true));
-    if (STOPPED.includes(state)) {
+    if (stoppedTicket.STOPPED.includes(state)) {
       await resolved;
       assert.equal(loaded(resolving).state, 'done', `done takes ${state}`);
     } else {
       await assert.rejects(resolved, new RegExp(`Ticket 15 is ${state}; gg work done takes`), `done refuses ${state}`);
     }
-    const resuming = await faulted(t);
+    const resuming = await stoppedTicket.faulted(t);
     landedIn(resuming, state);
     const [result] = await run.runTarget({ ...resuming.options, resume: { vertex: 'green' } });
     const resumed = resuming.readEvents().filter((event) => event.type === 'ticket_resumed');
-    if (STOPPED.includes(state)) assert.equal(resumed.length, 1, `resume takes ${state}`);
+    if (stoppedTicket.STOPPED.includes(state)) assert.equal(resumed.length, 1, `resume takes ${state}`);
     else {
       const refusal = new RegExp(`Ticket 15 is ${state}; gg work resume takes`);
       assert.match(String(result?.error), refusal, `resume refuses ${state}`);
@@ -306,29 +276,9 @@ test('gg work done and gg work resume take a Ticket in each stopped state and re
   }
 });
 
-// Ticket 15 run once by gg run with red and green passing and the suite failing from publish on, as a broken
-// environment would, so the Execution stops at publish with every input it reads saved. `fixed()` mends the suite.
-async function stoppedAtPublish(t: TestContext, onRun: () => void) {
-  const fixture = runFixture.fixture(t);
-  const suite = addSuite.addSuite({ worktree: fixture.worktree, checksSum: true, onRun });
-  const environment = { runs: 0, broken: true };
-  fixture.options.deps.exec = {
-    ...suite,
-    runShell: async (command: string, options?: { cwd?: string }) => {
-      environment.runs += 1;
-      if (environment.broken && environment.runs > 2)
-        return { code: 1, output: 'the suite could not start', timedOut: false, cleanup: addSuite.CONFIRMED };
-      return suite.runShell(command, options);
-    },
-  } as typeof suite;
-  const [first] = await run.runTarget(fixture.options);
-  assert.ok(STOPPED.includes(loaded(fixture).state), `the first Run stops at publish (${first?.outcome})`);
-  return { fixture, fixed: () => (environment.broken = false) };
-}
-
 test('gg work resume --at publish runs the suite and reaches ready-for-qa', async (t) => {
   let suiteRuns = 0;
-  const { fixture, fixed } = await stoppedAtPublish(t, () => (suiteRuns += 1));
+  const { fixture, fixed } = await stoppedTicket.stoppedAtPublish(t, () => (suiteRuns += 1));
   fixed();
   // The person's fix, committed and pushed on the branch: the resume takes it as the baseline (Q2 A).
   writeFileSync(join(fixture.worktree, 'NOTES.md'), 'The suite needed a mended environment.\n');
@@ -355,7 +305,7 @@ test('gg work resume --at publish runs the suite and reaches ready-for-qa', asyn
 });
 
 test('gg work resume refuses a Vertex the pinned Flow lacks', async (t) => {
-  const fixture = await faulted(t);
+  const fixture = await stoppedTicket.faulted(t);
   const before = loaded(fixture);
   const [result] = await run.runTarget({ ...fixture.options, resume: { vertex: 'deploy' } });
   assert.equal(result?.outcome, 'fault');
@@ -366,7 +316,7 @@ test('gg work resume refuses a Vertex the pinned Flow lacks', async (t) => {
 
 test('gg work resume refuses a Vertex whose required inputs were never produced, naming them', async (t) => {
   // red has no scripted response, so the Execution stops at its first Visit with no output saved.
-  const fixture = await faulted(t, {
+  const fixture = await stoppedTicket.faulted(t, {
     responses: { [keys.responseKey({ vertex: 'red', visit: 1, action: 'red' })]: undefined },
   });
   const before = loaded(fixture);
@@ -381,7 +331,7 @@ test('gg work resume refuses a Vertex whose required inputs were never produced,
 
 test('resume keeps the Visit and Action Cap counts', async (t) => {
   const green2 = goldenRun.greenWrites({ 'lib/add.mjs': goldenRun.RIGHT_ADD });
-  const fixture = await faulted(t, {
+  const fixture = await stoppedTicket.faulted(t, {
     responses: { [keys.responseKey({ vertex: 'green', visit: 2, action: 'green' })]: green2 },
     // red's route to green is a bounded Edge, so the first Run counts one traversal the resume must keep.
     configure: ({ options }) => {
@@ -442,7 +392,7 @@ const openIntentMarkers = (fixture: runFixture.RunFixture) =>
 // A person's needs-human label abandons the Execution; gg work resume takes that label down, so the Run that resumes it
 // must read the issue as it is after, not the read from before the resume.
 test('gg work resume of a Ticket a person abandoned runs it, not abandons it again', async (t) => {
-  const fixture = await faulted(t, {
+  const fixture = await stoppedTicket.faulted(t, {
     responses: { [keys.responseKey({ vertex: 'green', visit: 2, action: 'green' })]: green2 },
   });
   const executionRecord = loaded(fixture);
@@ -461,7 +411,7 @@ test('gg work resume of a Ticket a person abandoned runs it, not abandons it aga
 
 // A Vertex's Visit Bound holds on a resume as it does on a route (L12: the bounds still hold).
 test('gg work resume refuses a Vertex that has used its Visit Bound', async (t) => {
-  const fixture = await faulted(t, {
+  const fixture = await stoppedTicket.faulted(t, {
     responses: { [keys.responseKey({ vertex: 'green', visit: 2, action: 'green' })]: green2 },
     configure: ({ options }) => {
       const flow = options.config.repository.flows.default as golden.ConfiguredFlow;
@@ -476,10 +426,66 @@ test('gg work resume refuses a Vertex that has used its Visit Bound', async (t) 
   assert.equal(fixture.harness.calls.length, calls, 'no agent ran');
 });
 
+// The tip a person left is the baseline Reconciliation checks from (Q2 A), so it is also the commit whose tests the
+// next Attempts are held to; the first test commit, which review reads, stays where gg put it.
+test('gg work resume moves the Test Immutability baseline to the resumed tip', async (t) => {
+  const { fixture, fixed } = await stoppedTicket.stoppedAtPublish(t, () => {});
+  fixed();
+  const before = loaded(fixture).testCommits;
+  assert.ok(before.first !== null && before.baseline !== null, 'gg committed the tests and the code before the stop');
+  writeFileSync(join(fixture.worktree, 'NOTES.md'), 'The suite needed a mended environment.\n');
+  fixture.fakeGit!.commit(fixture.worktree, 'Note the fix by hand');
+  const head = await fixture.options.deps.git.headSha(fixture.worktree);
+  await fixture.options.deps.git.push(fixture.worktree, runFixture.BRANCH, head);
+  const [result] = await run.runTarget({ ...fixture.options, resume: { vertex: 'publish' } });
+  assert.equal(result?.outcome, 'ready-for-qa', String(result?.error));
+  assert.deepEqual(loaded(fixture).testCommits, { first: before.first, baseline: head });
+});
+
+// A person's test commit before `resume --at green` is part of what they hand back, not the agent's change.
+test("a person's test change before resume is not an integrity violation", async (t) => {
+  const fixture = await stoppedTicket.faulted(t, {
+    responses: { [keys.responseKey({ vertex: 'green', visit: 2, action: 'green' })]: green2 },
+  });
+  writeFileSync(join(fixture.worktree, 'test', 'extra.test.mjs'), '// a person added this test\n');
+  fixture.fakeGit!.commit(fixture.worktree, 'Fix a test by hand');
+  const [result] = await run.runTarget({ ...fixture.options, resume: { vertex: 'green' } });
+  assert.equal(result?.outcome, 'ready-for-qa', String(loaded(fixture).terminalReason?.text ?? result?.error));
+  assert.equal(loaded(fixture).state, 'ready-for-qa');
+});
+
+// The agent at the resumed green Visit is still held to the committed tests, and only its own change is the violation.
+test("an agent's test change after resume is still an integrity violation", async (t) => {
+  const fixture = await stoppedTicket.faulted(t, {
+    responses: {
+      [keys.responseKey({ vertex: 'green', visit: 2, action: 'green' })]: goldenRun.greenWrites({
+        'lib/add.mjs': goldenRun.RIGHT_ADD,
+        'test/agent.test.mjs': '// the agent added this test\n',
+      }),
+    },
+  });
+  writeFileSync(join(fixture.worktree, 'test', 'extra.test.mjs'), '// a person added this test\n');
+  fixture.fakeGit!.commit(fixture.worktree, 'Fix a test by hand');
+  const git = fixture.options.deps.git;
+  const inner =
+    fixture.options.testImmutability ??
+    ((cwd: string, baseline: string, globs: string[]) => checks.testImmutability(cwd, baseline, { globs, git }));
+  const changed: string[][] = [];
+  const testImmutability = async (cwd: string, baseline: string, globs: string[]) => {
+    const immutability = await inner(cwd, baseline, globs);
+    changed.push(immutability.changed);
+    return immutability;
+  };
+  const [result] = await run.runTarget({ ...fixture.options, resume: { vertex: 'green' }, testImmutability });
+  assert.equal(result?.outcome, 'needs-human', String(result?.error));
+  assert.deepEqual(loaded(fixture).terminalReason?.rule, { table: 'fixed', row: 'integrity-violation' });
+  assert.deepEqual(changed.at(-1), ['test/agent.test.mjs'], "the violation is the agent's test, not the person's");
+});
+
 // Each gg work done may deliver its report once more (#60), so a comment whose retries ran out is posted once GitHub
 // recovers, not refused for good.
 test('gg work done delivers a resolve comment whose retries ran out, once GitHub recovers', async (t) => {
-  const fixture = await faulted(t);
+  const fixture = await stoppedTicket.faulted(t);
   const github = { broken: true };
   for (let failure = 0; failure < 20; failure += 1)
     fixture.gh.fail({ matches: (args) => github.broken && fakeGh.isCommentPost(args), status: 502 });
@@ -494,7 +500,7 @@ test('gg work done delivers a resolve comment whose retries ran out, once GitHub
 // The close is repeatable: a rerun finishes a close whose call landed but whose evidence was never saved.
 test('gg work done finishes a close that landed before its evidence', async (t) => {
   const views: Record<string, Record<string, unknown>> = {};
-  const fixture = await faulted(t, { fixtureOptions: { issues: views } });
+  const fixture = await stoppedTicket.faulted(t, { fixtureOptions: { issues: views } });
   fixture.gh.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'close', status: 404, afterEffect: true });
   await assert.rejects(work.done(doneOptions(fixture, true)));
   assert.ok(fixture.gh.closed.has(runFixture.TICKET), 'the close landed');
@@ -508,7 +514,7 @@ test('gg work done finishes a close that landed before its evidence', async (t) 
 // The overridden intents are completed in the save that writes ticket_resumed, so a resume that fails before it keeps
 // them open, and the next resume names them.
 test('a resume that fails to take its labels down keeps the open intents for the next resume', async (t) => {
-  const fixture = await faulted(t, {
+  const fixture = await stoppedTicket.faulted(t, {
     responses: { [keys.responseKey({ vertex: 'green', visit: 2, action: 'green' })]: green2 },
   });
   const open = openIntentMarkers(fixture);
@@ -550,7 +556,7 @@ const UNLANDED: Record<string, string> = {
 // Each Effect a stopped Execution landed but whose evidence was never saved is found again by resume, from GitHub and
 // git as the stop left them, before the resume changes either.
 test('resume finds every landed Effect whose evidence was never saved, and overrides none of them', async (t) => {
-  const probe = loaded(await faulted(t));
+  const probe = loaded(await stoppedTicket.faulted(t));
   const landed = [
     ...new Set(
       probe.writeAheadLog
@@ -567,7 +573,7 @@ test('resume finds every landed Effect whose evidence was never saved, and overr
     'every Effect is landed by the test or named with why it is not',
   );
   for (const effect of landed) {
-    const fixture = await faulted(t);
+    const fixture = await stoppedTicket.faulted(t);
     const executionRecord = loaded(fixture);
     const { actionMarker } = executionRecord.writeAheadLog.findLast(
       (entry) => entry.step === 'intent' && entry.effect === effect,
@@ -586,8 +592,8 @@ test('resume finds every landed Effect whose evidence was never saved, and overr
 });
 
 // A Ticket a person abandoned with a needs-human label: an active record with no label intent of gg's own, run once.
-async function abandonedByPerson(t: TestContext, options: Faulting = {}) {
-  const fixture = await faulted(t, options);
+async function abandonedByPerson(t: TestContext, options: stoppedTicket.Faulting = {}) {
+  const fixture = await stoppedTicket.faulted(t, options);
   const executionRecord = loaded(fixture);
   executionRecord.writeAheadLog = executionRecord.writeAheadLog.filter((entry) => entry.effect !== 'label');
   Object.assign(executionRecord, { state: 'active', terminalReason: null, terminalStop: null });
@@ -614,7 +620,7 @@ const ORIGINS: Record<string, (t: TestContext) => Promise<Resolvable>> = {
     ['needs-human', 'needs-replan', 'held', 'fault'].map((state) => [
       state,
       async (t: TestContext) => {
-        const fixture = await faulted(t);
+        const fixture = await stoppedTicket.faulted(t);
         landedIn(fixture, state);
         return { ...fixture, deps: fixture.options.deps, run: () => run.runTarget(fixture.options) };
       },
@@ -653,7 +659,7 @@ const resolving = (source: Resolvable): work.DoneOptions => ({
 // that failed until a done gave up is delivered by the next done once GitHub recovers.
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
 test('gg work done delivers each resolve Action of every origin once GitHub recovers, a Run between changing nothing', async (t) => {
-  const active = await faulted(t);
+  const active = await stoppedTicket.faulted(t);
   landedIn(active, 'active');
   const refusal = await work.done(doneOptions(active, true)).then(
     () => '',
@@ -716,7 +722,7 @@ for (const labelled of [false, true])
 
 // A comment that GitHub posted while the call reported a failure is found by the next gg work done, not posted again.
 test('gg work done does not post a resolve comment twice when the first landed before its call failed', async (t) => {
-  const fixture = await faulted(t);
+  const fixture = await stoppedTicket.faulted(t);
   fixture.gh.fail({ matches: (args) => fakeGh.isCommentPost(args), status: 422, afterEffect: true });
   await assert.rejects(work.done(doneOptions(fixture, true)));
   await work.done(doneOptions(fixture, true));
@@ -726,7 +732,7 @@ test('gg work done does not post a resolve comment twice when the first landed b
 
 // A done that landed is not a decided report: later Runs leave it alone, labelled or not.
 test('a Run leaves a Ticket gg work done resolved alone, even under a needs-human label', async (t) => {
-  const fixture = await faulted(t);
+  const fixture = await stoppedTicket.faulted(t);
   await work.done(doneOptions(fixture, true));
   fixture.gh.humanAddsLabel('gg:state:needs-human', 'the-owner');
   const posted = fixture.gh.comments.length;
@@ -757,7 +763,7 @@ test('a Run that cannot read GitHub over an unfinished gg work done keeps the Ti
 
 // The person chose to override an interrupted agent Attempt, so resume says what to check first (Q1 A, ADR 0011).
 test('gg work resume of an interrupted agent Attempt prints the advice to check its files first', async (t) => {
-  const fixture = await faulted(t, {
+  const fixture = await stoppedTicket.faulted(t, {
     responses: { [keys.responseKey({ vertex: 'green', visit: 2, action: 'green' })]: green2 },
   });
   assert.equal(openIntentMarkers(fixture).length, 1, 'an interrupted agent call');
@@ -768,7 +774,7 @@ test('gg work resume of an interrupted agent Attempt prints the advice to check 
 // A merged PR whose issue GitHub already closed needs no close: done records its end and closes nothing.
 test('gg work done closes nothing when the issue is already closed', async (t) => {
   const views: Record<string, Record<string, unknown>> = {};
-  const fixture = await faulted(t, { fixtureOptions: { issues: views } });
+  const fixture = await stoppedTicket.faulted(t, { fixtureOptions: { issues: views } });
   prIn(fixture, 'MERGED');
   views[String(runFixture.TICKET)] = { state: 'CLOSED' };
   const text = await work.done(doneOptions(fixture));
