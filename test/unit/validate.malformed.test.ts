@@ -545,6 +545,7 @@ for (const [what, mutate, errors] of MALFORMED) {
 }
 
 // The holds read only a key's own check, so a Procedure key read as absent when null would hold nothing (#436, D5).
+// Each key counts only at the path its own check reports at: `actions` at the Procedure, every other key at itself.
 test('every Procedure key that is null is reported by its own check too', () => {
   const unreported = validate.PROCEDURE_KEYS.filter((key) => {
     const config = exampleLayer.config();
@@ -554,7 +555,7 @@ test('every Procedure key that is null is reported by its own check too', () => 
       .errors.some(
         (problem) =>
           problem.code !== 'null-value' &&
-          (problem.at === 'procedures.review' || problem.at.startsWith(`procedures.review.${key}`)),
+          (key === 'actions' ? problem.at === 'procedures.review' : problem.at.startsWith(`procedures.review.${key}`)),
       );
   });
   assert.deepEqual(unreported, []);
