@@ -125,13 +125,19 @@ export function checkVertexRoutes(problems: report.Report, location: string, ver
 }
 
 // Each route key outside the Outcomes a Vertex can produce, which the router reads, so a route gg would never take is
-// refused at its key; "*" is the catch-all (#436). A Flow's default keys are held to every Vertex's Outcomes. Held, as
-// the graph checks are, while any error stands, since a refused declaration leaves those Outcomes short (H6).
+// refused at its key; "*" is the catch-all (#436). A Flow's default keys are held to every Vertex's Outcomes. Only a
+// Vertex whose Outcome list is whole is checked, and the defaults when every Vertex's is, since a refused declaration
+// leaves those Outcomes short; an error elsewhere holds nothing here (#436, D3 C).
 export function checkRouteKeys(
   problems: report.Report,
-  flow: { location: string; ticket: Value; resolved: Map<string, model.DeclaredVertexJson>; clean: boolean },
+  flow: {
+    location: string;
+    ticket: Value;
+    resolved: Map<string, model.DeclaredVertexJson>;
+    whole: Set<string>;
+    defaultsWhole: boolean;
+  },
 ) {
-  if (!flow.clean) return;
   const refuse = (location: string, routes: unknown, outcomes: string[], what: string) => {
     for (const [outcome] of report.entries(routes))
       if (outcome !== '*' && !outcomes.includes(outcome))
@@ -144,7 +150,8 @@ export function checkRouteKeys(
         );
   };
   for (const [id, vertex] of flow.resolved)
-    refuse(`${flow.location}.ticket.vertices.${id}.route`, vertex.route, vertex.outcomes, `Vertex ${id}`);
+    if (flow.whole.has(id))
+      refuse(`${flow.location}.ticket.vertices.${id}.route`, vertex.route, vertex.outcomes, `Vertex ${id}`);
   const union = report.unique([...flow.resolved.values()].flatMap((vertex) => vertex.outcomes));
-  refuse(`${flow.location}.ticket.routes`, flow.ticket.routes, union, 'a Vertex of the Flow');
+  if (flow.defaultsWhole) refuse(`${flow.location}.ticket.routes`, flow.ticket.routes, union, 'a Vertex of the Flow');
 }

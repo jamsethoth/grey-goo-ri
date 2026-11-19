@@ -38,7 +38,8 @@ export interface FlowContext {
   procedures: Map<string, checked.CheckedProcedure | undefined>;
   procedureFalls: Map<string, FallThroughs>;
   failedAgents: Set<unknown>;
-  // The Procedures whose checks raised an error, which hold each Flow a Vertex of names one.
+  // The Procedures whose own checks raised an error, which hold each Flow a Vertex of names one and leave the Outcomes
+  // of each Vertex naming one unknown.
   failedProcedures: Set<unknown>;
   agents: Map<string, agentChecks.CheckedAgent>;
   harnesses: unknown;
@@ -75,6 +76,8 @@ interface FlowState {
   personas: string[];
   vertexProcedures: Map<string, checked.CheckedProcedure | undefined>;
   fallsOf: Map<string, FallThroughs>;
+  // The Vertices whose Outcome lists are whole, which the route-key and unrouted-Outcome checks read (#436, D3 C).
+  whole: Set<string>;
   held: boolean;
 }
 
@@ -185,9 +188,20 @@ function accessConflict(problems: report.Report, location: string, procedure: { 
 const holdsFlow = (checking: FlowContext, vertex: Value) =>
   checking.failedAgents.has(vertex.use) || checking.failedProcedures.has(vertex.procedure);
 
+// A Vertex's Outcome list is whole when its Procedure's checks and its own, in the Procedure's scope too, raised no
+// error since `before`; an error at a route target changes no Outcome (#436, D3 C).
+function markWhole(checking: FlowContext, state: FlowState, vertex: { id: string; location: string }, before: number) {
+  const procedure = state.vertexProcedures.get(vertex.id);
+  if (!procedure || checking.failedProcedures.has(procedure.name)) return;
+  const atRoute = `${vertex.location}.route.`;
+  if (checking.report.errors.slice(before).every((problem) => problem.at.startsWith(atRoute)))
+    state.whole.add(vertex.id);
+}
+
 function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex: unknown) {
   const problems = checking.report;
   const location = `${state.location}.ticket.vertices.${id}`;
+  const before = problems.errors.length;
   report.checkName(problems, location, id, { what: 'Vertex id', carried: true });
   if (RESERVED_VERTICES.includes(id))
     report.error(
@@ -222,6 +236,7 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
   state.typed.set(id, { use, agent: agent.typed, procedure: procedureName, access, ...bound });
   state.vertexProcedures.set(id, procedure);
   state.fallsOf.set(id, falls);
+  markWhole(checking, state, { id, location }, before);
 }
 
 // Checks one declared Flow and gives it declared, resolved when it can be, and what it uses; or reports that it is
@@ -247,13 +262,19 @@ export function checkFlow(checking: FlowContext, name: string, declaration: unkn
     personas: [],
     vertexProcedures: new Map(),
     fallsOf: new Map(),
+    whole: new Set(),
     held: false,
   };
   for (const [id, vertex] of Object.entries(vertices)) checkVertex(checking, state, id, vertex);
   const clean = checking.sharedErrors === 0 && problems.errors.length === start && !state.held;
-  const { resolved, vertexProcedures, fallsOf } = state;
-  routes.checkRouteKeys(problems, { location, ticket, resolved, clean });
-  graph.checkGraph(problems, { location, ticket, resolved, vertexProcedures, fallsOf, clean });
+  const { resolved, vertexProcedures, fallsOf, whole } = state;
+  // The Flow's routes are sound when neither they nor its Vertices are malformed as a whole.
+  const atTicket = [`${location}.ticket.vertices`, `${location}.ticket.routes`];
+  const routesSound = !problems.errors.slice(start).some((problem) => atTicket.includes(problem.at));
+  const defaultsWhole = routesSound && Object.keys(vertices).every((id) => whole.has(id));
+  routes.checkRouteKeys(problems, { location, ticket, resolved, whole, defaultsWhole });
+  const holds = { clean, whole, routesSound };
+  graph.checkGraph(problems, { location, ticket, resolved, vertexProcedures, fallsOf, ...holds });
   const { used, personas } = state;
   const declaredProcedures = checking.config.procedures;
   return declaredFlows.checkedFlow(name, declaration, {

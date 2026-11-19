@@ -493,6 +493,8 @@ test('a Flow with a plan key, or without a positive actionCap, is an error', () 
     { at: 'flows.light.plan', code: 'null-value' },
     { at: 'flows.default.actionCap', code: 'not-a-positive-integer' },
     { at: 'flows.light', code: 'unknown-key' },
+    // baseline routes none of its Outcomes, reported beside the other errors (#436, D3 C).
+    { at: 'flows.light.ticket.vertices.baseline', code: 'unrouted-outcome' },
   ]);
 });
 

@@ -87,6 +87,18 @@ test('a declared Decision that no route takes is an unrouted Outcome', () => {
   );
 });
 
+// Both halves of a renamed Decision wait only on their own Vertex, so they show beside an unrelated error (#436, D3 C).
+test('a renamed Decision reports its dead key and its unrouted new name beside an unrelated error', () => {
+  const config = askingConfig({ id: 'ask', do: 'await-approval', decisions: ['approved', 'deferred'] });
+  delete config.flows.default.ticket.routes['*'];
+  config.flows.default.actionCap = -1;
+  const { errors } = exampleLayer.check(config);
+  const fired = (at: string, code: string) => errors.some((problem) => problem.at === at && problem.code === code);
+  assert.ok(fired('flows.default.actionCap', 'not-a-positive-integer'), JSON.stringify(errors));
+  assert.ok(fired(`${VERTICES}.approve.route.rejected`, 'unknown-outcome'), JSON.stringify(errors));
+  assert.ok(fired(`${VERTICES}.approve`, 'unrouted-outcome'), JSON.stringify(errors));
+});
+
 test('a failing Check before an await-approval gives failed beside the Decisions', () => {
   const config = askingConfig();
   config.procedures.approval!.actions.unshift({ id: 'gate', do: 'check', kind: 'command', command: 'test' });

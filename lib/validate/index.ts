@@ -73,12 +73,14 @@ function checkProcedures(problems: report.Report, config: Value, { readSchema, c
   const procedureFalls = new Map<string, Partial<Record<procedures.TableName, string[]>>>();
   for (const procedure of checkedProcedures.values()) {
     if (!procedure) continue;
+    const before = problems.errors.length;
     const falls = references.checkReferences(problems, procedure, {
       inputs: referencePaths.ANY,
       optional: () => false,
       vertex: null,
     });
     procedureFalls.set(procedure.name, falls);
+    if (problems.errors.length > before) failedProcedures.add(procedure.name);
   }
   const sharedErrors = problems.errors.filter((problem) => !(misfits === true && isMissingCommand(problem))).length;
   return { procedures: checkedProcedures, procedureFalls, failedProcedures, sharedErrors };

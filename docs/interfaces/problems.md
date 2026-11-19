@@ -227,6 +227,20 @@ The rule each code names:
 | `invalid-glob` | a `testPaths` glob is one gg's readers do not read alike |
 | `unknown-flow` | an Execution Record a Run would resume names a Flow that is gone |
 
+## What one run cannot report
+
+`gg doctor` reports every failure it can in one run. These wait until another error is fixed, since the value they read
+is unknown until then:
+
+1. A Vertex's `unknown-outcome` and `unrouted-outcome`, while its Procedure has an error (in the user's directory, a
+   command the repository does not declare among them), or the Vertex itself has one apart from its route targets: its
+   Outcomes may be short.
+2. `unknown-outcome` at the Flow's default `routes`, while any Vertex waits as in 1, or the Flow's `vertices` or
+   `routes` is malformed: the union of its Vertices' Outcomes is unknown.
+3. Every other check over a Flow's route map (`write-without-commit`, `commit-without-check`, `unbounded-cycle`,
+   `exhausted-loop`, `pr-ready-skippable`, `required-input-unsure`, `optional-input-unsure` and `unreachable-vertex`),
+   while the Flow, or a section every Flow reads, has any error (H6). #449 narrows this.
+
 ## Their params
 
 `ProblemParams`: each code's `params`, as its sentence names them. A code not listed names none. One line per path, as

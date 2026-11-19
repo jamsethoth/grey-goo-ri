@@ -2,7 +2,7 @@
 // and inputs over the route map (R11e, Q7, H1-H5); unreachable Vertices are warned.
 // The graph reads Procedures, routes and inputs as declared, so its checks wait until the Flow is clean: no error
 // outside every Flow, and none in this one. Flows share no graph, so another Flow's errors do not hold them. `routing`
-// is filled in either way, for gg doctor (H6).
+// is filled in either way, for gg doctor (H6). An unrouted Outcome waits only on its own Vertex (#436, D3 C).
 
 import * as flow from '../flow.ts';
 import * as labels from '../labels.ts';
@@ -24,6 +24,10 @@ export interface Graph {
   vertexProcedures: Map<string, checked.CheckedProcedure | undefined>;
   fallsOf: Map<string, FallThroughs>;
   clean: boolean;
+  // The Vertices whose Outcome lists are whole, and whether the Flow's routes are sound: an unrouted Outcome of such a
+  // Vertex is reported while other errors stand (#436, D3 C).
+  whole: Set<string>;
+  routesSound: boolean;
 }
 // Where a route lands: a Vertex or an end, and whether only an exhausted Bound leads there.
 interface Landing {
@@ -172,11 +176,12 @@ function routeEdges(problems: report.Report, graph: Graph) {
     for (const name of vertex.outcomes) {
       const route = flow.route(vertex.route, ticket.routes, name);
       if (!route) {
-        fail(id, {
-          code: 'unrouted-outcome',
-          message: `Outcome ${name} is not routed by the Vertex or the Flow's routes`,
-          params: { outcome: name },
-        });
+        if (graph.clean || (graph.routesSound && graph.whole.has(id)))
+          report.errorOf(problems, `${graph.location}.ticket.vertices.${id}`, {
+            code: 'unrouted-outcome',
+            message: `Outcome ${name} is not routed by the Vertex or the Flow's routes`,
+            params: { outcome: name },
+          });
         continue;
       }
       const landings = landingsOf(resolved, route.target);

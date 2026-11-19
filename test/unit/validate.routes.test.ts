@@ -576,3 +576,29 @@ test('the route keys of a Vertex with an undeclared Procedure are not reported',
     { at: `${VERTICES}.publish`, code: 'undeclared-procedure' },
   ]);
 });
+
+// A Vertex's route keys wait only on its own Outcome list, so an error elsewhere shows beside them (#436, D3 C).
+test('an unrelated error does not hold a misspelt route key', () => {
+  const config = exampleLayer.config();
+  config.flows.default.actionCap = -1;
+  config.flows.default.ticket.vertices.green.route.pased = 'reviewer';
+  config.flows.default.ticket.routes.misscope = { end: 'needs-replan' };
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'flows.default.actionCap', code: 'not-a-positive-integer' },
+    { at: `${VERTICES}.green.route.pased`, code: 'unknown-outcome' },
+    { at: 'flows.default.ticket.routes.misscope', code: 'unknown-outcome' },
+  ]);
+});
+
+// reviewer's Outcomes, and so the union the Flow's default keys are held to, are unknown while review has an error.
+test('a Vertex whose Procedure has an error holds only its own route keys, and the Flow defaults', () => {
+  const config = exampleLayer.config();
+  config.procedures.review.passed = 7;
+  config.flows.default.ticket.vertices.green.route.pased = 'reviewer';
+  config.flows.default.ticket.vertices.reviewer.route.chanegs = 'publish';
+  config.flows.default.ticket.routes.misscope = { end: 'needs-replan' };
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'procedures.review.passed', code: 'not-a-list' },
+    { at: `${VERTICES}.green.route.pased`, code: 'unknown-outcome' },
+  ]);
+});
