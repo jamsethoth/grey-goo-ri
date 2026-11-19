@@ -14,7 +14,7 @@ import * as keys from './keys.ts';
 type Usage = events.Usage;
 
 // The frozen version of the fake harness's scripting keys (docs/interfaces/harness.md); a change needs a new ADR (#23).
-export const FAKE_HARNESS_VERSION = 2;
+export const FAKE_HARNESS_VERSION = 3;
 
 const DEFAULT_CAPABILITIES = {
   skills: 'exact',
@@ -199,6 +199,15 @@ const recordedCall = (call: HarnessCall) => ({
   runDirectory: call.runDirectory,
 });
 
+// A hung call's end: cancel() or the call's signal, whichever comes first.
+function cancellation(hung: (() => void)[], signal: AbortSignal | undefined) {
+  return new Promise<void>((resolve) => {
+    hung.push(resolve);
+    if (signal?.aborted) resolve();
+    signal?.addEventListener('abort', () => resolve(), { once: true });
+  });
+}
+
 export function fakeHarness({
   name = 'fake',
   capabilities,
@@ -223,13 +232,7 @@ export function fakeHarness({
     // Its started report names the containment its cleanup reports, as gg's command runner does: a job or none.
     hooks?.started({ kind: (script.cleanup ?? CONFIRMED).containment.kind === 'job' ? 'job' : 'none' });
     // Register before the first await so a cancel() or an abort during setup is not lost.
-    const cancelled = script.hang
-      ? new Promise<void>((resolve) => {
-          hung.push(resolve);
-          if (hooks?.signal.aborted) resolve();
-          hooks?.signal.addEventListener('abort', () => resolve(), { once: true });
-        })
-      : null;
+    const cancelled = script.hang ? cancellation(hung, hooks?.signal) : null;
     await writeFiles(call.cwd, script.files ?? {});
     const session = await sessions.open(call.resume);
     const delta = deltaOf(script, contract.emptyUsage(fullCapabilities));
@@ -246,6 +249,7 @@ export function fakeHarness({
     name,
     capabilities: fullCapabilities,
     protectedPaths,
+    launchProfile: null as runContext.LaunchProfile | null,
     validate,
     resolveTools,
     run: run as (call: Record<string, unknown>, hooks?: runContext.HarnessHooks) => ReturnType<typeof run>,

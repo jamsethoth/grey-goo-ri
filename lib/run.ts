@@ -127,7 +127,12 @@ export interface PinnedFlow extends config.Pinned {
 
 // The Flow at `name` pinned with the files it uses from its own source and the repository contract. The source stays
 // out of the hash, and so does the prefix that names it, so a Flow hashes alike from either source (Q25).
-function pin(name: string, declared: configurationCheck.DeclaredFlow, settings: config.Settings): PinnedFlow {
+function pin(
+  name: string,
+  declared: configurationCheck.DeclaredFlow,
+  settings: config.Settings,
+  harnesses: Record<string, unknown>,
+): PinnedFlow {
   const { resolved, uses } = declared;
   // gg run pins only when no error is left but a misfit command, whose Flow it does not pin (Q21), and a Flow whose
   // checks refused no value it copies resolves (lib/validate/).
@@ -136,15 +141,8 @@ function pin(name: string, declared: configurationCheck.DeclaredFlow, settings: 
   const files = Object.fromEntries(
     uses.files.filter((file) => Object.hasOwn(declared.files, file)).map((file) => [file, declared.files[file]!]),
   );
-  const configuration: config.PinnedConfiguration = {
-    flow: { ...resolved, name: declared.declaredName },
-    files,
-    harnesses: {},
-    launchProfile: null,
-    commands: settings.commands,
-    testPaths: settings.testPaths,
-    approvers: settings.approvers,
-  };
+  const named = { ...resolved, name: declared.declaredName };
+  const configuration = config.pinnedConfiguration({ flow: named, files, settings, harnesses });
   const flow = model.fromJson(resolved);
   return { configuration, flow, hash: config.configHash(configuration), source: declared.source };
 }
@@ -204,7 +202,7 @@ export async function admitConfiguration({
     throw preflightFailed(lines, unset ? 2 : 1);
   }
   const admitted = [...checked.flows].filter(([name]) => !checked.misfits.has(name));
-  const flows = new Map(admitted.map(([name, flow]) => [name, pin(name, flow, settings)]));
+  const flows = new Map(admitted.map(([name, flow]) => [name, pin(name, flow, settings, harnesses)]));
   return { flows, selected: flows.get(flowName)!, warnings: checked.warnings, settings };
 }
 
