@@ -181,7 +181,7 @@ test('gg run fails preflight naming the unimplemented harness', (t) => {
   writeExampleLayer(join(repo, '.agents', 'gg'));
   const result = ggIn('run', '1');
   assert.equal(result.status, 1, result.stderr);
-  assert.match(result.stderr, /harness claude: not implemented/);
+  assert.match(result.stderr, /harness codex: not implemented/);
   assert.equal(existsSync(join(repo, '.git', 'gg')), false, 'no gg directory under .git');
 });
 
@@ -237,24 +237,28 @@ test('gg run accepts --flow with a value', (t) => {
   assertUsage(missing.stderr);
 });
 
-// gg doctor runs gg run's Harness preflight (#362), and the shipped Harnesses are stubs until slices 2 and 3: the
-// example's only errors are each claude Vertex's preflight, and doctor exits 1.
+// gg doctor runs gg run's Harness preflight (#362), and the Codex Harness is a stub until slice 3: the example's only
+// errors are each codex Vertex's preflight, and doctor exits 1.
 function assertOnlyStubPreflight(stdout: string, status: number | null) {
   const errors = stdout.split('\n').filter((line) => line.startsWith('error: '));
   assert.ok(errors.length, stdout);
   for (const line of errors)
     assert.match(
       line,
-      /^error: flows\.default\.ticket\.vertices\.[\w-]+: vertex [\w-]+: harness claude: not implemented /,
+      /^error: flows\.default\.ticket\.vertices\.[\w-]+: vertex [\w-]+: harness codex: not implemented /,
     );
   for (const line of errors) assert.ok(line.endsWith(' [harness-preflight-failed]'), line);
   assert.equal(status, 1, stdout);
 }
 
-// The example fixture as the repository's configuration in `directory`: its gg.json and every file it names.
+// The example fixture as the repository's configuration in `directory`: its gg.json and every file it names, each
+// Agent on the Codex Harness, a stub, so no case's gg run can start a real CLI now that Claude passes preflight (#425).
 function writeExampleLayer(directory: string) {
   mkdirSync(directory, { recursive: true });
   for (const name of exampleLayer.WRITTEN_NAMES) writeFileSync(join(directory, name), exampleLayer.fixtureText(name));
+  const example = JSON.parse(exampleLayer.fixtureText('gg.json')) as { agents: Record<string, { harness: string }> };
+  for (const agent of Object.values(example.agents)) agent.harness = 'codex';
+  writeFileSync(join(directory, 'gg.json'), JSON.stringify(example, null, 2));
 }
 
 // --repo <path> names the repository in place of the current directory, for each command that acts on one (#321). Run
@@ -285,7 +289,7 @@ const REPO_COMMANDS: [
     ['run', '1'],
     (result) => {
       assert.equal(result.status, 1, String(result.stderr));
-      assert.match(String(result.stderr), /harness claude: not implemented/);
+      assert.match(String(result.stderr), /harness codex: not implemented/);
     },
   ],
 ];
@@ -351,9 +355,9 @@ test('gg init creates the State Database in the git common dir, and a second gg 
 // The first thing a person runs: gg init writes both sources, and gg doctor then needs only the test command, until the
 // shipped Harnesses pass preflight.
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
-test("gg init --harness claude then gg doctor reports only the stub Harness's preflight, in a temp repository with a temp GG_HOME", (t) => {
+test("gg init --harness codex then gg doctor reports only the stub Harness's preflight, in a temp repository with a temp GG_HOME", (t) => {
   const { repo, userDirectory, ggIn } = tempRepo(t);
-  const init = ggIn('init', '--harness', 'claude');
+  const init = ggIn('init', '--harness', 'codex');
   assert.equal(init.status, 0, init.stderr);
   assert.ok(existsSync(join(userDirectory, 'gg.json')), "gg init creates the user's gg.json in GG_HOME");
   const file = join(repo, '.agents', 'gg', 'gg.json');
@@ -372,7 +376,7 @@ test("gg doctor reads the repository's configuration and its schemas and prints 
   stateDatabase.create(join(repo, '.git'));
   const result = ggIn('doctor');
   assert.ok(
-    result.stdout.includes('\nvertex reviewer\n  procedure: review\n  agent: reviewer (harness claude)\n'),
+    result.stdout.includes('\nvertex reviewer\n  procedure: review\n  agent: reviewer (harness codex)\n'),
     result.stdout + result.stderr,
   );
   assert.ok(result.stdout.includes('\n  routes: misscoped -> end needs-replan, * -> end needs-human\n'), result.stdout);

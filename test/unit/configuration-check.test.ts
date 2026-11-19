@@ -104,10 +104,25 @@ test('preflight names a Harness that fails in a Flow --flow does not name', asyn
   repository.agents.other = { ...repository.agents.implementer, harness: 'claude' };
   (other.ticket.vertices.red as { use: string }).use = 'other';
   repository.flows.other = other;
-  const claude = await import('../../lib/harnesses/claude.ts');
+  const claude = fakeHarness.fakeHarness({
+    resolveTools: () => {
+      throw new Error('plugin gone is not installed');
+    },
+  });
   assert.deepEqual(errorLines(await checkOf(sources(repository), { harnesses: { claude } })), [
-    'error: flows.other.ticket.vertices.red: vertex red: harness claude: not implemented [harness-preflight-failed]',
+    'error: flows.other.ticket.vertices.red: vertex red: harness claude: plugin gone is not installed ' +
+      '[harness-preflight-failed]',
   ]);
+});
+
+// The preflight stop for Claude is gone (#425, G7): the Claude Harness shipped builds passes preflight, before any
+// spawn.
+test('preflight admits the Claude Harness shipped builds', async () => {
+  const repository = repositorySource();
+  Object.assign(repository.agents.implementer!, { harness: 'claude' });
+  const shipped = await import('../../lib/harnesses/shipped.ts');
+  const { claude } = shipped.shipped({ launch: () => Promise.reject(new Error('preflight starts no CLI')) });
+  assert.deepEqual(errorLines(await checkOf(sources(repository), { harnesses: { claude } })), []);
 });
 
 // The agent Action copies what resolveTools returns at once, so preflight refuses an answer it could not copy (#411).

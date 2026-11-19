@@ -1,7 +1,7 @@
 // The Claude Harness over the fake claude CLI (child-scripts/fake-claude.ts): gg's real launch, with the command it
 // starts replaced by node running the fake, which replays one recorded call. It spawns, so only medium tests call it.
 import type { TestContext } from 'node:test';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as exec from '../../lib/exec.ts';
@@ -32,8 +32,11 @@ export function claudeOverFakeCli(t: TestContext, { scenario, mode = 'replay', c
   ];
   for (const made of [configDirectory, cwd, runDirectory]) mkdirSync(made);
   const receivedFile = join(directory, 'received.json');
-  const overFake = (options: exec.LaunchOptions) =>
-    launch({
+  // What the Harness asked launch for, each call's options as it passed them.
+  const launches: exec.LaunchOptions[] = [];
+  const overFake = (options: exec.LaunchOptions) => {
+    launches.push(options);
+    return launch({
       ...options,
       command,
       args: [FAKE_CLAUDE, ...options.args],
@@ -45,13 +48,17 @@ export function claudeOverFakeCli(t: TestContext, { scenario, mode = 'replay', c
         FAKE_CLAUDE_RECEIVED: receivedFile,
       },
     });
+  };
   const harness = {
     ...claude.createClaude({ configDirectory }),
     ...claude.createCli({ launch: overFake }, { configDirectory }),
   };
-  // What the fake read: its argv after the executable, and its stdin.
-  const received = () => JSON.parse(readFileSync(receivedFile, 'utf8')) as { argv: string[]; stdin: string };
-  return { harness, configDirectory, cwd, runDirectory, received };
+  // What the fake read: its argv after the executable, and its stdin; nothing when it never ran.
+  const received = (): { argv: string[]; stdin: string | null } =>
+    existsSync(receivedFile)
+      ? (JSON.parse(readFileSync(receivedFile, 'utf8')) as { argv: string[]; stdin: string })
+      : { argv: [], stdin: null };
+  return { harness, configDirectory, cwd, runDirectory, received, launches };
 }
 
 export type ClaudeOverFakeCli = ReturnType<typeof claudeOverFakeCli>;

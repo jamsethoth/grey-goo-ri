@@ -181,6 +181,40 @@ test('launch stops a process past wallMs and says wall', UNSANDBOXED_CASE, async
   assert.deepEqual(stopOf(result, pidFile), { timedOut: 'wall', cancelled: false, alive: false, confirmed: true });
 });
 
+// setTimeout fires after 1 ms past 2147483647 ms (24.8 days), so the launch clock caps both limits there (#429 D3 A).
+const PAST_TIMER_CAP = 2_147_483_648;
+const SHORT_RUN = ['-e', "setTimeout(() => console.log('done'), 500)"];
+
+test('a wallMs past the timer cap does not stop the process at once', CASE, async () => {
+  const lines: string[] = [];
+  const result = await launch({
+    command: process.execPath,
+    args: SHORT_RUN,
+    wallMs: PAST_TIMER_CAP,
+    onLine: (line) => lines.push(line),
+  });
+  assert.deepEqual(
+    { code: result.code, timedOut: result.timedOut, lines },
+    { code: 0, timedOut: null, lines: ['done'] },
+  );
+});
+
+test('a stallMs past the timer cap arms its clock with no overflow warning', CASE, async (t) => {
+  const warnings: string[] = [];
+  const onWarning = (warning: Error) => warnings.push(warning.name);
+  process.on('warning', onWarning);
+  t.after(() => process.off('warning', onWarning));
+  const result = await launch({ command: process.execPath, args: SHORT_RUN, stallMs: PAST_TIMER_CAP });
+  assert.deepEqual(
+    {
+      code: result.code,
+      timedOut: result.timedOut,
+      overflows: warnings.filter((name) => name === 'TimeoutOverflowWarning'),
+    },
+    { code: 0, timedOut: null, overflows: [] },
+  );
+});
+
 test('an aborted signal stops the process and says cancelled', UNSANDBOXED_CASE, async (t) => {
   const pidFile = join(scratch, 'cancel.pid');
   t.after(() => processProbe.endProcessIn(pidFile));

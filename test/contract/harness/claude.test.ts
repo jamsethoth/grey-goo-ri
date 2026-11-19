@@ -3,7 +3,7 @@
 // the stops, and the files a call writes.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import * as contract from '../../../lib/harnesses/contract.ts';
 import * as claudeOverFakeCli from '../../support/claude-over-fake-cli.ts';
@@ -99,10 +99,9 @@ test('the brief goes to the CLI on stdin, never in its argv', CASE, async (t) =>
 test('the persona file is written into the run directory and kept', CASE, async (t) => {
   const fake = fakeCli(t, { scenario: 'success' });
   await fake.harness.run(claudeCall(fake), hooksOf());
-  assert.equal(
-    readFileSync(join(fake.runDirectory, `persona-${'a'.repeat(64)}.md`), 'utf8'),
-    'You are the implementer.\n',
-  );
+  const persona = join(fake.runDirectory, `persona-${'a'.repeat(64)}.md`);
+  assert.ok(existsSync(persona), `the persona file: ${persona}`);
+  assert.equal(readFileSync(persona, 'utf8'), 'You are the implementer.\n');
 });
 
 test("a resumed call's delta is its cumulative less the earlier total", CASE, async (t) => {
@@ -201,6 +200,7 @@ test('a plugin error in the init event fails the call', CASE, async (t) => {
 test('permission denials are reported', CASE, async (t) => {
   const fake = fakeCli(t, { scenario: 'denial-powershell' });
   const { result } = await fake.harness.run(claudeCall(fake), hooksOf());
+  assert.ok(Array.isArray(result.permissionDenials), `denials: ${JSON.stringify(result.permissionDenials)}`);
   const denials = result.permissionDenials as {
     tool_name: string;
     tool_input: { command?: string; file_path?: string };
@@ -269,6 +269,31 @@ test('a call past wallMs is timed-out', CASE, async (t) => {
   const fake = fakeCli(t, { scenario: 'success', mode: 'hang' });
   const { result, failure } = await fake.harness.run(claudeCall(fake, { timeouts: { wallMs: 500 } }), hooksOf());
   assert.deepEqual({ status: result.status, failure }, { status: 'timed-out', failure: null });
+});
+
+// Decision 3 (G4 A): the Harness applies the defaults, keeping the configured object as passed.
+test('a call that sets no timeouts runs under the 900000 ms stall and 7200000 ms wall defaults', CASE, async (t) => {
+  const fake = fakeCli(t, { scenario: 'success' });
+  const timeouts = {};
+  await fake.harness.run(claudeCall(fake, { timeouts }), hooksOf());
+  const [options] = fake.launches;
+  assert.deepEqual(
+    { stallMs: options?.stallMs, wallMs: options?.wallMs, timeouts },
+    { stallMs: 900_000, wallMs: 7_200_000, timeouts: {} },
+  );
+});
+
+// Decision 3: a stall is the stream and the transcript both still. The stream re-arms launch's stall clock itself,
+// and the Harness's onIdle answers the transcript's last write, from which launch re-arms it (#423 Q2 A), so a tool
+// that runs silent while the transcript grows keeps the call alive.
+test("the stall clock's idle check answers the transcript's last write", CASE, async (t) => {
+  const fake = fakeCli(t, { scenario: 'success' });
+  const { result } = await fake.harness.run(claudeCall(fake), hooksOf());
+  const onIdle = fake.launches[0]?.onIdle;
+  assert.equal(typeof onIdle, 'function', 'the Harness gives launch an onIdle');
+  const written = new Date('2026-11-19T12:00:00Z');
+  utimesSync(String(result.transcriptPath), written, written);
+  assert.equal(await onIdle?.(), written.getTime());
 });
 
 test('a call whose signal aborts is killed', CASE, async (t) => {

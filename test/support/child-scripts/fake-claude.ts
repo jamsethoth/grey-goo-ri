@@ -2,8 +2,8 @@
 // on stdout, with the recording's exit code. It reads its stdin to the end first, writes what it received (argv and
 // stdin) to FAKE_CLAUDE_RECEIVED, and writes the transcript where Claude Code does: under CLAUDE_CONFIG_DIR, in
 // projects/<cwd, each non-alphanumeric character as "-">/<session id>.jsonl. FAKE_CLAUDE_MODE changes the replay:
-// `no-result` leaves out the result line, `garbage` sends a line that is not JSON after the init line, and `hang` leaves
-// out the result line and then outlives any case, so only a kill ends it.
+// `no-result` leaves out the result line, `garbage` sends a line that is not JSON after the init line, and `hang`
+// leaves out the result line and then outlives any case, so only a kill ends it.
 // The test runner also loads this file with no FAKE_CLAUDE_SCENARIO, where it does nothing.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';

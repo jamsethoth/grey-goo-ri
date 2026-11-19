@@ -22,6 +22,7 @@ const MEDIUM: [RegExp, string][] = [
   ],
   [/\b(?:committingRepo|emptyWorktree|twoWorktrees)\(/, 'calls a support helper that spawns'],
   [/\b(?:rescueFixture|rescueRefs|inRef)\(/, 'calls a support helper that spawns'],
+  [/\bclaudeOverFakeCli\(/, 'calls a support helper that spawns'],
 ];
 // This file is left out: its samples below spell every marker, and it only reads files.
 const unitFiles = readdirSync(new URL('./', import.meta.url), { recursive: true, encoding: 'utf8' })
@@ -40,6 +41,7 @@ const marked = [
   ['committingRepo.committingRepo(t)', 'calls a support helper that spawns'],
   ['worktrees.emptyWorktree(t)', 'calls a support helper that spawns'],
   ['worktrees.twoWorktrees(t)', 'calls a support helper that spawns'],
+  ["claudeOverFakeCli.claudeOverFakeCli(t, { scenario: 'success' })", 'calls a support helper that spawns'],
 ];
 for (const [text, what] of marked) {
   test(`the size check flags a unit file that ${what}: ${text}`, () => {

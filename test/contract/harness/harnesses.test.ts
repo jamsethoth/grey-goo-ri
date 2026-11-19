@@ -6,9 +6,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as exec from '../../../lib/exec.ts';
 import * as contract from '../../../lib/harnesses/contract.ts';
+import * as claudeOverFakeCli from '../../support/claude-over-fake-cli.ts';
 import type * as fakeHarnessModule from '../../support/fake-harness.ts';
 
+const CASE = { timeout: 120_000 };
 const dirs: string[] = [];
+
+// The modules in lib/harnesses/ that are no Harness: the contract, the shipped list, and the modules a Harness splits
+// along a seam inside it.
+const NOT_HARNESSES = ['contract.ts', 'shipped.ts', 'claude-stream.ts'];
 after(() => Promise.all(dirs.map((directory) => rm(directory, { recursive: true, force: true }))));
 
 const fakeHarness = async (options: Partial<fakeHarnessModule.FakeHarnessOptions> = {}) => {
@@ -77,7 +83,7 @@ for (const [field, message] of [
 test('every Harness declares the paths that configure it', async () => {
   const shipped = await import('../../../lib/harnesses/shipped.ts');
   const modules = readdirSync(new URL('../../../lib/harnesses/', import.meta.url))
-    .filter((file) => !['contract.ts', 'shipped.ts'].includes(file))
+    .filter((file) => !NOT_HARNESSES.includes(file))
     .map((file) => file.replace(/\.ts$/, ''));
   assert.deepEqual(Object.keys(shipped.HARNESSES).sort(), modules.sort(), 'every Harness module is shipped');
   assert.deepEqual(
@@ -92,21 +98,36 @@ test('every Harness declares the paths that configure it', async () => {
 });
 
 // A Harness starts its CLI only through the exec bin/gg.ts builds and passes down (ADR 0019, #423), so shipped builds
-// every Harness module from the exec it is given, each holding only the contract's members.
-test('shipped builds every Harness module from the exec it is given', async () => {
+// every Harness module from the exec it is given, each keeping every contract member it declares and holding no other.
+// The sentinel launch shows the built Claude run starts its CLI through that exec (#423 D8).
+test('shipped builds every Harness module from the exec it is given', CASE, async (t) => {
   const shipped = await import('../../../lib/harnesses/shipped.ts');
   const modules = readdirSync(new URL('../../../lib/harnesses/', import.meta.url))
-    .filter((file) => !['contract.ts', 'shipped.ts'].includes(file))
+    .filter((file) => !NOT_HARNESSES.includes(file))
     .map((file) => file.replace(/\.ts$/, ''));
-  const built = shipped.shipped(exec.createExec({ kernel32: null }));
+  const launched: string[] = [];
+  const launch = (options: exec.LaunchOptions) => {
+    launched.push(options.command);
+    return Promise.reject(new Error('the sentinel launch starts nothing'));
+  };
+  const built = shipped.shipped({ launch });
   assert.deepEqual(Object.keys(built).sort(), modules.sort(), 'every Harness module is built');
   for (const name of modules) {
     const harness = built[name] as Record<string, unknown>;
     const declared = shipped.HARNESSES[name as keyof typeof shipped.HARNESSES];
-    assert.deepEqual(harness.protectedPaths, declared.protectedPaths, `${name} keeps its declaration`);
+    for (const member of Object.keys(declared).filter((member) => contract.HARNESS_METHODS.includes(member)))
+      assert.equal(
+        harness[member],
+        (declared as Record<string, unknown>)[member],
+        `${name} keeps its declared ${member}`,
+      );
     const extra = Object.keys(harness).filter((member) => !contract.HARNESS_METHODS.includes(member));
     assert.deepEqual(extra, [], `${name} holds only contract members`);
   }
+  const fake = claudeOverFakeCli.claudeOverFakeCli(t, { scenario: 'success' });
+  const run = built.claude!.run as typeof fake.harness.run;
+  await run(claudeOverFakeCli.claudeCall(fake), claudeOverFakeCli.hooksOf());
+  assert.equal(launched.length, 1, 'the built Claude run launched through the exec shipped was given');
 });
 
 // The launch profile is a contract member (#428 Q1 A), so gg reads it from the Harness it runs, as it reads its
@@ -120,7 +141,7 @@ test('each shipped Harness keeps its launch profile, and Codex and the fake decl
       codex: built.codex!.launchProfile,
       fake: ((await fakeHarness()) as Record<string, unknown>).launchProfile,
     },
-    { claude: { name: 'claude-headless', version: 1 }, codex: null, fake: null },
+    { claude: { name: 'claude-headless', version: 2 }, codex: null, fake: null },
   );
 });
 
