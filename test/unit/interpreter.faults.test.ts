@@ -10,7 +10,7 @@ import { firstVisitWith } from '../support/first-visit.ts';
 import * as golden from '../support/golden.ts';
 import { GREEN_FAIL_OUTPUT } from '../support/add-suite.ts';
 import { actionEvent, attemptsOf, loadTicket, runStopEvent, subjects } from '../support/execution-reads.ts';
-import { WRONG_ADD, greenFixture, greenWrites, stopReason, tddTrace } from '../support/golden-run.ts';
+import { WRONG_ADD, greenFixture, greenWrites, stopReason, tddTrace, fullTrace } from '../support/golden-run.ts';
 import * as keys from '../support/keys.ts';
 import { ticketComments } from '../support/review-flow.ts';
 import * as suiteRuns from '../support/suite-runs.ts';
@@ -31,6 +31,17 @@ test('golden: an invalid structured response is retried once with a nudge then s
   const { outcome } = await interpreter.runExecution(fixture.options);
 
   assert.equal(outcome, 'needs-human');
+  assert.deepEqual(fullTrace(fixture), [
+    'red/red/r0/a1/ok',
+    'red/red-check/r0/a1/ok',
+    'red/commit/r0/a1/ok',
+    'red ok -> green',
+    'green/green/r0/a1/parse-retry',
+    'green/green/r0/a2/harness-unparsed',
+    'green harness-unparsed -> needs-human',
+    'needs-human/end-comment/r0/a1/ok',
+    'needs-human/end-label/r0/a1/ok',
+  ]);
   const green = attemptsOf(fixture, 'green', 'green');
   assert.deepEqual(
     green.map((event) => [event.attempt, event.rule.row]),

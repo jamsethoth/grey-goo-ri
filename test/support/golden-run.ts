@@ -84,6 +84,15 @@ export function stopReason(
 export const tddTrace = (fixture: Pick<GoldenFixture, 'readEvents'>) =>
   golden.trace(fixture.readEvents()).filter((event) => TDD_VERTICES.includes(event.vertex));
 
+// Every Action Event and visit_end of the Execution, a Terminal's included, an Action as
+// `vertex/action/r<recovery>/a<attempt>/<outcome>`: the exact sequence a golden case that stops asserts (#440).
+export const fullTrace = (fixture: Pick<GoldenFixture, 'readEvents'>) =>
+  golden
+    .trace(fixture.readEvents())
+    .map(
+      golden.line((event) => `${event.vertex}/${event.action}/r${event.recovery}/a${event.attempt}/${event.outcome}`),
+    );
+
 // T17's error paths: every non-advance row of the Transition Table, reached through the interpreter.
 export const WRONG_ADD = 'export const add = () => 0;\n';
 export const RIGHT_ADD = 'export const add = (a, b) => a + b;\n';

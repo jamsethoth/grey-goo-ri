@@ -2,6 +2,7 @@ import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import * as config from '../../lib/config.ts';
 import * as marker from '../../lib/marker.ts';
 import * as record from '../../lib/record.ts';
@@ -162,4 +163,22 @@ test("a user Flow's Config Hash equals the same Flow's declared in the repositor
   });
   assert.ok(flows.get('user:default'), 'the user Flow is admitted');
   assert.equal(flows.get('user:default')?.hash, flows.get('default')?.hash);
+});
+
+// Resume and stale approvals read the Pinned Configuration back by its Config Hash, so the Run must have saved it.
+test('a Run saves its Pinned Configuration under its Config Hash', async (t) => {
+  const fixture = runFixture.fixture(t);
+  const results = await run.runTarget(fixture.options);
+  assert.equal(runFixture.ticketResult(results)?.outcome, 'ready-for-qa', JSON.stringify(results));
+  const saved = JSON.parse(fixture.loadRow()!) as { configHash: string };
+  const database = new DatabaseSync(join(fixture.commonDir, 'gg', 'gg.db'), { readOnly: true });
+  const rows = database.prepare('SELECT hash, json FROM configs').all() as { hash: string; json: string }[];
+  database.close();
+  assert.deepEqual(
+    rows.map((row) => row.hash),
+    [saved.configHash],
+    "the one declared Flow's row, under the Execution's Config Hash",
+  );
+  const pinned = JSON.parse(rows[0]!.json) as config.PinnedConfiguration;
+  assert.equal(config.configHash(pinned), saved.configHash, 'the row holds the configuration that hash pins');
 });
