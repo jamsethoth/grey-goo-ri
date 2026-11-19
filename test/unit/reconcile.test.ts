@@ -195,3 +195,34 @@ test('a record at a Vertex named constructor resumes, and one the Flow lacks hol
     /The record continues at Vertex constructor, which the Flow no longer has\./,
   );
 });
+
+// The launch profile and confinement the crashed Visit's Config Hash pinned for its Agent's Harness, and this Run's.
+const PINNED_FAKE = { name: 'fake-headless', version: 1, confinement: null };
+for (const [change, now, held] of [
+  ['launch profile changed is held before any agent call', { ...PINNED_FAKE, version: 2 }, true],
+  ['confinement changed is held before any agent call', { ...PINNED_FAKE, confinement: 'trusted-commands' }, true],
+  ['launch profile and confinement are unchanged continues', PINNED_FAKE, false],
+] as const) {
+  test(`a resumed Visit whose Harness's ${change}`, async (t) => {
+    const fixture = await golden.fixture(t);
+    const { pinned } = fixture.options;
+    stateDatabase.savePinnedConfiguration(fixture.commonDir, pinned.hash, {
+      ...pinned.configuration,
+      launchProfile: { fake: PINNED_FAKE },
+    });
+    await crashResume.crashed(fixture, crashResume.EFFECTS.commit.place, 'after-completion');
+
+    const ended = await interpreter.runExecution({
+      ...fixture.options,
+      pinned: { ...pinned, configuration: { ...pinned.configuration, launchProfile: { fake: now } } },
+      record: executionReads.loadTicket(fixture),
+    });
+    assert.deepEqual([ended.outcome, ended.held === true], [held ? 'needs-human' : 'ready-for-qa', held]);
+    if (!held) return;
+    assert.equal(fixture.harness.calls.length, 2, 'no agent call after the hold');
+    assert.match(
+      executionReads.loadTicket(fixture).terminalReason!.text,
+      /entered with Harness fake's launch profile and confinement as they were then, and this Run has changed them/,
+    );
+  });
+}

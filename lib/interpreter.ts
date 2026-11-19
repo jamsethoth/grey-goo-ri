@@ -155,6 +155,7 @@ async function resume(runContext: RunContext): Promise<TerminalResult | null> {
         integrity: runContext.integrity,
         gh: runContext.gh,
         database: runContext.database,
+        launchProfile: runContext.pinned.configuration.launchProfile,
         labelPrefix: runContext.labelPrefix,
         cwd: runContext.cwd,
         find: findEffect(runContext),
