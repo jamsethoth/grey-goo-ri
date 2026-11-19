@@ -123,3 +123,28 @@ export function checkVertexRoutes(problems: report.Report, location: string, ver
     vertex.exhausted === undefined ? null : checkTarget(problems, `${location}.exhausted`, vertex.exhausted, vertices);
   return { route: notAnObject ?? route, max: max ?? null, exhausted };
 }
+
+// Each route key outside the Outcomes a Vertex can produce, which the router reads, so a route gg would never take is
+// refused at its key; "*" is the catch-all (#436). A Flow's default keys are held to every Vertex's Outcomes. Held, as
+// the graph checks are, while any error stands, since a refused declaration leaves those Outcomes short (H6).
+export function checkRouteKeys(
+  problems: report.Report,
+  flow: { location: string; ticket: Value; resolved: Map<string, model.DeclaredVertexJson>; clean: boolean },
+) {
+  if (!flow.clean) return;
+  const refuse = (location: string, routes: unknown, outcomes: string[], what: string) => {
+    for (const [outcome] of report.entries(routes))
+      if (outcome !== '*' && !outcomes.includes(outcome))
+        report.error(
+          problems,
+          `${location}.${outcome}`,
+          'unknown-outcome',
+          `Outcome ${outcome} is not one ${what} can produce: ${outcomes.join(', ')}`,
+          { outcome, outcomes },
+        );
+  };
+  for (const [id, vertex] of flow.resolved)
+    refuse(`${flow.location}.ticket.vertices.${id}.route`, vertex.route, vertex.outcomes, `Vertex ${id}`);
+  const union = report.unique([...flow.resolved.values()].flatMap((vertex) => vertex.outcomes));
+  refuse(`${flow.location}.ticket.routes`, flow.ticket.routes, union, 'a Vertex of the Flow');
+}

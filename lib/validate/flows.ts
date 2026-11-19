@@ -246,6 +246,7 @@ export function checkFlow(checking: FlowContext, name: string, declaration: unkn
   for (const [id, vertex] of Object.entries(vertices)) checkVertex(checking, state, id, vertex);
   const clean = checking.sharedErrors === 0 && problems.errors.length === start && !state.held;
   const { resolved, vertexProcedures, fallsOf } = state;
+  routes.checkRouteKeys(problems, { location, ticket, resolved, clean });
   graph.checkGraph(problems, { location, ticket, resolved, vertexProcedures, fallsOf, clean });
   const { used, personas } = state;
   const declaredProcedures = checking.config.procedures;

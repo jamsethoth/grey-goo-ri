@@ -147,6 +147,8 @@ test('a write Vertex whose committing token requires no Check is an error', () =
   const config = exampleLayer.config();
   config.procedures.fix.claimTokens.ok.requires = [];
   assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    // With no Check to fail, the Vertex no longer produces failed, so its failed route is one gg never takes (#436).
+    { at: `${VERTICES}.implementer-fix.route.failed`, code: 'unknown-outcome' },
     {
       at: `${VERTICES}.implementer-fix`,
       code: 'commit-without-check',
