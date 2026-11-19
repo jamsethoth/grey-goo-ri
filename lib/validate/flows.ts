@@ -267,7 +267,8 @@ export function checkFlow(checking: FlowContext, name: string, declaration: unkn
   // The route map reads the Flow's routes and each Vertex's route targets: a Vertex whose are refused waits (#449).
   const mapSound = routesSound && !report.isReported(typed.routes);
   const mapped = new Set([...whole].filter((id) => mapSound && !report.isReported(state.typed.get(id)?.route)));
-  const holds = { whole, routesSound, mapped, entrySound: !report.isReported(typed.entry) };
+  const complete = mapped.size === Object.keys(vertices).length;
+  const holds = { whole, routesSound, mapped, entrySound: !report.isReported(typed.entry), complete };
   graph.checkGraph(problems, { location, ticket, resolved, vertexProcedures, fallsOf, ...holds });
   const { used, personas } = state;
   const declaredProcedures = checking.config.procedures;

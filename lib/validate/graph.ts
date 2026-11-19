@@ -30,6 +30,8 @@ export interface Graph {
   // The Vertices the route map reads, each whole with its route targets typed; whether the entry is (#449).
   mapped: Set<string>;
   entrySound: boolean;
+  // Whether the map reads every Vertex, so a missing route is not a Vertex it could not read (#449, Q2 A).
+  complete: boolean;
 }
 // Where a route lands: a Vertex or an end, and whether only an exhausted Bound leads there.
 interface Landing {
@@ -40,6 +42,7 @@ interface Landing {
 interface Edge {
   from: string;
   outcome: string;
+  target: unknown;
   landings: Landing[];
   bounded: unknown;
   cases: OutcomeCase[];
@@ -201,7 +204,7 @@ function routeEdges(problems: report.Report, graph: Graph) {
       });
       const target = route.target;
       const bounded = referencePaths.isRecord(target) && report.isCount(target.max) ? target.to : null;
-      edges.push({ from: id, outcome: name, landings, bounded, cases: mine, write });
+      edges.push({ from: id, outcome: name, target, landings, bounded, cases: mine, write });
     }
   }
   return edges;
@@ -385,8 +388,11 @@ function checkInputFacts(
 export function checkGraph(problems: report.Report, graph: Graph) {
   const edges = routeEdges(problems, graph);
   const map = { ...graph, resolved: new Map([...graph.resolved].filter(([id]) => graph.mapped.has(id))) };
-  const mapEdges = edges.filter((edge) => graph.mapped.has(edge.from));
+  // An edge lands only on the Vertices the map reads, so a refused exhausted target adds nothing (#449).
+  const mapEdges = edges
+    .filter((edge) => graph.mapped.has(edge.from))
+    .map((edge) => ({ ...edge, landings: landingsOf(map.resolved, edge.target) }));
   checkCycles(problems, map, mapEdges);
   checkExhaustedLoops(problems, map);
-  if (graph.entrySound) checkFacts(problems, map, mapEdges, map.resolved.size === graph.resolved.size);
+  if (graph.entrySound) checkFacts(problems, map, mapEdges, graph.complete);
 }

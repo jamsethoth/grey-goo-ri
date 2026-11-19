@@ -210,3 +210,38 @@ test('a Procedure no Vertex of the Flow names holds none of its checks', () => {
     { at: 'flows.default.ticket', code: 'unbounded-cycle' },
   ]);
 });
+
+// A Vertex the map does not read is no landing, so its refused exhausted target adds no cycle, end or input (#449).
+test('a refused exhausted target of a Vertex the map does not read adds nothing to the map', () => {
+  const exhaustedAt = [{ at: `${VERTICES}.senior-dev.exhausted`, code: 'malformed-route-target' }];
+  const errorsOf = (exhausted: unknown, viaRed: boolean) => {
+    const config = exampleLayer.config();
+    exampleTicket(config).vertices['senior-dev'].exhausted = exhausted;
+    if (viaRed) exampleTicket(config).vertices.red.route['no-test'] = 'senior-dev';
+    return exampleLayer.firedRules(exampleLayer.check(config).errors);
+  };
+  assert.deepEqual(
+    {
+      cycle: errorsOf({ to: 'reviewer' }, false),
+      end: errorsOf({ end: 'ready-for-qa', extra: true }, false),
+      input: errorsOf({ to: 'senior-red' }, true),
+    },
+    { cycle: exhaustedAt, end: exhaustedAt, input: exhaustedAt },
+  );
+});
+
+// The sound target still lands, so the input it leaves unsure is reported.
+test('a sound exhausted target of a mapped Vertex adds its landing to the map', () => {
+  const config = exampleLayer.config();
+  exampleTicket(config).vertices.red.route['no-test'] = 'senior-dev';
+  exampleTicket(config).vertices['senior-dev'].exhausted = 'senior-red';
+  const fired = exampleLayer.firedRules(exampleLayer.check(config).errors);
+  assert.ok(fired.some(({ code }) => code === 'required-input-unsure'));
+});
+
+// A Vertex that is not an object has no routes the map can read, so the warnings wait (#449, Q2 A).
+test('a Vertex that is not an object holds the warnings', () => {
+  const config = exampleLayer.config();
+  exampleTicket(config).vertices.green = 7;
+  assert.deepEqual(routeMapWarnings(exampleLayer.check(config).warnings), []);
+});
