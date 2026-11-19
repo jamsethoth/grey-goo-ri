@@ -212,7 +212,8 @@ test("the example's routing reproduces its admission summary", () => {
   assert.deepEqual(vertices.publish.routing.failed, { target: { end: 'needs-human' }, by: 'Flow "*"', work: null });
 });
 
-test('the graph checks wait until no other check fails', () => {
+// implement's error holds green and senior-green; the cycle through reviewer and implementer-fix reads neither (#449).
+test("a cycle among sound Vertices is reported beside another Vertex's Procedure error", () => {
   const config = exampleLayer.config();
   procedureActions.actionById(config.procedures.implement, 'test').command = 'lint';
   config.flows.default.ticket.vertices.reviewer.route.changes = 'implementer-fix';
@@ -222,6 +223,7 @@ test('the graph checks wait until no other check fails', () => {
       at: 'procedures.implement.actions[1]',
       code: 'undeclared-command',
     },
+    { at: 'flows.default.ticket', code: 'unbounded-cycle' },
   ]);
   // A Flow with an error at a value it copies is declared only (#391); gg doctor prints its routing.
   assert.deepEqual(declared.default?.ticket.vertices.reviewer?.routing.changes, {
@@ -411,7 +413,8 @@ test("a Flow's graph checks wait only for its own errors and those outside every
   ]);
 });
 
-test("an error outside every Flow holds every Flow's graph checks", () => {
+// base-check is named by baseline and by gate, so each waits; no other error stands (#449, Q3 A).
+test('a Procedure error holds the graph checks of every Vertex naming it, in every Flow', () => {
   const config = exampleLayer.config();
   procedureActions.actionById(config.procedures['base-check'], 'test').command = 'lint';
   config.flows.light = {
@@ -461,7 +464,8 @@ test('a loop of exhausted targets reached through a tail names only the loop, on
   assert.deepEqual(errors[0].params, { loop: ['a', 'b'] });
 });
 
-test("an Agent's error holds the graph checks of the Flows that use it, and only them", () => {
+// senior's error holds the senior Vertices; the cycle through reviewer and implementer-fix uses neither (#449, Q1 A).
+test("an Agent's error holds the graph checks of the Vertices that use it, and only them", () => {
   const config = exampleLayer.config();
   config.agents.senior.harness = 'other';
   config.agents.spare = { persona: 'implementer.md', harness: 'other' };
@@ -473,6 +477,7 @@ test("an Agent's error holds the graph checks of the Flows that use it, and only
   assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     { at: 'agents.senior', code: 'harness-unregistered' },
     { at: 'agents.spare', code: 'harness-unregistered' },
+    { at: 'flows.default.ticket', code: 'unbounded-cycle' },
     {
       at: 'flows.unrouted.ticket.vertices.gate',
       code: 'unrouted-outcome',
