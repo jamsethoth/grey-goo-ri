@@ -240,7 +240,7 @@ for (const [change, harnessNow] of CHANGES)
           Object.assign(fixture.harness.capabilities, harnessNow.capabilities);
 
         // This Run pins what a real gg run pins: the entry of the Harness the Flow uses now.
-        const launchProfile = moved ? MOVED : { fake: config.launchEntry(fixture.harness) };
+        const launchProfile = moved ? MOVED : { fake: config.launchEntry(fixture.options.harness!) };
         const ended = await interpreter.runExecution({
           ...fixture.options,
           pinned: { ...pinned, configuration: { ...pinned.configuration, launchProfile } },
