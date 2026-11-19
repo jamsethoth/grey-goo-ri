@@ -3,6 +3,7 @@
 
 import type * as model from '../model.ts';
 import * as referencePaths from '../reference-paths.ts';
+import * as capabilityChecks from './capabilities.ts';
 import type * as checked from './procedures.ts';
 import * as declaredFlows from './declared.ts';
 import * as report from './report.ts';
@@ -51,6 +52,9 @@ export interface AgentKeys {
   model: string | null | undefined | Reported;
   effort: string | null | undefined | Reported;
   network: boolean | null | undefined | Reported;
+  // Checked but not typed into model.Agent, whose paths record.md and harness.md freeze: the Agent carries it as
+  // declared (#429).
+  timeouts: Timeouts | null | undefined | Reported;
 }
 // A declared Agent as written, null when it is not an object, and its harness and other keys as its checks typed
 // them, or Reported when it had an error.
@@ -78,6 +82,25 @@ function checkAccess(problems: report.Report, location: string, access: unknown)
   );
 }
 
+// An Agent's own clocks, each a positive integer of ms; the Harness holds the defaults (#395).
+function checkTimeouts(problems: report.Report, location: string, timeouts: unknown) {
+  if (timeouts == null) return timeouts;
+  if (!referencePaths.isRecord(timeouts))
+    return report.error(problems, location, 'not-an-object', 'timeouts must be an object of stallMs and wallMs');
+  const before = problems.errors.length;
+  report.unknownKeys(problems, timeouts, TIMEOUT_KEYS, location);
+  const typed: Timeouts = {};
+  for (const key of TIMEOUT_KEYS) {
+    const value = timeouts[key];
+    if (report.isCount(value)) typed[key] = value;
+    else if (value != null)
+      report.error(problems, `${location}.${key}`, 'not-a-positive-integer', `${key} must be a positive integer of ms`);
+  }
+  return report.reportedSince(problems, before) ?? typed;
+}
+const TIMEOUT_KEYS = ['stallMs', 'wallMs'] as const;
+type Timeouts = { stallMs?: number; wallMs?: number };
+
 // The Agent keys the interpreter reads, each held to its type wherever an Agent key is written (#386). A missing key
 // is the required checks', and a null only a null-value.
 export function checkAgentKeys(problems: report.Report, location: string, agent: Value): AgentKeys {
@@ -96,7 +119,19 @@ export function checkAgentKeys(problems: report.Report, location: string, agent:
     network == null || typeof network === 'boolean'
       ? network
       : report.error(problems, `${location}.network`, 'not-a-boolean', 'network must be true or false');
-  return { access, persona: typedPersona, model, effort, network: typedNetwork };
+  const timeouts = checkTimeouts(problems, `${location}.timeouts`, agent.timeouts);
+  return { access, persona: typedPersona, model, effort, network: typedNetwork, timeouts };
+}
+
+// What the Agent asks of its Harness, held to the Harness's Capabilities; one whose harness reported has none to read.
+function checkCapabilities(
+  checking: Pick<AgentContext, 'report' | 'harnesses'>,
+  place: { location: string; own: Value },
+  agent: { harness: string | Reported; merged: Value; keys: AgentKeys },
+) {
+  const { harness, merged, keys } = agent;
+  if (report.isReported(harness)) return;
+  capabilityChecks.checkAgent(checking, place, { harness, merged, access: keys.access, network: keys.network });
 }
 
 // A persona is required where an Agent is declared, as a harness is; a Vertex's own persona may replace it (#386, 1A).
@@ -147,6 +182,15 @@ function checkedAgent(problems: report.Report, checking: Pick<AgentContext, 'har
   );
   checkPersona(problems, { agent: name }, agent.persona, location);
   const keys = checkAgentKeys(problems, location, agent);
+  checkCapabilities(
+    { report: problems, harnesses: checking.harnesses },
+    { location, own: agent },
+    {
+      harness,
+      merged: agent,
+      keys,
+    },
+  );
   if (report.isReported(harness)) return harness;
   return report.reportedSince(problems, before) ?? { harness, keys };
 }
@@ -217,13 +261,14 @@ interface OwnAgentKeys {
 
 // The Agent keys as typed, or the first a check reported.
 function typedKeysOf(keys: AgentKeys) {
-  const { access, persona, model, effort, network } = keys;
+  const { access, persona, model, effort, network, timeouts } = keys;
   if (report.isReported(access)) return access;
   if (report.isReported(persona)) return persona;
   if (report.isReported(model)) return model;
   if (report.isReported(effort)) return effort;
   if (report.isReported(network)) return network;
-  return { access, persona, model, effort, network };
+  if (report.isReported(timeouts)) return timeouts;
+  return { access, persona, model, effort, network, timeouts };
 }
 
 // The Agent as declared and as typed, from its merged keys and what their checks gave. Its other keys are as declared.
@@ -237,8 +282,9 @@ function agentWith(merged: Value, harness: string | Reported, keys: AgentKeys): 
   if (report.isReported(harness)) return { declared, typed: harness, access: undefined };
   const typedKeys = typedKeysOf(keys);
   if (report.isReported(typedKeys)) return { declared, typed: typedKeys, access: typedKeys };
-  const { access, persona, network } = typedKeys;
-  if (typeof persona !== 'string' || network === null) return { declared, typed: undefined, access };
+  const { access, persona, network, timeouts } = typedKeys;
+  if (typeof persona !== 'string' || network === null || timeouts === null)
+    return { declared, typed: undefined, access };
   const asJson = Object.entries(declared).flatMap(([key, value]) => {
     const json = declaredFlows.declaredValue(value);
     return json === undefined ? [] : [[key, json] as const];
@@ -270,6 +316,11 @@ function ownAgent(checking: AgentContext, place: VertexPlace, own: OwnAgentKeys)
   }
   const harness = checkHarness(checking, { vertex: place.id }, overrides.harness, place.location);
   const missing = checkPersona(checking.report, { vertex: place.id }, overrides.persona, place.location);
+  checkCapabilities(
+    checking,
+    { location: place.location, own: overrides },
+    { harness, merged: overrides, keys: own.keys },
+  );
   return agentWith(overrides, missing ?? harness, own.keys);
 }
 
@@ -293,8 +344,11 @@ function usedAgent(checking: AgentContext, place: VertexPlace, use: string, own:
     model: keyOf('model'),
     effort: keyOf('effort'),
     network: keyOf('network'),
+    timeouts: keyOf('timeouts'),
   };
-  return agentWith(merged, ownHarness ?? agent.typed.harness, keys);
+  const harness = ownHarness ?? agent.typed.harness;
+  checkCapabilities(checking, { location: place.location, own: overrides }, { harness, merged, keys });
+  return agentWith(merged, harness, keys);
 }
 
 // The Agent a Vertex runs, the declared Agent under the Vertex's own Agent keys, or null when it takes none.

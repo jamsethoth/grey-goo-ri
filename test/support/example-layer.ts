@@ -74,14 +74,20 @@ export const firedAtVertices = (problems: report.Problem[]) =>
     return { ...fired, ...(params && 'flow' in params && { flow: params.flow, vertex: params.vertex }) };
   });
 
+const schemaReader = (files: Record<string, referencePaths.SchemaNode>) => (name: string) => {
+  if (!Object.hasOwn(files, name)) throw new Error('no such file');
+  return files[name];
+};
+
+// Validates `layer` with `harnesses` registered in place of the fake alone: a case about what a Harness declares.
+export const checkOn = (layer: Layer, harnesses: Record<string, unknown>) =>
+  validate.validate(layer, { harnesses, readSchema: schemaReader(schemas()) });
+
 // Validates `layer` with the fake harness registered, reading schemas and templates from the files given.
 export function check(layer: Layer, files = schemas(), templateFiles?: Record<string, string>) {
   return validate.validate(layer, {
     harnesses: { fake: {} },
-    readSchema: (name) => {
-      if (!Object.hasOwn(files, name)) throw new Error('no such file');
-      return files[name];
-    },
+    readSchema: schemaReader(files),
     ...(templateFiles && {
       readTemplate: (name: string) => {
         if (!Object.hasOwn(templateFiles, name)) throw new Error('no such file');

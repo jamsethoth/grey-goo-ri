@@ -8,6 +8,7 @@ import * as procedures from '../procedures.ts';
 import * as referencePaths from '../reference-paths.ts';
 import * as actionChecks from './actions.ts';
 import * as agentChecks from './agents.ts';
+import * as capabilityChecks from './capabilities.ts';
 import * as graph from './graph.ts';
 import * as inputs from './inputs.ts';
 import * as checked from './procedures.ts';
@@ -202,6 +203,7 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
   const agent = agentChecks.vertexAgent(checking, { id, location }, vertex, { use, keys: ownKeys, procedure });
   if (procedure?.access === 'read-only' && agent.access === 'workspace-write')
     accessConflict(problems, location, procedure, use);
+  capabilityChecks.checkSessionResume(checking, location, procedure, agent.declared);
   state.personas.push(...procedures.filesAt('agent', agent.declared));
   const typed = inputs.checkInputs(problems, location, vertex.inputs, state.sources);
   const bound = routes.checkVertexRoutes(problems, location, vertex, state.vertices);

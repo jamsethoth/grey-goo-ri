@@ -21,7 +21,7 @@ and every Action Event named none. The owner decided Clarify's Q1 A and Q2 A on 
    even when no profile version is bumped. A Harness the Flow does not use never moves its hash (Q2 A).
 3. **Every Action Event of an Agent's Vertex names the profile as `<name>@<version>`**, such as `claude-headless@1`,
    and the confinement, both strings, so the Event keeps schema 3.
-4. **`FAKE_HARNESS_VERSION` bumps to 3**, the version `harness.md` names, since the fake gains the member. No saved row
+4. **`FAKE_HARNESS_VERSION` bumps to 4**, the version `harness.md` names, since the fake gains the member. No saved row
    changes shape under a version: the Pinned Configuration is saved by its Config Hash, which moves once for every Flow,
    and gg is not yet in use (ADR 0024), so no saved Execution is re-hashed. `EVENT_SCHEMA_VERSION` and
    `RECORD_SCHEMA_VERSION` stay.

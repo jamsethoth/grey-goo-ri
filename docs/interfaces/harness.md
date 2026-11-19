@@ -16,8 +16,8 @@ code.
 | `name` | string, the Harness name an Agent selects |
 | `capabilities` | the Capability matrix below |
 | `protectedPaths` | the paths that configure the Harness, each a directory with a trailing `/` or a file |
-| `launchProfile` | `{ name, version }`, the launch profile the Harness starts its CLI with, or `null` when it declares none (ADR 0026) |
-| `validate(agent)` | checks an Agent against the matrix; returns a typed result, never throws |
+| `launchProfile` | `{ name, version }`, the launch profile the Harness starts its CLI with, or `null` when it declares none (ADR 0027) |
+| `validate(agent)` | checks what the matrix cannot say about an Agent, whose matrix rules the validator owns (ADR 0026); returns a typed result, never throws |
 | `resolveTools(agent, { commands, platform })` | the tools the Harness will pass for this Agent, hint fields marked, as JSON returned at once, never a Promise; `commands` are the Declared Commands the Agent may run (the repository's at preflight, the Visit's pinned ones at a call) and `platform` is gg's `process.platform` (`ToolsContext`, `lib/run-context.ts`) |
 | `run(call, hooks)` | runs one Attempt; reports it has started through `hooks.started`; ends the Attempt when `hooks.signal` aborts; resolves `{ response, result, failure }` |
 | `interactiveArgs(agent, opening, opts)` | argv for an interactive session opened with `opening` |
@@ -46,7 +46,7 @@ plus every shipped Harness's `protectedPaths`, whichever Harnesses the Agents us
 `protectedFiles` fails, naming the Harness, when a `protectedPaths` is not an array of paths.
 gg run's pin reads the `launchProfile` and the `confinement` Capability of each Harness the Flow's Agents use into the
 Pinned Configuration, so its Config Hash covers both, and every Action Event of an Agent's Vertex names that Harness's
-profile as `<name>@<version>` (`claude-headless@1`) and its confinement (ADR 0026). No module outside
+profile as `<name>@<version>` (`claude-headless@1`) and its confinement (ADR 0027). No module outside
 `lib/harnesses/` names a Harness (`test/unit/layout.test.ts`).
 
 ## Capability matrix
@@ -303,7 +303,7 @@ is refused (`events.Usage`, `events.md`).
 ## The fake harness
 
 `test/support/fake-harness.ts` stands in for a Harness in every test: it never spawns anything, and a test scripts it.
-Its scripting version is `FAKE_HARNESS_VERSION = 3`, and every scripting key below is frozen with it. Its
+Its scripting version is `FAKE_HARNESS_VERSION = 4`, and every scripting key below is frozen with it. Its
 `launchProfile` is `null`, which a test replaces on the object it builds. Its result holds null for `repositoryDigest`,
 `agentCliVersion`, `effectiveModel` and `effectiveEffort` unless a script gives one.
 
