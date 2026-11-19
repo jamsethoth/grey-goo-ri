@@ -30,6 +30,7 @@ for (const [method, message] of [
   ['name', 'harness is missing name'],
   ['capabilities', 'harness is missing capabilities'],
   ['protectedPaths', 'harness is missing protectedPaths'],
+  ['launchProfile', 'harness is missing launchProfile'],
   ['validate', 'harness is missing validate'],
   ['resolveTools', 'harness is missing resolveTools'],
   ['run', 'harness is missing run'],
@@ -106,6 +107,21 @@ test('shipped builds every Harness module from the exec it is given', async () =
     const extra = Object.keys(harness).filter((member) => !contract.HARNESS_METHODS.includes(member));
     assert.deepEqual(extra, [], `${name} holds only contract members`);
   }
+});
+
+// The launch profile is a contract member (#428 Q1 A), so gg reads it from the Harness it runs, as it reads its
+// Protected Files: Claude's from its declaration, and none from Codex or the fake.
+test('each shipped Harness keeps its launch profile, and Codex and the fake declare none', async () => {
+  const shipped = await import('../../../lib/harnesses/shipped.ts');
+  const built = shipped.shipped(exec.createExec({ kernel32: null }));
+  assert.deepEqual(
+    {
+      claude: built.claude!.launchProfile,
+      codex: built.codex!.launchProfile,
+      fake: ((await fakeHarness()) as Record<string, unknown>).launchProfile,
+    },
+    { claude: { name: 'claude-headless', version: 1 }, codex: null, fake: null },
+  );
 });
 
 // A Harness returns only once its processes are gone, or reports that it could not confirm it (L6, L11).

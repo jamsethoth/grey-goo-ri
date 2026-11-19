@@ -4,6 +4,7 @@ export const HARNESS_METHODS = [
   'name',
   'capabilities',
   'protectedPaths',
+  'launchProfile',
   'validate',
   'resolveTools',
   'run',

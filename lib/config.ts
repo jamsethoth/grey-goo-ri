@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import * as jsonc from 'jsonc-parser';
 import * as jsonValue from './json-value.ts';
 import type * as model from './model.ts';
+import type * as runContext from './run-context.ts';
 import * as procedures from './procedures.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as report from './validate/report.ts';
@@ -181,10 +182,53 @@ export interface PinnedConfiguration {
   flow: model.ResolvedFlowJson;
   files: SourceFiles;
   harnesses: Record<string, jsonValue.JsonValue>;
-  launchProfile?: string | null;
+  launchProfile?: Record<string, PinnedLaunchProfile> | null;
   commands: Settings['commands'];
   testPaths: string[];
   approvers?: string[];
+}
+
+// What the Config Hash pins of each Harness a Flow's Agents use: its launch profile's name and version, null when it
+// declares none, and its confinement (request 3.2, 3.7; #428 Q2 A).
+export interface PinnedLaunchProfile {
+  name: string | null;
+  version: number | null;
+  confinement: string | null;
+}
+
+// A Resolved Flow's Pinned Configuration: the files it uses, the repository contract's settings, and the launch profile
+// of only the Harnesses its Agents use, so another Harness's profile never moves its hash (#428 Q2 A). Preflight has
+// refused an Agent whose Harness is not registered.
+export function pinnedConfiguration({
+  flow,
+  files,
+  settings,
+  harnesses,
+}: {
+  flow: model.ResolvedFlowJson;
+  files: SourceFiles;
+  settings: Settings;
+  harnesses: Record<string, unknown>;
+}): PinnedConfiguration {
+  const used = Object.values(flow.ticket.vertices).flatMap(({ agent }) => (agent ? [agent.harness] : []));
+  const launchProfile = Object.fromEntries(
+    used.map((harnessName): [string, PinnedLaunchProfile] => [
+      harnessName,
+      launchEntry(harnesses[harnessName] as runContext.Harness),
+    ]),
+  );
+  const { commands, testPaths, approvers } = settings;
+  return { flow, files, harnesses: {}, launchProfile, commands, testPaths, approvers };
+}
+
+// One Harness's entry in the Pinned Configuration's launch profile: what the Config Hash pins of how it launches.
+export function launchEntry(harness: runContext.Harness): PinnedLaunchProfile {
+  const { name = null, version = null } = harness.launchProfile ?? {};
+  // Known crash, left so a broken Harness is refused, not hashed: a Harness with no capabilities (a stub module)
+  // throws a TypeError here and in the Action Event's profile. gg run's preflight refuses it before the pin; a call
+  // that skips preflight reaches it, and so does a resume whose saved snapshot names such a Harness, which preflight
+  // does not check: the fault's Event then fails too, and the Ticket gets no State Label (#428 D5, D6).
+  return { name, version, confinement: harness.capabilities.confinement ?? null };
 }
 
 // What an Execution runs under: a Pinned Configuration, its Resolved Flow in memory and its Config Hash, one value so
