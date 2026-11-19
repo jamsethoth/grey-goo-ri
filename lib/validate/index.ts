@@ -24,13 +24,19 @@ type Value = Record<string, unknown>;
 // What the validator reads beside the configuration: the registered harnesses, and each schema and template a
 // Procedure names. `readTemplate`, when given, gives a template's text, so the names each template reads are checked
 // (Y20). `contract` is the repository's commands and labelPrefix, which a Flow from the user's directory runs under;
-// the configuration's own when not given.
+// the configuration's own when not given. `misfits` is set for the user's directory, whose Procedure naming a command
+// the repository lacks holds only the Flows that use it (#433).
 export interface Sources {
   harnesses: unknown;
   readSchema: (name: string) => unknown;
   readTemplate?: (name: string) => string;
   contract?: { commands?: unknown; labelPrefix?: unknown };
+  misfits?: boolean;
 }
+
+// A command named by a string fits one repository and not another; a malformed one is an error anywhere.
+export const isMissingCommand = (problem: report.Problem): boolean =>
+  problem.code === 'undeclared-command' && typeof problem.params?.command === 'string';
 
 const field = (value: unknown, key: string) => (referencePaths.isRecord(value) ? value[key] : undefined);
 
@@ -44,17 +50,25 @@ const usedAgentsOf = (config: Value) =>
       ),
   );
 
-// What a Procedure is checked against: its schemas, and the commands the repository declares.
+// What a Procedure is checked against: its schemas, the commands the repository declares, and whether a missing one
+// is a misfit.
 interface ProcedureSources {
   readSchema: Sources['readSchema'];
   commands: unknown;
+  misfits: Sources['misfits'];
 }
 
-function checkProcedures(problems: report.Report, config: Value, { readSchema, commands }: ProcedureSources) {
+// The Procedures checked, with the errors so far that hold every Flow's graph checks (H6): a misfit holds only the
+// Flows whose Vertices name its Procedure.
+function checkProcedures(problems: report.Report, config: Value, { readSchema, commands, misfits }: ProcedureSources) {
   const declaring = { report: problems, readSchema, schemas: new Map(), commands };
   const checkedProcedures = new Map<string, procedures.CheckedProcedure | undefined>();
-  for (const [name, declaration] of report.entries(config.procedures))
+  const failedProcedures = new Set<unknown>();
+  for (const [name, declaration] of report.entries(config.procedures)) {
+    const before = problems.errors.length;
     checkedProcedures.set(name, procedures.checkProcedure(declaring, name, declaration));
+    if (problems.errors.length > before) failedProcedures.add(name);
+  }
   // Each Procedure's references typed alone; each Vertex using it types those that read `inputs`.
   const procedureFalls = new Map<string, Partial<Record<procedures.TableName, string[]>>>();
   for (const procedure of checkedProcedures.values()) {
@@ -66,7 +80,8 @@ function checkProcedures(problems: report.Report, config: Value, { readSchema, c
     });
     procedureFalls.set(procedure.name, falls);
   }
-  return { checkedProcedures, procedureFalls };
+  const sharedErrors = problems.errors.filter((problem) => !(misfits === true && isMissingCommand(problem))).length;
+  return { procedures: checkedProcedures, procedureFalls, failedProcedures, sharedErrors };
 }
 
 // In a configuration file null is never a value, where a missing key is inherited, optional or required (#298). Every
@@ -87,7 +102,7 @@ function reportNulls(problems: report.Report, value: unknown, location: string) 
   }
 }
 
-export function validate(config: unknown, { harnesses, readSchema, readTemplate, contract }: Sources) {
+export function validate(config: unknown, { harnesses, readSchema, readTemplate, contract, misfits }: Sources) {
   const problems = report.newReport();
   if (!referencePaths.isRecord(config)) {
     report.error(problems, '', 'not-an-object', 'the configuration must be an object');
@@ -101,8 +116,7 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate,
   if (config.agents !== undefined && !referencePaths.isRecord(config.agents))
     report.error(problems, 'agents', 'not-an-object', 'agents must be an object from name to Agent');
   const { commands, labelPrefix } = contract ?? config;
-  const { checkedProcedures, procedureFalls } = checkProcedures(problems, config, { readSchema, commands });
-  const sharedErrors = problems.errors.length;
+  const procedureChecks = checkProcedures(problems, config, { readSchema, commands, misfits });
   const { failedAgents, agents } = agentChecks.checkAgents(problems, config, harnesses, usedAgentsOf(config));
   if (config.flows !== undefined && !referencePaths.isRecord(config.flows))
     report.error(problems, 'flows', 'not-an-object', 'flows must be an object from name to Flow');
@@ -119,13 +133,11 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate,
     report: problems,
     config,
     labelPrefix,
-    procedures: checkedProcedures,
-    procedureFalls,
+    ...procedureChecks,
     failedAgents,
     agents,
     harnesses,
     reader,
-    sharedErrors,
   };
   // Built from entries, so a Flow such as __proto__ is an own key.
   const checkedFlows = report
