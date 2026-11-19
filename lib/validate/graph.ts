@@ -30,8 +30,6 @@ export interface Graph {
   // The Vertices the route map reads, each whole with its route targets typed; whether the entry is (#449).
   mapped: Set<string>;
   entrySound: boolean;
-  // Whether the map reads every Vertex, so a missing route is not a Vertex it could not read (#449, Q2 A).
-  complete: boolean;
 }
 // Where a route lands: a Vertex or an end, and whether only an exhausted Bound leads there.
 interface Landing {
@@ -394,5 +392,8 @@ export function checkGraph(problems: report.Report, graph: Graph) {
     .map((edge) => ({ ...edge, landings: landingsOf(map.resolved, edge.target) }));
   checkCycles(problems, map, mapEdges);
   checkExhaustedLoops(problems, map);
-  if (graph.entrySound) checkFacts(problems, map, mapEdges, graph.complete);
+  // The warnings wait unless the map reads every declared Vertex, object or not (#449, Q2 A).
+  const declared = graph.ticket.vertices;
+  const complete = referencePaths.isRecord(declared) && map.resolved.size === Object.keys(declared).length;
+  if (graph.entrySound) checkFacts(problems, map, mapEdges, complete);
 }
