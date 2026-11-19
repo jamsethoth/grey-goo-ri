@@ -18,7 +18,6 @@ const AGENT_KEY_ERRORS: Record<string, { under: boolean; code: string }> = {
   model: { under: true, code: 'not-a-string' },
   effort: { under: true, code: 'not-a-string' },
   network: { under: true, code: 'not-a-boolean' },
-  timeouts: { under: true, code: 'not-an-object' },
 };
 const AGENT_SITES: Record<string, (config: exampleLayer.Layer) => { site: Record<string, unknown>; at: string }> = {
   'a declared Agent': (config) => ({ site: config.agents.implementer, at: 'agents.implementer' }),

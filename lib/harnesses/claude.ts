@@ -88,9 +88,8 @@ const isStrings = (value: unknown): value is string[] =>
 // An Agent Claude cannot run as asked fails, never runs degraded (request 3.1).
 export function validate(agent: unknown): Validated {
   const fields = (agent ?? {}) as Record<string, unknown>;
-  const errors = LISTED_FIELDS.filter((field) => capabilities[field] === 'unsupported' && listed(fields[field])).map(
-    (field) => `${field} is not supported by Claude`,
-  );
+  // A listed field Claude declares unsupported is the validator's error, from the matrix (#429).
+  const errors: string[] = [];
   if (fields.plugins !== undefined && !isStrings(fields.plugins)) errors.push('plugins must be a list of plugin names');
   const budget = fields.contextBudget;
   if (budget !== undefined && !(Number.isInteger(budget) && (budget as number) > 0))

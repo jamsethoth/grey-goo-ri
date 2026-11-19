@@ -16,7 +16,7 @@ code.
 | `name` | string, the Harness name an Agent selects |
 | `capabilities` | the Capability matrix below |
 | `protectedPaths` | the paths that configure the Harness, each a directory with a trailing `/` or a file |
-| `validate(agent)` | checks an Agent against the matrix; returns a typed result, never throws |
+| `validate(agent)` | checks what the matrix cannot say about an Agent; returns a typed result, never throws |
 | `resolveTools(agent, { commands, platform })` | the tools the Harness will pass for this Agent, hint fields marked, as JSON returned at once, never a Promise; `commands` are the Declared Commands the Agent may run (the repository's at preflight, the Visit's pinned ones at a call) and `platform` is gg's `process.platform` (`ToolsContext`, `lib/run-context.ts`) |
 | `run(call, hooks)` | runs one Attempt; reports it has started through `hooks.started`; ends the Attempt when `hooks.signal` aborts; resolves `{ response, result, failure }` |
 | `interactiveArgs(agent, opening, opts)` | argv for an interactive session opened with `opening` |
