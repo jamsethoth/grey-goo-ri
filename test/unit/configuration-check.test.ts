@@ -165,15 +165,19 @@ test("preflight keeps the repository's valid Declared Commands when another sett
   ]);
 });
 
-// Preflight runs the Claude Harness's validate and resolveTools, and only then its stop, until #425's last step.
-test("preflight fails a Claude Agent listing mcp on the Harness's validate", async () => {
+// A field the Claude Harness declares unsupported is the validator's one error at the key, which gg doctor and gg run
+// preflight both report; no Vertex's Harness preflight repeats it (Q2 A of #429).
+test('a Claude Agent listing mcp is one unsupported-agent-field error, which no Vertex preflight repeats', async () => {
   const repository = repositorySource();
   Object.assign(repository.agents.implementer!, { harness: 'claude', mcp: ['github'] });
   const claude = await import('../../lib/harnesses/claude.ts');
-  const lines = errorLines(await checkOf(sources(repository), { harnesses: { claude } }));
-  assert.equal(lines.length, 2, lines.join('\n'));
-  assert.match(lines[0]!, /^error: flows\.default\.ticket\.vertices\.red: vertex red: harness claude: .*\bmcp\b/);
-  assert.match(lines[1]!, /^error: flows\.default\.ticket\.vertices\.green: vertex green: harness claude: .*\bmcp\b/);
+  const checked = await checkOf(sources(repository), { harnesses: { claude } });
+  assert.deepEqual(
+    checked.configurationErrors.map((problem) => `${problem.at} ${problem.code}`),
+    ['agents.implementer.mcp unsupported-agent-field'],
+  );
+  const repeated = checked.environmentErrors.filter((problem) => /\bmcp\b/.test(problem.message));
+  assert.deepEqual(repeated, []);
 });
 
 test("preflight fails a Claude Agent's plugin that is not installed on the Harness's resolveTools", async (t) => {

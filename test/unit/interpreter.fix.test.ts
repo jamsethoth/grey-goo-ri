@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.ts';
+import * as marker from '../../lib/marker.ts';
 import * as addSuite from '../support/add-suite.ts';
 import * as golden from '../support/golden.ts';
 import { GREEN_FAIL_OUTPUT } from '../support/add-suite.ts';
@@ -44,6 +45,38 @@ test('a recovery pass after fix resumes the fix session', async (t) => {
   assert.equal(call.resume, fixCall.sessionId, 'the recovery pass resumes the fix session');
   assert.ok(call.brief!.includes(GREEN_FAIL_OUTPUT));
   assert.equal(fixture.result.outcome, 'ready-for-qa');
+});
+
+// A Session is keyed by its Vertex, Visit and Action, and a Visit pins its Agent and so its Harness, so a resumed call
+// takes only a Session its own Action started: resume across Vertices or Harnesses cannot arise, and the validator
+// has no Problem for it (ADR 0014, decision 3 of #429).
+test('every resumed call resumes a Session its own Vertex, Visit and Action started', async (t) => {
+  const fixture = await runReviewFlow(
+    t,
+    {
+      [keys.responseKey({ vertex: 'reviewer', visit: 1, action: 'review' })]: reviewed(review('changes', [MAJOR])),
+      [keys.responseKey({ vertex: 'implementer-fix', visit: 1, action: 'fix' })]: fixed({ 'lib/add.mjs': WRONG_ADD }),
+      [keys.responseKey({ vertex: 'implementer-fix', visit: 1, action: 'fix', recovery: 1 })]: fixed({
+        'lib/add.mjs': 'export const add = (a, b) => a + b; // fixed\n',
+      }),
+      [keys.responseKey({ vertex: 'reviewer', visit: 2, action: 'review' })]: reviewed(review('ok')),
+    },
+    { exec: addSuite.addSuite({ worktree: '', checksSum: true }) },
+  );
+  const startedBy = new Map(
+    fixture.actions
+      .filter((event): event is events.AgentActionEvent => event.agent && event.recovery === 0 && event.attempt === 1)
+      .map((event) => [event.sessionId, `${event.vertex}/${event.visit}/${event.action}`]),
+  );
+  const resumed = fixture.harness.calls.filter((harnessCall) => harnessCall.resume != null);
+  assert.ok(resumed.length > 0, 'the recovery pass resumes a Session');
+  assert.deepEqual(
+    resumed.map((harnessCall) => startedBy.get(harnessCall.resume!)),
+    resumed.map((harnessCall) => {
+      const parts = marker.partsOf(harnessCall.marker);
+      return `${parts.vertex}/${parts.visit}/${parts.action}`;
+    }),
+  );
 });
 
 test('misscoped lands in replan with the diagnosis on ticket and epic', async (t) => {
