@@ -172,7 +172,7 @@ leverage and a change lands in one place (locality).
 | `lib/render.ts` | the template renderer, commit messages, PR body, comments, provenance |
 | `lib/public-text.ts` | redaction of the local directories in text gg publishes |
 | `lib/templates/` | gg's own templates, which no source declares: the Terminal Reason comment, the Approval Request and cleanup hold comments, the parse-retry nudge and the default recovery section |
-| `lib/work.ts` | `gg work`'s verbs under the ticket lock: `abandon` (the Execution Record forgotten, its worktree and branch kept), `done` (a person's end, L12) and `resume`, which gg run calls before admission (the record re-entered at a new Visit, L12, L16); the rest of `gg work` and the Registry are to come |
+| `lib/work.ts` | `gg work`'s verbs under the ticket lock: `abandon` (the Execution Record forgotten, its worktree and branch kept), `done` (a person's end, L12) and `resume`, which gg run calls before admission (the record re-entered at a new Visit, L12, L16, with the tip the person left as its Test Immutability baseline); the rest of `gg work` and the Registry are to come |
 | `lib/trace.ts` | **stub** (`export {}`): Trajectory export and `gg trace` |
 | `lib/stats.ts` | **stub** (`export {}`): `gg stats` |
 | `lib/doctor.ts` | `gg doctor`: the checked configuration printed, each Resolved Flow with its source per Vertex, its warnings (a misfit among them) and errors (each record whose Flow is gone and an owner/name gh cannot read among them), and the labels the Flows can request that the repository lacks; `gg init`: the example, `test/fixtures/example/`, written into a repository, the user's `gg.json` with the machine settings, and the State Database |
