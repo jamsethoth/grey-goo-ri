@@ -179,6 +179,7 @@ leverage and a change lands in one place (locality).
 | `lib/plan.ts` | **stub** (`export {}`): `gg plan` |
 | `lib/publish.ts` | **stub** (`export {}`): `gg publish` (to be ported) |
 | `scripts/run-suite.ts` | the suite launcher Codex may run outside its sandbox (ADR 0010); the full and fast stages' census of what they leave running (`docs/testing.md`) |
+| `scripts/record-claude.ts` | the one command that calls the real `claude` (#425): each call `scripts/record-claude-scenarios.ts` lists, run once with the Claude Harness's launch profile in a temporary repository, redacted into `test/fixtures/claude/` with its command, line times and what it left behind; run by hand to re-record a new Claude version, never by a test |
 | `examples/` | each Harness's harness, model and effort for the Agents of the example, which `gg init --harness <name>` writes |
 
 ## Misleading areas

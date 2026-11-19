@@ -1,0 +1,66 @@
+{
+  "cliVersion": "2.1.328 (Claude Code)",
+  "scenario": "no-schema",
+  "purpose": "a completed call without --json-schema: the result event with no structured output",
+  "command": {
+    "executable": "claude",
+    "argv": [
+      "-p",
+      "--setting-sources",
+      "",
+      "--strict-mcp-config",
+      "--settings",
+      "<recording>\\run\\claude-settings-a6b52f24ce405fab01c9eee0982da2f3b9320518774ac76569b74f77259a449b.json",
+      "--restricted",
+      "--disallowedTools",
+      "mcp__*",
+      "--permission-mode",
+      "manual",
+      "--permission-prompts",
+      "none",
+      "--system-prompt-snapshot",
+      "off",
+      "--append-system-prompt-file",
+      "<recording>\\run\\persona-ee590a0e839321bfd669a7297832bb5d5d5118139ba96e3129fcc242aea97a99.md",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--model",
+      "haiku",
+      "--effort",
+      "low",
+      "--tools",
+      "PowerShell,Read,Grep,Glob"
+    ],
+    "env": {
+      "CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1",
+      "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+      "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+      "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
+    },
+    "stdin": "Without any tool, answer with the five words: the probe has no schema.",
+    "files": {
+      "<recording>\\run\\claude-settings-a6b52f24ce405fab01c9eee0982da2f3b9320518774ac76569b74f77259a449b.json": "{\"permissions\":{\"allow\":[\"PowerShell(git diff:*)\",\"PowerShell(git log:*)\",\"PowerShell(git show:*)\",\"PowerShell(git status:*)\",\"PowerShell(Get-ChildItem:*)\",\"PowerShell(Get-Content:*)\",\"PowerShell(Select-String:*)\"],\"deny\":[\"PowerShell(git add:*)\",\"PowerShell(git commit:*)\",\"PowerShell(git push:*)\",\"PowerShell(gh:*)\",\"WebFetch\",\"WebSearch\"],\"blockWritesOutsideWorkingDirectories\":true}}",
+      "<recording>\\run\\persona-ee590a0e839321bfd669a7297832bb5d5d5118139ba96e3129fcc242aea97a99.md": "You are a careful assistant in a throwaway test repository. Do exactly what the prompt asks.\n"
+    }
+  },
+  "resumes": null,
+  "exitCode": 0,
+  "signal": null,
+  "killed": null,
+  "lineTimesMs": [
+    711,
+    1369,
+    1377,
+    1388
+  ],
+  "stderr": "",
+  "evidence": {
+    "remoteRefs": [],
+    "outsideShellWritten": false,
+    "outsideWriteToolWritten": false,
+    "madeInRepository": false,
+    "transcriptPath": "<home>\\.claude\\projects\\<recording>-repo\\1cc91fb3-754f-44a4-88b4-46378caa0d15.jsonl"
+  },
+  "stubRequests": null
+}

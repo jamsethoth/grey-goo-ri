@@ -1,0 +1,80 @@
+{
+  "cliVersion": "2.1.328 (Claude Code)",
+  "scenario": "api-retry",
+  "purpose": "api_retry events then a failure: a stand-in Messages API answers 529 overloaded, then 429 rate_limit with retry-after 1, under three retries",
+  "command": {
+    "executable": "claude",
+    "argv": [
+      "-p",
+      "--setting-sources",
+      "",
+      "--strict-mcp-config",
+      "--settings",
+      "<recording>\\run\\claude-settings-a6b52f24ce405fab01c9eee0982da2f3b9320518774ac76569b74f77259a449b.json",
+      "--restricted",
+      "--disallowedTools",
+      "mcp__*",
+      "--permission-mode",
+      "manual",
+      "--permission-prompts",
+      "none",
+      "--system-prompt-snapshot",
+      "off",
+      "--append-system-prompt-file",
+      "<recording>\\run\\persona-ee590a0e839321bfd669a7297832bb5d5d5118139ba96e3129fcc242aea97a99.md",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--json-schema",
+      "{\"type\":\"object\",\"properties\":{\"answer\":{\"type\":\"string\"}},\"required\":[\"answer\"],\"additionalProperties\":false}",
+      "--model",
+      "haiku",
+      "--effort",
+      "low",
+      "--tools",
+      "PowerShell,Read,Grep,Glob"
+    ],
+    "env": {
+      "CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1",
+      "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+      "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+      "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1",
+      "CLAUDE_CONFIG_DIR": "<recording>/config",
+      "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+      "ANTHROPIC_BASE_URL": "http://127.0.0.1:59114",
+      "ANTHROPIC_API_KEY": "sk-ant-<redacted>",
+      "CLAUDE_CODE_MAX_RETRIES": "3"
+    },
+    "stdin": "Without any tool, answer with the word ok.",
+    "files": {
+      "<recording>\\run\\claude-settings-a6b52f24ce405fab01c9eee0982da2f3b9320518774ac76569b74f77259a449b.json": "{\"permissions\":{\"allow\":[\"PowerShell(git diff:*)\",\"PowerShell(git log:*)\",\"PowerShell(git show:*)\",\"PowerShell(git status:*)\",\"PowerShell(Get-ChildItem:*)\",\"PowerShell(Get-Content:*)\",\"PowerShell(Select-String:*)\"],\"deny\":[\"PowerShell(git add:*)\",\"PowerShell(git commit:*)\",\"PowerShell(git push:*)\",\"PowerShell(gh:*)\",\"WebFetch\",\"WebSearch\"],\"blockWritesOutsideWorkingDirectories\":true}}",
+      "<recording>\\run\\persona-ee590a0e839321bfd669a7297832bb5d5d5118139ba96e3129fcc242aea97a99.md": "You are a careful assistant in a throwaway test repository. Do exactly what the prompt asks.\n"
+    }
+  },
+  "resumes": null,
+  "exitCode": 1,
+  "signal": null,
+  "killed": null,
+  "lineTimesMs": [
+    805,
+    862,
+    1964,
+    3220,
+    5249,
+    5257
+  ],
+  "stderr": "",
+  "evidence": {
+    "remoteRefs": [],
+    "outsideShellWritten": false,
+    "outsideWriteToolWritten": false,
+    "madeInRepository": false,
+    "transcriptPath": "<recording>\\config\\projects\\<recording>-repo\\16947408-9b3a-46c9-a385-203deb43d01e.jsonl"
+  },
+  "stubRequests": [
+    "POST /v1/messages 529",
+    "POST /v1/messages 429",
+    "POST /v1/messages 429",
+    "POST /v1/messages 429"
+  ]
+}

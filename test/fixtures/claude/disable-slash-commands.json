@@ -1,0 +1,66 @@
+{
+  "cliVersion": "2.1.328 (Claude Code)",
+  "scenario": "disable-slash-commands",
+  "purpose": "--disable-slash-commands against the repository's .claude skills, commands and agents: the init event only",
+  "command": {
+    "executable": "claude",
+    "argv": [
+      "-p",
+      "--setting-sources",
+      "",
+      "--strict-mcp-config",
+      "--settings",
+      "<recording>\\run\\claude-settings-a6b52f24ce405fab01c9eee0982da2f3b9320518774ac76569b74f77259a449b.json",
+      "--restricted",
+      "--disallowedTools",
+      "mcp__*",
+      "--permission-mode",
+      "manual",
+      "--permission-prompts",
+      "none",
+      "--system-prompt-snapshot",
+      "off",
+      "--append-system-prompt-file",
+      "<recording>\\run\\persona-ee590a0e839321bfd669a7297832bb5d5d5118139ba96e3129fcc242aea97a99.md",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--json-schema",
+      "{\"type\":\"object\",\"properties\":{\"answer\":{\"type\":\"string\"}},\"required\":[\"answer\"],\"additionalProperties\":false}",
+      "--model",
+      "haiku",
+      "--effort",
+      "low",
+      "--tools",
+      "PowerShell,Read,Grep,Glob",
+      "--disable-slash-commands"
+    ],
+    "env": {
+      "CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1",
+      "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+      "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+      "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
+    },
+    "stdin": "Without any tool, answer with the word ok.",
+    "files": {
+      "<recording>\\run\\claude-settings-a6b52f24ce405fab01c9eee0982da2f3b9320518774ac76569b74f77259a449b.json": "{\"permissions\":{\"allow\":[\"PowerShell(git diff:*)\",\"PowerShell(git log:*)\",\"PowerShell(git show:*)\",\"PowerShell(git status:*)\",\"PowerShell(Get-ChildItem:*)\",\"PowerShell(Get-Content:*)\",\"PowerShell(Select-String:*)\"],\"deny\":[\"PowerShell(git add:*)\",\"PowerShell(git commit:*)\",\"PowerShell(git push:*)\",\"PowerShell(gh:*)\",\"WebFetch\",\"WebSearch\"],\"blockWritesOutsideWorkingDirectories\":true}}",
+      "<recording>\\run\\persona-ee590a0e839321bfd669a7297832bb5d5d5118139ba96e3129fcc242aea97a99.md": "You are a careful assistant in a throwaway test repository. Do exactly what the prompt asks.\n"
+    }
+  },
+  "resumes": null,
+  "exitCode": null,
+  "signal": "SIGTERM",
+  "killed": "after init",
+  "lineTimesMs": [
+    881
+  ],
+  "stderr": "",
+  "evidence": {
+    "remoteRefs": [],
+    "outsideShellWritten": false,
+    "outsideWriteToolWritten": false,
+    "madeInRepository": false,
+    "transcriptPath": "<home>\\.claude\\projects\\<recording>-repo\\1321f16e-69b3-475b-ac42-238c03bf3281.jsonl"
+  },
+  "stubRequests": null
+}
