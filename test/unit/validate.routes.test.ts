@@ -477,3 +477,100 @@ test("an Agent's error holds the graph checks of the Flows that use it, and only
     },
   ]);
 });
+
+// A route key is held to the Outcomes gg routes by at run time, the Vertex's `outcomes` (#436, Q1 A).
+const outcomesOf = (checked: ReturnType<typeof exampleLayer.check>, vertex: string): string[] =>
+  checked.declared.default?.ticket.vertices[vertex]?.outcomes ?? [];
+
+test('a route keyed by an Outcome the Procedure cannot produce is an error', () => {
+  const config = exampleLayer.config();
+  config.flows.default.ticket.vertices.green.route.pased = 'reviewer';
+  config.flows.default.ticket.vertices.green.route['integrity-violation'] = { end: 'needs-human' };
+  config.flows.default.ticket.vertices.baseline.route['harness-timeout'] = { end: 'needs-human' };
+  const checked = exampleLayer.check(config);
+  assert.deepEqual(exampleLayer.firedRules(checked.errors), [
+    { at: `${VERTICES}.baseline.route.harness-timeout`, code: 'unknown-outcome' },
+    { at: `${VERTICES}.green.route.pased`, code: 'unknown-outcome' },
+    { at: `${VERTICES}.green.route.integrity-violation`, code: 'unknown-outcome' },
+  ]);
+  assert.deepEqual(
+    checked.errors.map(({ params }) => params),
+    [
+      { outcome: 'harness-timeout', outcomes: ['ok', 'failed'] },
+      { outcome: 'pased', outcomes: outcomesOf(checked, 'green') },
+      { outcome: 'integrity-violation', outcomes: outcomesOf(checked, 'green') },
+    ],
+  );
+});
+
+// A default the Rule Table rows leave no input to fall through to is not producible (#436, Q1 A).
+test('a route keyed by a default no input falls through to is an error', () => {
+  const config = exampleLayer.config();
+  config.procedures.review.passed.push({ when: {}, outcome: 'catch-all' });
+  config.flows.default.ticket.vertices.reviewer.route['catch-all'] = 'publish';
+  const checked = exampleLayer.check(config);
+  assert.equal(outcomesOf(checked, 'reviewer').includes('changes'), false);
+  assert.deepEqual(exampleLayer.firedRules(checked.errors), [
+    { at: `${VERTICES}.reviewer.route.changes`, code: 'unknown-outcome' },
+  ]);
+});
+
+test('a default route keyed by an Outcome no Vertex produces is reported', () => {
+  const config = exampleLayer.config();
+  config.flows.default.ticket.routes.misscope = { end: 'needs-replan' };
+  config.flows.default.ticket.routes['harness-timeout'] = { end: 'needs-human' };
+  const checked = exampleLayer.check(config);
+  assert.deepEqual(exampleLayer.firedRules(checked.errors), [
+    { at: 'flows.default.ticket.routes.misscope', code: 'unknown-outcome' },
+  ]);
+  const vertices = Object.keys(config.flows.default.ticket.vertices);
+  const union = [...new Set(vertices.flatMap((vertex) => outcomesOf(checked, vertex)))];
+  assert.deepEqual(checked.errors[0]?.params, { outcome: 'misscope', outcomes: union });
+});
+
+test('the example Flow has no unproducible route key', () => {
+  const config = exampleLayer.config();
+  const checked = exampleLayer.check(config);
+  assert.deepEqual(checked.errors, []);
+  const { ticket } = config.flows.default;
+  const vertices = Object.keys(ticket.vertices);
+  const unproducible = vertices.flatMap((vertex) =>
+    Object.keys(ticket.vertices[vertex].route ?? {})
+      .filter((key) => key !== '*' && !outcomesOf(checked, vertex).includes(key))
+      .map((key) => `${vertex}.${key}`),
+  );
+  const union = new Set(vertices.flatMap((vertex) => outcomesOf(checked, vertex)));
+  unproducible.push(...Object.keys(ticket.routes).filter((key) => key !== '*' && !union.has(key)));
+  assert.deepEqual(unproducible, []);
+});
+
+// Every site that keys a route by Outcome, read from the example: each Vertex's route and each Flow's default routes,
+// with "*" exempt at both (#436, Q2 A).
+test('every route key site refuses an Outcome nothing produces, and never "*"', () => {
+  const config = exampleLayer.config();
+  const expected: exampleLayer.FiredRule[] = [];
+  for (const [name, declaration] of Object.entries<any>(config.flows)) {
+    declaration.ticket.routes = {
+      ...declaration.ticket.routes,
+      pased: { end: 'needs-human' },
+      '*': { end: 'needs-human' },
+    };
+    expected.push({ at: `flows.${name}.ticket.routes.pased`, code: 'unknown-outcome' });
+    for (const [id, vertex] of Object.entries<any>(declaration.ticket.vertices)) {
+      vertex.route = { ...vertex.route, pased: { end: 'needs-human' }, '*': { end: 'needs-human' } };
+      expected.push({ at: `flows.${name}.ticket.vertices.${id}.route.pased`, code: 'unknown-outcome' });
+    }
+  }
+  const fired = exampleLayer.firedRules(exampleLayer.check(config).errors);
+  const sorted = (rules: exampleLayer.FiredRule[]) => rules.map(({ at, code }) => `${code} ${at}`).sort();
+  assert.deepEqual(sorted(fired), sorted(expected));
+});
+
+// A Vertex whose Procedure is undeclared is reported as that, and its route keys are not held to an empty list.
+test('the route keys of a Vertex with an undeclared Procedure are not reported', () => {
+  const config = exampleLayer.config();
+  config.flows.default.ticket.vertices.publish.procedure = 'missing';
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: `${VERTICES}.publish`, code: 'undeclared-procedure' },
+  ]);
+});

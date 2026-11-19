@@ -41,6 +41,7 @@ no-flow-declared
 no-vertex-declared
 undeclared-procedure
 unknown-end
+unknown-outcome
 unknown-vertex
 harness-unregistered
 harness-unset
@@ -145,6 +146,7 @@ The rule each code names:
 | `no-vertex-declared` | a Flow declares no Vertex |
 | `undeclared-procedure` | a Vertex names a Procedure that is not declared |
 | `unknown-end` | an end is not one of gg's end states |
+| `unknown-outcome` | a route is keyed by an Outcome its Vertex cannot produce, or a Flow route by one no Vertex produces |
 | `unknown-vertex` | a route names a Vertex that is not declared |
 | `harness-unregistered` | an Agent names a Harness that is not registered |
 | `harness-unset` | an Agent sets no Harness |
@@ -258,6 +260,10 @@ unknown-vertex: object (report.ProblemParams)
 unknown-vertex.vertex: unknown
 unknown-end: object (report.ProblemParams)
 unknown-end.end: unknown
+unknown-outcome: object (report.ProblemParams)
+unknown-outcome.outcome: string
+unknown-outcome.outcomes: list
+unknown-outcome.outcomes[]: string
 undeclared-procedure: object (report.ProblemParams)
 undeclared-procedure.procedure: unknown
 harness-unregistered: {agent,harness} | {vertex,harness} (report.ProblemParams)
