@@ -602,3 +602,18 @@ test('a Vertex whose Procedure has an error holds only its own route keys, and t
     { at: `${VERTICES}.green.route.pased`, code: 'unknown-outcome' },
   ]);
 });
+
+test("a null Rule Table holds its Vertices' route keys and the Flow defaults, not an unrelated Vertex's", () => {
+  const config = exampleLayer.config();
+  config.procedures.review.passed = null;
+  config.flows.default.actionCap = -1;
+  config.flows.default.ticket.vertices.green.route.pased = 'reviewer';
+  // repeat is an Outcome only review produces.
+  config.flows.default.ticket.routes.repeat = { end: 'needs-human' };
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'procedures.review.passed', code: 'null-value' },
+    { at: 'procedures.review.passed', code: 'not-a-list' },
+    { at: 'flows.default.actionCap', code: 'not-a-positive-integer' },
+    { at: `${VERTICES}.green.route.pased`, code: 'unknown-outcome' },
+  ]);
+});

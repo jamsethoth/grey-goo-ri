@@ -140,7 +140,7 @@ function checkSettings(
   declaration: Value,
   declared: actionChecks.DeclaredSoFar,
 ) {
-  const tests = declaration.tests ?? 'frozen';
+  const tests = declaration.tests === undefined ? 'frozen' : declaration.tests;
   const typedTests = checkTests(problems, location, tests);
   let access: 'read-only' | null | Reported = null;
   if (declaration.access === 'read-only') access = 'read-only';
@@ -171,7 +171,7 @@ function checkTables(
   const typed = {} as Record<TableName, rules.RuleRow[] | Reported | undefined>;
   const malformed = new Set<TableName>();
   for (const table of TABLES) {
-    const rows = declaration[table] ?? [];
+    const rows = declaration[table] === undefined ? [] : declaration[table];
     tables[table] = Array.isArray(rows) ? rows : [];
     if (!Array.isArray(rows)) {
       const message = `${table} must be a list of rows`;
