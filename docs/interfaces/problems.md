@@ -234,12 +234,14 @@ is unknown until then:
 
 1. A Vertex's `unknown-outcome` and `unrouted-outcome`, while its Procedure has an error (in the user's directory, a
    command the repository does not declare among them), or the Vertex itself has one apart from its route targets: its
-   Outcomes may be short.
+   Outcomes may be short. `unrouted-outcome` also waits while the Flow's `vertices` or `routes` is malformed: whether
+   an Outcome is routed is unknown.
 2. `unknown-outcome` at the Flow's default `routes`, while any Vertex waits as in 1, or the Flow's `vertices` or
    `routes` is malformed: the union of its Vertices' Outcomes is unknown.
 3. Every other check over a Flow's route map (`write-without-commit`, `commit-without-check`, `unbounded-cycle`,
    `exhausted-loop`, `pr-ready-skippable`, `required-input-unsure`, `optional-input-unsure` and `unreachable-vertex`),
-   while the Flow, or a section every Flow reads, has any error (H6). #449 narrows this.
+   while the Flow, or a section every Flow reads, has any error other than an `unknown-outcome` (H6). #449 narrows
+   this.
 
 ## Their params
 
