@@ -1151,8 +1151,8 @@ exact admission must be, or which way it may be wrong.
     Vertex. Issue #170.
   - (b) In the user's directory, a Procedure that names a command the repository does not declare holds only the Flows
     whose Vertices name it, which do not fit the repository (Q21); the user's other Flows pass every graph check before
-    they are admitted. A malformed command, any other Procedure error, and every Procedure error in the repository
-    still hold every Flow of their source. Issue #433.
+    they are admitted. A malformed command, any other error of a Procedure's own checks, and every such error in the
+    repository still hold every Flow of their source. Issue #433.
 - H7. An Outcome's route is the first of these that the configuration names:
   1. the Vertex's `route` for that Outcome;
   2. the Flow's `routes` for that Outcome;
