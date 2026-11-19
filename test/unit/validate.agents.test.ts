@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as claude from '../../lib/harnesses/claude.ts';
+import * as contract from '../../lib/harnesses/contract.ts';
 import * as agentChecks from '../../lib/validate/agents.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 
@@ -127,4 +129,139 @@ test('every Vertex runs with the access its Agent asks for, or is an access-conf
           );
       }
   assert.deepEqual(wrong, []);
+});
+
+// An Agent's timeouts is { stallMs, wallMs }, each optional and a positive integer of ms; the defaults are the
+// Harness's (#395, decision 1 of #429).
+const TIMEOUTS_FORMS: { form: string; timeouts: unknown; under: string; code: string }[] = [
+  { form: 'a number', timeouts: 5, under: '', code: 'not-an-object' },
+  { form: 'a list', timeouts: [60000], under: '', code: 'not-an-object' },
+  { form: 'an unknown key', timeouts: { stall: 60000 }, under: '', code: 'unknown-key' },
+  { form: 'a zero stallMs', timeouts: { stallMs: 0 }, under: '.stallMs', code: 'not-a-positive-integer' },
+  { form: 'a negative stallMs', timeouts: { stallMs: -1 }, under: '.stallMs', code: 'not-a-positive-integer' },
+  { form: 'a fractional wallMs', timeouts: { wallMs: 1.5 }, under: '.wallMs', code: 'not-a-positive-integer' },
+  { form: 'a string wallMs', timeouts: { wallMs: '60000' }, under: '.wallMs', code: 'not-a-positive-integer' },
+];
+for (const { form, timeouts, under, code } of TIMEOUTS_FORMS)
+  for (const [where, place] of Object.entries(AGENT_SITES))
+    test(`timeouts of ${form} is an error at ${where}`, () => {
+      const config = exampleLayer.config();
+      const { site, at } = place(config);
+      site.timeouts = timeouts;
+      const { errors, flows } = exampleLayer.check(config);
+      assert.deepEqual(exampleLayer.firedRules(errors), [{ at: `${at}.timeouts${under}`, code }]);
+      assert.equal(flows.default, undefined);
+    });
+
+test('timeouts of { stallMs, wallMs }, either left out, resolve into the Agent', () => {
+  const config = exampleLayer.config();
+  config.agents.implementer.timeouts = { stallMs: 60000, wallMs: 3600000 };
+  config.flows.default.ticket.vertices.green.timeouts = { wallMs: 7200000 };
+  const { errors, flows } = exampleLayer.check(config);
+  assert.deepEqual(errors, []);
+  const { vertices } = flows.default!.ticket;
+  assert.deepEqual(vertices.red!.agent!.timeouts, { stallMs: 60000, wallMs: 3600000 });
+  assert.deepEqual(vertices.green!.agent!.timeouts, { wallMs: 7200000 });
+});
+
+// The Agent keys the Capability matrix rules on, each with a value that asks for it. A listed field is refused where
+// its Harness declares it unsupported; a Permission Intent where it is hint or unsupported, since an intent runs as
+// asked or fails (ADR 0006, Q1 A and Q2 A of #429).
+const CAPABILITY_KEYS = contract.CAPABILITY_FIELDS.filter((field) => agentChecks.AGENT_KEYS.includes(field));
+const ASKING: Record<string, unknown> = {
+  skills: ['tdd'],
+  mcp: ['github'],
+  plugins: ['alpha'],
+  contextBudget: 100000,
+  access: 'workspace-write',
+  network: true,
+};
+const PERMISSION_INTENTS = new Set(['access', 'network']);
+const EXACT = Object.fromEntries(CAPABILITY_KEYS.map((field) => [field, 'exact']));
+
+test('every Agent key the Capability matrix rules on is asked for in the capability cases', () => {
+  assert.deepEqual(Object.keys(ASKING).sort(), [...CAPABILITY_KEYS].sort());
+});
+
+// Each key, at each site, on a Harness declaring it exact, hint or unsupported and every other key exact. The fake
+// Harness the other Agents run on declares no Capabilities, which the validator leaves to the contract check.
+function capabilityErrors(intents: boolean) {
+  const wrong: string[] = [];
+  for (const field of CAPABILITY_KEYS.filter((key) => PERMISSION_INTENTS.has(key) === intents))
+    for (const level of ['exact', 'hint', 'unsupported'])
+      for (const [where, place] of Object.entries(AGENT_SITES)) {
+        const config = exampleLayer.config();
+        const { site, at } = place(config);
+        Object.assign(site, { harness: 'limited', [field]: ASKING[field] });
+        const limited = { capabilities: { ...EXACT, [field]: level } };
+        const { errors } = exampleLayer.checkOn(config, { fake: {}, limited });
+        const refused = intents ? level !== 'exact' : level === 'unsupported';
+        const code = intents ? 'unenforceable-permission-intent' : 'unsupported-agent-field';
+        const fired = JSON.stringify(exampleLayer.firedRules(errors));
+        const expected = JSON.stringify(refused ? [{ at: `${at}.${field}`, code }] : []);
+        if (fired !== expected) wrong.push(`${field} ${level} at ${where}: ${fired}, expected ${expected}`);
+      }
+  return wrong;
+}
+
+test('an Agent listing a field its Harness declares unsupported is an error', () => {
+  assert.deepEqual(capabilityErrors(false), []);
+});
+
+test('a permission intent its Harness cannot enforce is an error', () => {
+  assert.deepEqual(capabilityErrors(true), []);
+});
+
+test('a read-only Claude Agent listing MCP servers is an error', () => {
+  const config = exampleLayer.config();
+  Object.assign(config.agents.reviewer, { harness: 'claude', mcp: ['github'] });
+  const { errors } = exampleLayer.checkOn(config, { fake: {}, claude });
+  assert.deepEqual(exampleLayer.firedRules(errors), [{ at: 'agents.reviewer.mcp', code: 'unsupported-agent-field' }]);
+  assert.deepEqual(errors[0]!.params, { field: 'mcp', harness: 'claude' });
+});
+
+// The field is the Agent's but the Harness the Vertex's own, so the Vertex is where the two meet.
+test('a field its Agent lists, unsupported by the Harness its Vertex sets, is an error at the Vertex', () => {
+  const config = exampleLayer.config();
+  config.agents.implementer.mcp = ['github'];
+  config.flows.default.ticket.vertices.red.harness = 'limited';
+  const limited = { capabilities: { ...EXACT, mcp: 'unsupported' } };
+  const { errors } = exampleLayer.checkOn(config, { fake: {}, limited });
+  assert.deepEqual(exampleLayer.firedRules(errors), [{ at: `${VERTICES}.red`, code: 'unsupported-agent-field' }]);
+});
+
+// An Agent that writes no access asks for read-only, so its Harness must enforce access; one that writes no network
+// asks for nothing.
+test('an Agent writing no access still asks for read-only, which a Harness that only hints access refuses', () => {
+  const config = exampleLayer.config();
+  config.agents.reviewer.harness = 'limited';
+  delete config.agents.reviewer.access;
+  const limited = { capabilities: { ...EXACT, access: 'hint', network: 'unsupported' } };
+  const { errors } = exampleLayer.checkOn(config, { fake: {}, limited });
+  assert.deepEqual(exampleLayer.firedRules(errors), [
+    { at: 'agents.reviewer', code: 'unenforceable-permission-intent' },
+  ]);
+});
+
+// A recovery resumes its agent Action's Session; on a Harness that cannot resume one it would run without the Session
+// it was written for, so each Vertex whose Procedure recovers is refused. An Attempt retry falls back to a fresh
+// Session and is not refused (Q3 A of #429).
+test('a Vertex whose Procedure recovers, on a Harness that cannot resume a Session, is an error', () => {
+  const fired = (supported: boolean) => {
+    const sessionResume = { supported, preconditions: [] };
+    const harnesses = { fake: { capabilities: { ...EXACT, sessionResume } } };
+    return exampleLayer.firedRules(exampleLayer.checkOn(exampleLayer.config(), harnesses).errors);
+  };
+  const config = exampleLayer.config();
+  const vertices = Object.entries<Record<string, unknown>>(config.flows.default.ticket.vertices);
+  const recovers = (vertex: Record<string, unknown>) =>
+    config.procedures[vertex.procedure as string].recover !== undefined;
+  const recovering = vertices
+    .filter(([, vertex]) => recovers(vertex))
+    .map(([id]) => ({ at: `${VERTICES}.${id}`, code: 'session-resume-unsupported' }));
+  // The rule is not vacuous: some Vertices recover, and some that run an Agent do not.
+  assert.ok(recovering.length > 0);
+  assert.ok(vertices.some(([, vertex]) => vertex.use !== undefined && !recovers(vertex)));
+  assert.deepEqual(fired(false), recovering);
+  assert.deepEqual(fired(true), []);
 });

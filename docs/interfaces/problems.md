@@ -49,6 +49,9 @@ unknown-permission-intent
 unused-agent
 vertex-needs-agent
 vertex-takes-no-agent
+unsupported-agent-field
+unenforceable-permission-intent
+session-resume-unsupported
 agent-action-not-first
 await-approval-not-last
 await-approval-with-agent
@@ -150,6 +153,9 @@ The rule each code names:
 | `unused-agent` | a declared Agent is used by no Vertex (warning) |
 | `vertex-needs-agent` | a Vertex whose Procedure has an agent Action names no Agent |
 | `vertex-takes-no-agent` | a Vertex whose Procedure has no agent Action names an Agent |
+| `unsupported-agent-field` | an Agent lists a field its Harness declares unsupported |
+| `unenforceable-permission-intent` | an Agent's `access` or `network` is one its Harness declares `hint` or `unsupported`, so it cannot enforce it |
+| `session-resume-unsupported` | a Vertex's Procedure declares `recover` on a Harness that cannot resume a Session |
 | `agent-action-not-first` | the agent Action is not a Procedure's first Action |
 | `await-approval-not-last` | `await-approval` is not its Procedure's last Action |
 | `await-approval-with-agent` | `await-approval` sits in a Procedure with an agent Action |
@@ -272,6 +278,16 @@ vertex-needs-agent: object (report.ProblemParams)
 vertex-needs-agent.procedure: string
 vertex-takes-no-agent: object (report.ProblemParams)
 vertex-takes-no-agent.procedure: string
+unsupported-agent-field: object (report.ProblemParams)
+unsupported-agent-field.field: string
+unsupported-agent-field.harness: string
+unenforceable-permission-intent: object (report.ProblemParams)
+unenforceable-permission-intent.field: string
+unenforceable-permission-intent.harness: string
+unenforceable-permission-intent.capability: string
+session-resume-unsupported: object (report.ProblemParams)
+session-resume-unsupported.procedure: string
+session-resume-unsupported.harness: string
 access-conflict: object (report.ProblemParams)
 access-conflict.procedure: string
 access-conflict.agent?: string

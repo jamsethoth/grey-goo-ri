@@ -151,10 +151,9 @@ test('a resumed call passes --resume with the stored session', () => {
   assert.equal(launched({ call: { resume: null } }).argv.includes('--resume'), false);
 });
 
-test('an agent listing mcp fails validate', async () => {
-  const validated = await harness.validate({ ...READER, mcp: ['github'] });
-  assert.equal(validated.ok, false);
-  assert.match(validated.errors.join('\n'), /\bmcp\b/);
+// The validator refuses a field the Capability matrix declares unsupported, once, at its key (Q2 A of #429).
+test('validate leaves a field Claude declares unsupported to the validator', async () => {
+  assert.deepEqual(await harness.validate({ ...READER, mcp: ['github'] }), { ok: true, errors: [], hinted: [] });
 });
 
 test('a listed plugin that is not installed fails resolveTools naming it', (t) => {

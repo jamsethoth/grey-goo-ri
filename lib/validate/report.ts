@@ -38,6 +38,9 @@ export const PROBLEM_CODES = [
   'unused-agent',
   'vertex-needs-agent',
   'vertex-takes-no-agent',
+  'unsupported-agent-field',
+  'unenforceable-permission-intent',
+  'session-resume-unsupported',
   // A Procedure's Actions, Claim tokens and settings.
   'agent-action-not-first',
   'await-approval-not-last',
@@ -169,6 +172,9 @@ interface ProblemParams {
   'unused-agent': { agent: string };
   'vertex-needs-agent': { procedure: string };
   'vertex-takes-no-agent': { procedure: string };
+  'unsupported-agent-field': { field: string; harness: string };
+  'unenforceable-permission-intent': { field: string; harness: string; capability: string };
+  'session-resume-unsupported': { procedure: string; harness: string };
   'access-conflict': { procedure: string; agent?: string };
   'check-after-effect': { id?: unknown; effect: string; effectId?: unknown };
   'claim-enum-mismatch': { schema: string; enum?: string[]; tokens: string[] };
