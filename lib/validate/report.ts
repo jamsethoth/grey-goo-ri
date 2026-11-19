@@ -29,6 +29,7 @@ export const PROBLEM_CODES = [
   'no-vertex-declared',
   'undeclared-procedure',
   'unknown-end',
+  'unknown-outcome',
   'unknown-vertex',
   // Agents and harnesses.
   'harness-unregistered',
@@ -164,6 +165,7 @@ interface ProblemParams {
   'reserved-name': { name: string } & InSourceFile;
   'unknown-vertex': { vertex: unknown };
   'unknown-end': { end: unknown };
+  'unknown-outcome': { outcome: string; outcomes: string[] };
   'undeclared-procedure': { procedure: unknown };
   'harness-unregistered': HarnessOwner & { harness: string };
   'harness-unset': HarnessOwner;

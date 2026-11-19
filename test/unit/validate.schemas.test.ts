@@ -302,6 +302,9 @@ test('a token whose every passing case a row maps away is not an Outcome', () =>
   exampleLayer.putAt(files['implement.schema.json'], ['properties', 'claim', 'enum'], ['ok', 'blocked', 'partial']);
   config.procedures.fix.claimTokens.partial = { requires: ['test'] };
   config.flows.default.ticket.routes['done-ish'] = 'reviewer';
+  // No row gives ok now, so a route keyed by it is one gg never takes (#436).
+  delete config.flows.default.ticket.vertices.green.route.ok;
+  delete config.flows.default.ticket.vertices['senior-green'].route.ok;
   const { errors, flows } = exampleLayer.check(config, files);
   assert.deepEqual(errors, []);
   assert.deepEqual(flows.default.ticket.vertices.green.outcomes, [
@@ -389,6 +392,9 @@ test('a row partly taken only across Claim tokens is warned once', () => {
   // The reviewer still loops back, so the Flow's inputs keep a producing path; with no changes, implementer-fix is cut
   // off.
   config.flows.default.ticket.vertices.reviewer.route.other = { to: 'red', max: 2, exhausted: 'senior-red' };
+  // The reviewer no longer produces retest, changes or repeat, so their routes are ones gg never takes (#436).
+  for (const outcome of ['retest', 'changes', 'repeat'])
+    delete config.flows.default.ticket.vertices.reviewer.route[outcome];
   const { errors, warnings } = exampleLayer.check(config);
   assert.deepEqual(errors, []);
   assert.deepEqual(exampleLayer.firedRules(warnings), [

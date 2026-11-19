@@ -1153,6 +1153,10 @@ exact admission must be, or which way it may be wrong.
     whose Vertices name it, which do not fit the repository (Q21); the user's other Flows pass every graph check before
     they are admitted. A malformed command, any other error of a Procedure's own checks, and every such error in the
     repository still hold every Flow of their source. Issue #433.
+  - (c) An `unknown-outcome` holds no route-map check: they read a route only for an Outcome in the Vertex's list,
+    never a key outside it. `unknown-outcome` and `unrouted-outcome` wait only on their own Vertex, and the Flow's
+    default keys on every Vertex: `gg doctor` reports every failure in one run, and docs/interfaces/problems.md lists
+    what waits (owner, 2026-11-19, D2 A, D3 C). Issue #436.
 - H7. An Outcome's route is the first of these that the configuration names:
   1. the Vertex's `route` for that Outcome;
   2. the Flow's `routes` for that Outcome;

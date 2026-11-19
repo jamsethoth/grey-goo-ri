@@ -41,6 +41,7 @@ no-flow-declared
 no-vertex-declared
 undeclared-procedure
 unknown-end
+unknown-outcome
 unknown-vertex
 harness-unregistered
 harness-unset
@@ -145,6 +146,7 @@ The rule each code names:
 | `no-vertex-declared` | a Flow declares no Vertex |
 | `undeclared-procedure` | a Vertex names a Procedure that is not declared |
 | `unknown-end` | an end is not one of gg's end states |
+| `unknown-outcome` | a route is keyed by an Outcome its Vertex cannot produce, or a Flow route by one no Vertex produces |
 | `unknown-vertex` | a route names a Vertex that is not declared |
 | `harness-unregistered` | an Agent names a Harness that is not registered |
 | `harness-unset` | an Agent sets no Harness |
@@ -225,6 +227,22 @@ The rule each code names:
 | `invalid-glob` | a `testPaths` glob is one gg's readers do not read alike |
 | `unknown-flow` | an Execution Record a Run would resume names a Flow that is gone |
 
+## What one run cannot report
+
+`gg doctor` reports every failure it can in one run. These wait until another error is fixed, since the value they read
+is unknown until then:
+
+1. A Vertex's `unknown-outcome` and `unrouted-outcome`, while its Procedure has an error (in the user's directory, a
+   command the repository does not declare among them), or the Vertex itself has one apart from its route targets: its
+   Outcomes may be short. `unrouted-outcome` also waits while the Flow's `vertices` or `routes` is malformed: whether
+   an Outcome is routed is unknown.
+2. `unknown-outcome` at the Flow's default `routes`, while any Vertex waits as in 1, or the Flow's `vertices` or
+   `routes` is malformed: the union of its Vertices' Outcomes is unknown.
+3. Every other check over a Flow's route map (`write-without-commit`, `commit-without-check`, `unbounded-cycle`,
+   `exhausted-loop`, `pr-ready-skippable`, `required-input-unsure`, `optional-input-unsure` and `unreachable-vertex`),
+   while the Flow, or a section every Flow reads, has any error other than an `unknown-outcome` (H6). #449 narrows
+   this.
+
 ## Their params
 
 `ProblemParams`: each code's `params`, as its sentence names them. A code not listed names none. One line per path, as
@@ -258,6 +276,10 @@ unknown-vertex: object (report.ProblemParams)
 unknown-vertex.vertex: unknown
 unknown-end: object (report.ProblemParams)
 unknown-end.end: unknown
+unknown-outcome: object (report.ProblemParams)
+unknown-outcome.outcome: string
+unknown-outcome.outcomes: list
+unknown-outcome.outcomes[]: string
 undeclared-procedure: object (report.ProblemParams)
 undeclared-procedure.procedure: unknown
 harness-unregistered: {agent,harness} | {vertex,harness} (report.ProblemParams)

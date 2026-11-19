@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as validate from '../../lib/validate/index.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as procedureActions from '../support/procedure-actions.ts';
 
@@ -542,3 +543,20 @@ for (const [what, mutate, errors] of MALFORMED) {
     assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), errors);
   });
 }
+
+// The holds read only a key's own check, so a Procedure key read as absent when null would hold nothing (#436, D5).
+// Each key counts only at the path its own check reports at: `actions` at the Procedure, every other key at itself.
+test('every Procedure key that is null is reported by its own check too', () => {
+  const unreported = validate.PROCEDURE_KEYS.filter((key) => {
+    const config = exampleLayer.config();
+    config.procedures.review[key] = null;
+    return !exampleLayer
+      .check(config)
+      .errors.some(
+        (problem) =>
+          problem.code !== 'null-value' &&
+          (key === 'actions' ? problem.at === 'procedures.review' : problem.at.startsWith(`procedures.review.${key}`)),
+      );
+  });
+  assert.deepEqual(unreported, []);
+});
