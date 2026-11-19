@@ -224,7 +224,7 @@ export function pinnedConfiguration({
 // One Harness's entry in the Pinned Configuration's launch profile: what the Config Hash pins of how it launches.
 export function launchEntry(harness: runContext.Harness): PinnedLaunchProfile {
   const { name = null, version = null } = harness.launchProfile ?? {};
-  // Known crash, left so a broken Harness is refused, not hashed: a Harness with no capabilities (the Codex stub)
+  // Known crash, left so a broken Harness is refused, not hashed: a Harness with no capabilities (a stub module)
   // throws a TypeError here, reached only by a call that skips gg run's preflight, which refuses it first (#428 D5).
   return { name, version, confinement: harness.capabilities.confinement ?? null };
 }
