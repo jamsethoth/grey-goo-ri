@@ -153,13 +153,16 @@ leverage and a change lands in one place (locality).
 | `lib/approval.ts` | Pending Instance, Approval Digest, timeline read, consumption |
 | `lib/locks.ts` | ticket, epic and repo locks as `node:sqlite` exclusive transactions |
 | `lib/harnesses/contract.ts` | the Harness contract check and shared Usage shape |
-| `lib/harnesses/shipped.ts` | the shipped Harnesses by name; the only module outside a Harness that names one |
-| `lib/harnesses/claude.ts` | **stub**: the Claude Code Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
-| `lib/harnesses/codex.ts` | **stub**: the Codex Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
-| `lib/exec.ts` | process spawn (a nonzero exit rejects with a `CommandError`) and the shell runner, with its timeout and cleanup (ported) |
+| `lib/harnesses/shipped.ts` | the shipped Harnesses by name, as declared (`HARNESSES`), and each built from the `exec` `bin/gg.ts` passes (`shipped(exec)`); the only module outside a Harness that names one |
+| `lib/harnesses/claude.ts` | **stub**: the Claude Code Harness; exports only `protectedPaths` and an empty `createCli(exec)`, so `gg run` preflight fails "not implemented" |
+| `lib/harnesses/codex.ts` | **stub**: the Codex Harness; exports only `protectedPaths` and an empty `createCli(exec)`, so `gg run` preflight fails "not implemented" |
+| `lib/exec.ts` | process spawn (a nonzero exit rejects with a `CommandError`), the shell runner, with its timeout and cleanup (ported), and `launch`, an argv run contained with no shell under its stall and wall clocks and the cancel signal, its tree taken down (#423) |
+| `lib/command-shim.ts` | what an argv starts as with no shell, for `run` and `launch`: on Windows an npm `.cmd` shim for a node bin read for the script it names, any other `.cmd` refused |
+| `lib/launch-clock.ts` | the clocks that stop a launch: the stall clock, which output and `onIdle`'s last activity re-arm, the wall clock and the cancel signal |
 | `lib/command-cleanup.ts` | Command Cleanup's decisions, with no I/O: the `ps` listing parse, the descendant closure, the watcher's update, the kill plans and their survivors, a job's leftovers, the `cleanup` report |
 | `lib/process-tree.ts` | the processes a shell command leaves, on either platform: listing, watching and killing them as Command Cleanup decides, the Windows job's termination, and the helper processes that do so (ported) |
-| `lib/containment.ts` | the Windows job object a shell command, or the suite launcher's stage, runs in, through `node:ffi`: start, list, name, terminate, confirm empty (ADR 0021) |
+| `lib/containment.ts` | the Windows job object a shell command, a launched argv or the suite launcher's stage runs in, through `node:ffi`: start, list, name, terminate, confirm empty (ADR 0021) |
+| `lib/containment-gate.ts` | the node process a launched argv waits behind on Windows until its job holds it, which then starts the argv with no shell |
 | `lib/git.ts` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
 | `lib/git-default-branch.ts` | the branch a repository's Tickets start from by default, which `gg init` writes as `baseBranch`: origin's HEAD, else the checked-out branch |
 | `lib/git-temp-index.ts` | what `lib/git.ts` reads through a copy of the index: a worktree's fingerprint and a rescue's tree |

@@ -4,6 +4,7 @@ import { readdirSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as exec from '../../../lib/exec.ts';
 import * as contract from '../../../lib/harnesses/contract.ts';
 import type * as fakeHarnessModule from '../../support/fake-harness.ts';
 
@@ -87,6 +88,24 @@ test('every Harness declares the paths that configure it', async () => {
   );
   assert.deepEqual((await fakeHarness()).protectedPaths, []);
   assert.deepEqual((await fakeHarness({ protectedPaths: ['.fake/'] })).protectedPaths, ['.fake/']);
+});
+
+// A Harness starts its CLI only through the exec bin/gg.ts builds and passes down (ADR 0019, #423), so shipped builds
+// every Harness module from the exec it is given, each holding only the contract's members.
+test('shipped builds every Harness module from the exec it is given', async () => {
+  const shipped = await import('../../../lib/harnesses/shipped.ts');
+  const modules = readdirSync(new URL('../../../lib/harnesses/', import.meta.url))
+    .filter((file) => !['contract.ts', 'shipped.ts'].includes(file))
+    .map((file) => file.replace(/\.ts$/, ''));
+  const built = shipped.shipped(exec.createExec({ kernel32: null }));
+  assert.deepEqual(Object.keys(built).sort(), modules.sort(), 'every Harness module is built');
+  for (const name of modules) {
+    const harness = built[name] as Record<string, unknown>;
+    const declared = shipped.HARNESSES[name as keyof typeof shipped.HARNESSES];
+    assert.deepEqual(harness.protectedPaths, declared.protectedPaths, `${name} keeps its declaration`);
+    const extra = Object.keys(harness).filter((member) => !contract.HARNESS_METHODS.includes(member));
+    assert.deepEqual(extra, [], `${name} holds only contract members`);
+  }
 });
 
 // A Harness returns only once its processes are gone, or reports that it could not confirm it (L6, L11).

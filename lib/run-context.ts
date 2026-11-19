@@ -58,7 +58,7 @@ export interface AdmissionGit {
 export interface Deps {
   gh: github.Gh;
   git: RunGit;
-  exec: Pick<exec.Exec, 'runShell' | 'cleanupConfirmed'>;
+  exec: Pick<exec.Exec, 'runShell' | 'cleanupConfirmed' | 'launch'>;
   locks?: locks.Locks;
   database?: record.StateDatabase;
   clock?: clockModule.Clock;

@@ -32,7 +32,8 @@ const LCOV = 'coverage/lcov.info';
 // a figure recorded per change made every two open PRs conflict on it (ADR 0016, amended 2026-11-11).
 export const COVERAGE_FLOOR = { lines: 99, functions: 98.5 };
 // test/unit/ may not reach the process boundaries (test/unit/layout.test.ts), so their lines are not unit-testable;
-// lib/process-tree.ts and lib/containment.ts are reached only through lib/exec.ts and this launcher's census, and
+// lib/process-tree.ts, lib/containment.ts and its gate are reached only through lib/exec.ts and this launcher's census,
+// lib/command-shim.ts and lib/launch-clock.ts only through lib/exec.ts, and
 // lib/git-temp-index.ts and lib/git-default-branch.ts only through lib/git.ts. Their contract suites cover them; the
 // decisions are in lib/command-cleanup.ts, which is measured.
 const NOT_UNIT = [
@@ -42,6 +43,9 @@ const NOT_UNIT = [
   'lib/git-default-branch.ts',
   'lib/process-tree.ts',
   'lib/containment.ts',
+  'lib/containment-gate.ts',
+  'lib/command-shim.ts',
+  'lib/launch-clock.ts',
 ];
 // A test's git reads no global or system config, so the developer's own cannot change what it does: a global
 // commit.gpgsign=true failed each commit a test made, and core.fsmonitor=true starts a daemon in each repository

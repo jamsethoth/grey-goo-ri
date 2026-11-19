@@ -37,5 +37,6 @@ export function answerAll(
 ): void {
   fixture.options.deps.exec = {
     runShell: async (command: string, options?: { cwd?: string }) => answer(command, options),
-  } as Exec;
+    launch: () => Promise.reject(new Error('the suite-runs fixture runs no launch')),
+  } as unknown as Exec;
 }
