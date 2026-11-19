@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type * as commit from '../../lib/effects/commit.ts';
 import type * as events from '../../lib/events.ts';
@@ -22,6 +22,7 @@ import {
   writeAheadSteps,
 } from '../support/execution-reads.ts';
 import {
+  RIGHT_ADD,
   WRONG_ADD,
   greenFixture,
   greenWrites,
@@ -36,6 +37,7 @@ import * as suiteRuns from '../support/suite-runs.ts';
 
 const RED_CALL = keys.responseKey({ vertex: 'red', visit: 1, action: 'red' });
 const RED_RECOVERY = keys.responseKey({ vertex: 'red', visit: 1, action: 'red', recovery: 1 });
+const RED_RETRY = keys.responseKey({ vertex: 'red', visit: 1, action: 'red', attempt: 2 });
 const GREEN_CALL = keys.responseKey({ vertex: 'green', visit: 1, action: 'green' });
 const GREEN_RECOVERY = keys.responseKey({ vertex: 'green', visit: 1, action: 'green', recovery: 1 });
 
@@ -440,4 +442,64 @@ test('a red run with a nonzero exit naming a reported test is committed as test:
       .some((event) => event.type === 'action' && (event as events.ActionEvent).outcome === 'failed'),
   );
   assert.deepEqual(fixture.executionRecord.history, []);
+});
+
+// One emitter writes every Action Event (lib/run-context.ts), so every agent Action Event names the Agent's Harness's
+// launch profile as `<name>@<version>` and its confinement: a retried Attempt's and a recovery pass's too (#428 Q2 A).
+test('every agent Action Event carries the launch profile and the confinement', async (t) => {
+  const fixture = await greenFixture(t, {
+    responses: {
+      [RED_CALL]: { files: {}, response: null, failure: { failureClass: 'transient', retryAfterMs: 0 } },
+      [RED_RETRY]: golden.firstVisitResponses[RED_CALL]!,
+      [GREEN_CALL]: greenWrites({ 'lib/add.mjs': WRONG_ADD }),
+      [GREEN_RECOVERY]: greenWrites({ 'lib/add.mjs': RIGHT_ADD }),
+    },
+  });
+  Object.assign(fixture.harness, { launchProfile: { name: 'fake-headless', version: 3 } });
+  Object.assign(fixture.harness.capabilities, { confinement: 'trusted-commands' });
+  await interpreter.runExecution(fixture.options);
+  const profile = { launchProfile: 'fake-headless@3', confinement: 'trusted-commands' };
+  assert.deepEqual(
+    fixture
+      .readEvents()
+      .filter((event): event is events.AgentActionEvent => event.type === 'action' && event.agent)
+      .map(({ vertex, action, recovery, attempt, launchProfile, confinement }) => ({
+        place: `${vertex}/${action}/${recovery}/${attempt}`,
+        launchProfile,
+        confinement,
+      })),
+    [
+      { place: 'red/red/0/1', ...profile },
+      { place: 'red/red/0/2', ...profile },
+      { place: 'green/green/0/1', ...profile },
+      { place: 'green/green/1/1', ...profile },
+    ],
+  );
+});
+
+// The Harness digests the repository's own configuration for each call (ADR 0024 item 3), so a `.claude` edit between
+// green's call and its recovery pass shows on their events as two digests (request 3.2, R10). The fake reports the
+// digest its script gives; computing it is the Claude Harness's (#425).
+test('a .claude change between two calls of one Visit shows two digests', async (t) => {
+  const fixture = await greenFixture(t, {
+    responses: {
+      [GREEN_CALL]: { ...greenWrites({ 'lib/add.mjs': WRONG_ADD }), result: { repositoryDigest: 'sha256:before' } },
+      [GREEN_RECOVERY]: { ...greenWrites({ 'lib/add.mjs': RIGHT_ADD }), result: { repositoryDigest: 'sha256:after' } },
+    },
+  });
+  const run = fixture.harness.run;
+  fixture.harness.run = (call, hooks) => {
+    if (call.phase === 'recover') {
+      mkdirSync(join(fixture.worktree, '.claude', 'skills', 'review'), { recursive: true });
+      writeFileSync(join(fixture.worktree, '.claude', 'skills', 'review', 'SKILL.md'), '# review\n');
+    }
+    return run(call, hooks);
+  };
+  await interpreter.runExecution(fixture.options);
+  assert.deepEqual(
+    [actionEvent(fixture, 'green', 'green'), actionEvent(fixture, 'green', 'green', 1)].map(
+      (event) => (event as events.AgentActionEvent | undefined)?.repositoryDigest,
+    ),
+    ['sha256:before', 'sha256:after'],
+  );
 });

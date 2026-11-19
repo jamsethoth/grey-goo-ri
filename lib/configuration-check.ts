@@ -66,6 +66,7 @@ function validateSource(source: config.Source, harnesses: unknown, repository: c
     readSchema: (name) => JSON.parse(config.namedFile(source.files, name)),
     readTemplate: (name) => config.namedFile(source.files, name),
     contract: { commands: repository.commands, labelPrefix: repository.labelPrefix },
+    misfits: source !== repository,
   });
 }
 
@@ -84,10 +85,7 @@ function userFlows(configuration: config.Configuration, harnesses: unknown) {
   // A Problem's location names the user's source, as its Flows' names do.
   // eslint-disable-next-line id-denylist -- a Problem's location is at
   const located = (problem: report.Problem) => ({ ...problem, at: `${USER_PREFIX}${problem.at || 'gg.json'}` });
-  // Only a command named by a string fits one repository and not another; a malformed one is an error anywhere.
-  const fits = (problem: report.Problem) =>
-    problem.code !== 'no-flow-declared' &&
-    !(problem.code === 'undeclared-command' && typeof problem.params?.command === 'string');
+  const fits = (problem: report.Problem) => problem.code !== 'no-flow-declared' && !validator.isMissingCommand(problem);
   for (const [name, flow] of sourceFlows(
     validated,
     { name: 'user', files: user.files },

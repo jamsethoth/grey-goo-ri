@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import * as config from '../../lib/config.ts';
 import * as reset from '../../lib/effects/reset.ts';
 import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
@@ -9,9 +10,11 @@ import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
 import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as golden from '../support/golden.ts';
+import * as goldenRun from '../support/golden-run.ts';
 import * as crashResume from '../support/crash-resume.ts';
 import * as effectFixture from '../support/effect-fixture.ts';
 import * as executionReads from '../support/execution-reads.ts';
+import * as keys from '../support/keys.ts';
 import * as namedFlow from '../support/named-flow.ts';
 import * as pinnedValue from '../support/pinned-value.ts';
 import * as resetInterruption from '../support/reset-interruption.ts';
@@ -194,4 +197,83 @@ test('a record at a Vertex named constructor resumes, and one the Flow lacks hol
     executionReads.loadTicket(held).terminalReason!.text,
     /The record continues at Vertex constructor, which the Flow no longer has\./,
   );
+});
+
+// Every way a resumed Visit's Harness can differ from what its Config Hash pinned, made on the Harness that runs, with
+// this Run's Flow still on that Harness or moved to another, at each resume point that reaches an agent call (#428 D1).
+const PINNED_FAKE = { name: 'fake-headless', version: 1, confinement: 'none' };
+const MOVED = { other: { name: 'other-headless', version: 1, confinement: 'none' } };
+const RETRIED = {
+  ...golden.firstVisitResponses,
+  [keys.responseKey({ vertex: 'green', visit: 1, action: 'green' })]: {
+    failure: { failureClass: 'transient' as const, retryAfterMs: 0 },
+  },
+  [keys.responseKey({ vertex: 'green', visit: 1, action: 'green', attempt: 2 })]: {
+    files: { 'lib/add.mjs': goldenRun.RIGHT_ADD },
+    response: golden.greenResponse,
+  },
+};
+const CHANGES = [
+  ['launch profile changed is held before any agent call', { launchProfile: { name: 'fake-headless', version: 2 } }],
+  ['confinement changed is held before any agent call', { capabilities: { confinement: 'trusted-commands' } }],
+  ['launch profile and confinement unchanged continues', null],
+] as const;
+for (const [change, harnessNow] of CHANGES)
+  for (const moved of [false, true])
+    for (const pending of [false, true]) {
+      const flowAt = moved ? 'moved to another Harness' : 'still on it';
+      const point = pending ? 'an agent call pending' : 'after the commit';
+      test(`a resumed Visit whose Harness's ${change}, its Flow ${flowAt}, ${point}`, async (t) => {
+        const fixture = await golden.fixture(t, pending ? { responses: RETRIED } : {});
+        const { pinned } = fixture.options;
+        stateDatabase.savePinnedConfiguration(fixture.commonDir, pinned.hash, {
+          ...pinned.configuration,
+          launchProfile: { fake: PINNED_FAKE },
+        });
+        Object.assign(fixture.harness, { launchProfile: { name: 'fake-headless', version: 1 } });
+        await (pending
+          ? crashResume.crashed(fixture, ['green', 1, 'green', 0, 1], 'after-completion')
+          : crashResume.crashed(fixture, crashResume.EFFECTS.commit.place, 'after-completion'));
+        const callsBefore = fixture.harness.calls.length;
+        if (harnessNow && 'launchProfile' in harnessNow) Object.assign(fixture.harness, harnessNow);
+        if (harnessNow && 'capabilities' in harnessNow)
+          Object.assign(fixture.harness.capabilities, harnessNow.capabilities);
+
+        // This Run pins what a real gg run pins: the entry of the Harness the Flow uses now.
+        const launchProfile = moved ? MOVED : { fake: config.launchEntry(fixture.options.harness!) };
+        const ended = await interpreter.runExecution({
+          ...fixture.options,
+          pinned: { ...pinned, configuration: { ...pinned.configuration, launchProfile } },
+          record: executionReads.loadTicket(fixture),
+        });
+        const held = harnessNow !== null;
+        assert.deepEqual([ended.outcome, ended.held === true], [held ? 'needs-human' : 'ready-for-qa', held]);
+        if (held || pending)
+          assert.equal(fixture.harness.calls.length - callsBefore, held ? 0 : 1, 'agent calls after the resume');
+        if (!held) return;
+        assert.match(
+          executionReads.loadTicket(fixture).terminalReason!.text,
+          /entered with Harness fake's launch profile and confinement as they were then, and this Run has changed them/,
+        );
+      });
+    }
+
+// gg work resume at the held Vertex starts a new Visit there with no Action yet and keeps the saved snapshot
+// (lib/work.ts), which is how a Ticket held for its Harness's launch gets out (#428 D3).
+test('a Visit resumed at the Vertex its launch hold stopped continues', async (t) => {
+  const fixture = await golden.fixture(t);
+  const { pinned } = fixture.options;
+  stateDatabase.savePinnedConfiguration(fixture.commonDir, pinned.hash, {
+    ...pinned.configuration,
+    launchProfile: { fake: PINNED_FAKE },
+  });
+  await crashResume.crashed(fixture, crashResume.EFFECTS.commit.place, 'after-completion');
+  const launch = { ...PINNED_FAKE, version: 2 };
+  const decide = (executionRecord: record.ExecutionRecord) =>
+    reconcile.reconcile({ ...crashResume.reconcileOptions(fixture, executionRecord), launch });
+  const executionRecord = executionReads.loadTicket(fixture);
+  assert.equal((await decide(executionRecord)).next, 'hold');
+
+  executionRecord.cursor = { vertex: 'green', visit: 2, action: null, recovery: 0, attempt: 1 };
+  assert.equal((await decide(executionRecord)).next, 'continue');
 });

@@ -1,4 +1,6 @@
+import { isDeepStrictEqual } from 'node:util';
 import * as branchTip from './branch-tip.ts';
+import type * as config from './config.ts';
 import * as record from './record.ts';
 import * as stateDatabase from './state-database/index.ts';
 import * as writeAhead from './write-ahead.ts';
@@ -40,7 +42,7 @@ export type HumanOverride = {
 type Hold = { next: 'hold'; cursor: record.Cursor | null; reason: string; name?: string; advice?: string };
 export type ReconcileResult = { next: 'continue'; cursor: record.Cursor; reason: null } | Hold | HumanOverride;
 
-type Database = Pick<record.StateDatabase, 'evidence' | 'complete' | 'rowsNaming'>;
+type Database = Pick<record.StateDatabase, 'evidence' | 'complete' | 'rowsNaming' | 'loadPinnedConfiguration'>;
 
 // The Visit's result is a call held for cleanup (L11): what its worktree holds is for the suspended call's validation
 // to judge (L15), once a later Run has confirmed its processes gone.
@@ -247,6 +249,8 @@ export type ReconcileOptions = ({ record: record.ExecutionRecord } | { corrupt: 
   cwd?: string;
   find?: effects.FindEffect;
   database?: Database;
+  // The launch entry of the Harness a resumed Visit's Agent runs on in this Run, whether or not the Flow still uses it.
+  launch?: config.PinnedLaunchProfile | null;
 };
 
 // Labels decide whether an Execution continues, the record where (request 3.5). The record is never discarded.
@@ -267,7 +271,8 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
   const issueLabels = gh.labelNames(await gh.viewIssue(executionRecord.ticket, cwd));
   const overridden = humanOverride(executionRecord, issueLabels, labelPrefix);
   if (overridden) return overridden;
-  const held = configurationHold(executionRecord, flow);
+  const held =
+    configurationHold(executionRecord, flow) ?? launchHold(executionRecord, database, options.launch ?? null);
   if (held) return held;
   const hold = (reason: string): Hold => ({
     next: 'hold',
@@ -336,4 +341,39 @@ function configurationHold(executionRecord: record.ExecutionRecord, flow: Reconc
     );
   }
   return null;
+}
+
+// A Visit in progress runs its agent on the Harness this Run has, which no Config Hash can pin back, so one whose
+// Harness's launch profile or confinement differs from what its Config Hash pinned is held, not resumed (#428 D1). A
+// Pinned Configuration with no entry to compare, saved before #428 or not at all, holds nothing.
+function launchHold(
+  executionRecord: record.ExecutionRecord,
+  database: Database,
+  now: config.PinnedLaunchProfile | null,
+): Hold | null {
+  const { cursor, configurationSnapshot } = executionRecord;
+  const harness = configurationSnapshot?.agent?.harness;
+  if (cursor.action === null || configurationSnapshot?.vertex !== cursor.vertex || !harness || !now) return null;
+  const then = pinnedEntry(
+    database.loadPinnedConfiguration(executionRecord.commonDir, executionRecord.configHash),
+    harness,
+  );
+  if (then === undefined || isDeepStrictEqual(then, now)) return null;
+  return {
+    next: 'hold',
+    cursor,
+    reason: namingInterrupted(
+      executionRecord,
+      `The Visit in progress at Vertex ${cursor.vertex} entered with Harness ${harness}'s launch profile and ` +
+        'confinement as they were then, and this Run has changed them; nothing was run or discarded.',
+    ),
+  };
+}
+
+// A saved Pinned Configuration's launch profile entry for one Harness, read from its parsed JSON.
+function pinnedEntry(pinned: unknown, harness: string): unknown {
+  if (typeof pinned !== 'object' || pinned === null || !('launchProfile' in pinned)) return undefined;
+  const { launchProfile } = pinned;
+  if (typeof launchProfile !== 'object' || launchProfile === null) return undefined;
+  return Object.entries(launchProfile).find(([name]) => name === harness)?.[1];
 }

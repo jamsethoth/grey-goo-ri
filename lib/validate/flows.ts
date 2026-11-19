@@ -38,6 +38,8 @@ export interface FlowContext {
   procedures: Map<string, checked.CheckedProcedure | undefined>;
   procedureFalls: Map<string, FallThroughs>;
   failedAgents: Set<unknown>;
+  // The Procedures whose checks raised an error, which hold each Flow a Vertex of names one.
+  failedProcedures: Set<unknown>;
   agents: Map<string, agentChecks.CheckedAgent>;
   harnesses: unknown;
   reader: templates.TemplateReader | null;
@@ -179,6 +181,10 @@ function accessConflict(problems: report.Report, location: string, procedure: { 
   report.error(problems, location, 'access-conflict', message, { procedure: procedure.name, ...(agent && { agent }) });
 }
 
+// A Vertex naming an Agent or a Procedure whose checks erred holds its Flow's graph checks (H6).
+const holdsFlow = (checking: FlowContext, vertex: Value) =>
+  checking.failedAgents.has(vertex.use) || checking.failedProcedures.has(vertex.procedure);
+
 function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex: unknown) {
   const problems = checking.report;
   const location = `${state.location}.ticket.vertices.${id}`;
@@ -198,7 +204,7 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
   const procedure = checking.procedures.get(vertex.procedure as string);
   const procedureName = checkProcedureName(checking, location, vertex.procedure);
   if (procedure && !state.used.has(procedure.name)) state.used.set(procedure.name, procedure);
-  if (checking.failedAgents.has(vertex.use)) state.held = true;
+  if (holdsFlow(checking, vertex)) state.held = true;
   const use = agentChecks.checkUse(checking, location, vertex.use);
   const agent = agentChecks.vertexAgent(checking, { id, location }, vertex, { use, keys: ownKeys, procedure });
   if (procedure?.access === 'read-only' && agent.access === 'workspace-write')

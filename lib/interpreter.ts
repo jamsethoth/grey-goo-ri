@@ -14,6 +14,7 @@ import * as reconcile from './reconcile.ts';
 import * as rescue from './rescue.ts';
 import * as record from './record.ts';
 import * as remoteEffects from './remote-effects.ts';
+import * as config from './config.ts';
 import * as context from './run-context.ts';
 import * as terminal from './terminal.ts';
 import * as terminalReport from './terminal-report.ts';
@@ -155,6 +156,7 @@ async function resume(runContext: RunContext): Promise<TerminalResult | null> {
         integrity: runContext.integrity,
         gh: runContext.gh,
         database: runContext.database,
+        launch: runContext.harnessOf() && config.launchEntry(runContext.harnessOf()!),
         labelPrefix: runContext.labelPrefix,
         cwd: runContext.cwd,
         find: findEffect(runContext),

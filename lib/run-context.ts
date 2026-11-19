@@ -111,6 +111,13 @@ export interface Harness {
   }>;
   resolveTools(agent: unknown, context: ToolsContext): jsonValue.JsonValue;
   capabilities: { confinement?: string | null; sessionResume?: { supported?: boolean } };
+  launchProfile?: LaunchProfile | null;
+}
+
+// A Harness's launch profile: the name and version of the argv, environment and settings it launches with (#428).
+export interface LaunchProfile {
+  name: string;
+  version: number;
 }
 
 export interface Ticket {
@@ -227,6 +234,15 @@ export function createRunContext(options: ExecutionOptions): RunContext {
   return runContext;
 }
 
+// What an Action Event names of its Harness: the launch profile as `<name>@<version>`, and the confinement (#428 Q2 A).
+function profileOf(harness: Harness | null) {
+  const profile = harness?.launchProfile;
+  return {
+    launchProfile: profile ? `${profile.name}@${profile.version}` : null,
+    confinement: harness?.capabilities.confinement ?? null,
+  };
+}
+
 // A Vertex without an Agent (publish) runs on no Harness, and a fault before the first Visit has no pinned Agent, so
 // their deterministic Actions record no confinement.
 function attachActionMethods(runContext: RunContext) {
@@ -240,8 +256,7 @@ function attachActionMethods(runContext: RunContext) {
     runContext.events('action', {
       flow: flow.name,
       configHash: executionRecord.configHash,
-      launchProfile: null,
-      confinement: runContext.harnessOf()?.capabilities.confinement ?? null,
+      ...profileOf(runContext.harnessOf()),
       ticket: executionRecord.ticket,
       owner: executionRecord.owner,
       run: runContext.run,

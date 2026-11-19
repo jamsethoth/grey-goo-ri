@@ -9,9 +9,12 @@ import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
 import * as model from '../../lib/model.ts';
 import * as procedures from '../../lib/procedures.ts';
-import type * as run from '../../lib/run.ts';
+import * as run from '../../lib/run.ts';
 import * as settings from '../../lib/settings.ts';
 import * as exampleLayer from '../support/example-layer.ts';
+import * as fakeHarness from '../support/fake-harness.ts';
+import * as runFixture from '../support/run-fixture.ts';
+import * as tempDirectory from '../support/temp-directory.ts';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const sha256 = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
@@ -387,4 +390,50 @@ test('approvers change the Config Hash, and none leaves it as it was', () => {
   const hash = config.configHash(pinned);
   assert.notEqual(config.configHash({ ...pinned, approvers: ['some-login'] }), hash);
   assert.equal(config.configHash({ ...pinned, approvers: undefined }), hash);
+});
+
+// The run fixture's default Flow, every Agent on the Harness `fake`, as gg run's admission pins it over `harnesses`.
+async function pinnedDefault(t: TestContext, harnesses: Record<string, unknown>): Promise<run.PinnedFlow> {
+  const { selected } = await run.admitConfiguration({
+    commonDir: tempDirectory.stateDatabaseDirectory(t, 'gg-config-pin-'),
+    config: {
+      repository: runFixture.testConfig(''),
+      user: { maxParallel: 2, worktreeRoot: '~/worktrees', files: {} },
+      repositoryFile: '/repo/.agents/gg/gg.json',
+      userFile: '/home/.agents/gg/gg.json',
+    },
+    harnesses,
+  });
+  return selected;
+}
+
+// A resumed Execution must not run under another launch profile than the one its Config Hash pinned (request 3.7).
+test('the Config Hash changes with the launch profile', async (t) => {
+  const fake = fakeHarness.fakeHarness();
+  const first = await pinnedDefault(t, { fake: { ...fake, launchProfile: { name: 'fake-headless', version: 1 } } });
+  const bumped = await pinnedDefault(t, { fake: { ...fake, launchProfile: { name: 'fake-headless', version: 2 } } });
+  assert.notEqual(bumped.hash, first.hash);
+});
+
+// Trusted-Command Mode is in the Config Hash (request 3.2, #428 Q2 A), even for a Harness that declares no profile.
+test("the Config Hash changes with a Harness's confinement", async (t) => {
+  const none = await pinnedDefault(t, { fake: fakeHarness.fakeHarness({ capabilities: { confinement: 'none' } }) });
+  const trusted = await pinnedDefault(t, {
+    fake: fakeHarness.fakeHarness({ capabilities: { confinement: 'trusted-commands' } }),
+  });
+  assert.notEqual(trusted.hash, none.hash);
+});
+
+// Only the Harnesses the Flow's Agents use, so another Harness's profile never moves the Flow's hash (#428 Q2 A).
+test("gg run pins the launch profile and confinement of each Harness the Flow's Agents use", async (t) => {
+  const pinned = await pinnedDefault(t, {
+    fake: {
+      ...fakeHarness.fakeHarness({ capabilities: { confinement: 'trusted-commands' } }),
+      launchProfile: { name: 'fake-headless', version: 1 },
+    },
+    spare: { ...fakeHarness.fakeHarness({ name: 'spare' }), launchProfile: { name: 'spare-headless', version: 4 } },
+  });
+  assert.deepEqual(pinned.configuration.launchProfile, {
+    fake: { name: 'fake-headless', version: 1, confinement: 'trusted-commands' },
+  });
 });

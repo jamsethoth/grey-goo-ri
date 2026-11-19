@@ -355,3 +355,20 @@ test('a resumed Visit whose Procedure changed is held', async (t) => {
   assert.equal(executionReads.loadTicket(fixture).state, 'held');
   assert.equal(fixture.harness.calls.length, 2, 'nothing ran after the hold');
 });
+
+// gg work resume at the held Vertex starts a new Visit there with no Action yet and keeps the saved snapshot
+// (lib/work.ts), which is how a Ticket held for its Procedure gets out (#428 D3).
+test('a Visit resumed at the Vertex its Procedure hold stopped continues', async (t) => {
+  const fixture = await golden.fixture(t);
+  await crashResume.crashed(fixture, crashResume.EFFECTS.commit.place, 'after-completion');
+  golden.configure(fixture, (configured) => {
+    (configured.procedures.implement as unknown as { recover: { max: number } }).recover.max = 2;
+  });
+  const decide = (executionRecord: record.ExecutionRecord) =>
+    reconcile.reconcile(crashResume.reconcileOptions(fixture, executionRecord));
+  const executionRecord = executionReads.loadTicket(fixture);
+  assert.equal((await decide(executionRecord)).next, 'hold');
+
+  executionRecord.cursor = { vertex: 'green', visit: 2, action: null, recovery: 0, attempt: 1 };
+  assert.equal((await decide(executionRecord)).next, 'continue');
+});
