@@ -1,7 +1,7 @@
 // The Claude Harness over the fake claude CLI (child-scripts/fake-claude.ts): gg's real launch, with the command it
 // starts replaced by node running the fake, which replays one recorded call. It spawns, so only medium tests call it.
 import type { TestContext } from 'node:test';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as exec from '../../lib/exec.ts';
@@ -24,7 +24,9 @@ export interface FakeCli {
 // A Claude Harness whose launches start the fake, in a temp directory that holds the Claude configuration directory,
 // the repository the call runs in and the Run directory.
 export function claudeOverFakeCli(t: TestContext, { scenario, mode = 'replay', command = process.execPath }: FakeCli) {
-  const directory = tempDirectory.tempDirectory(t, 'gg-fake-claude-');
+  // On Windows a fake just killed holds its working directory for a moment, so the repository goes first, with retries.
+  const removeRepository = () => rmSync(cwd, { recursive: true, force: true, maxRetries: 6, retryDelay: 100 });
+  const directory = tempDirectory.tempDirectory(t, 'gg-fake-claude-', undefined, removeRepository);
   const [configDirectory, cwd, runDirectory] = ['claude-home', 'repo', 'run'].map((name) => join(directory, name)) as [
     string,
     string,

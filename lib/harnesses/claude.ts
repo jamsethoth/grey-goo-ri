@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
+import * as commandCleanup from '../command-cleanup.ts';
 import type * as events from '../events.ts';
 import type * as exec from '../exec.ts';
 import type * as model from '../model.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
+import * as claudeStream from './claude-stream.ts';
 import * as contract from './contract.ts';
 
 // The paths that configure Claude Code, which gg protects from every agent (request 3.2).
@@ -16,9 +18,10 @@ export const name = 'claude';
 
 // The launch profile the Config Hash pins: its name and version (request 3.2, decision 8 of #424). A change to the
 // argv, environment or settings file launchArgs builds bumps the version.
-export const launchProfile = { name: 'claude-headless', version: 1 };
+export const launchProfile = { name: 'claude-headless', version: 2 };
 
-// Decision 1 of #424. No profile turns Claude's sandbox on, so every platform runs in Trusted-Command Mode (ADR 0025).
+// Decision 1 of #424, with the reporting the recordings showed (#425). No profile turns Claude's sandbox on, so every
+// platform runs in Trusted-Command Mode (ADR 0025).
 export const capabilities = {
   skills: 'hint',
   mcp: 'unsupported',
@@ -32,10 +35,10 @@ export const capabilities = {
   structuredOutput: true,
   sandbox: 'none',
   confinement: 'trusted-commands',
-  peakContextReporting: false,
-  costReporting: false,
-  turnCountReporting: false,
-  toolCallReporting: false,
+  peakContextReporting: true,
+  costReporting: true,
+  turnCountReporting: true,
+  toolCallReporting: true,
   reasoningTokenReporting: false,
   backgroundWork: 'none',
 };
@@ -137,9 +140,8 @@ function pluginDirectory(plugin: string, configDirectory: string): string {
 }
 
 // One table of command rules, emitted for the shell of the platform (G5 C). Claude's built-in read-only set joins
-// them under Bash; it is documented for Bash only, so on win32 gg lists its own read-only commands (G6, ADR 0025).
+// them on either shell: the recording showed it allows read-only PowerShell commands itself (#425 Q5 A, ADR 0025).
 const READ_ONLY_GIT = ['git diff:*', 'git log:*', 'git show:*', 'git status:*'];
-const READ_ONLY_POWERSHELL = ['Get-ChildItem:*', 'Get-Content:*', 'Select-String:*'];
 const DENIED_COMMANDS = ['git add:*', 'git commit:*', 'git push:*', 'gh:*'];
 const WEB_TOOLS = ['WebFetch', 'WebSearch'];
 
@@ -151,7 +153,6 @@ function resolveToolsIn(configDirectory: string, agent: unknown, context: runCon
   const writes = fields.access === 'workspace-write';
   const network = fields.network === true;
   const commands = Object.values(context.commands).flatMap((line) => [line, `${line}:*`]);
-  const readOnly = [...READ_ONLY_GIT, ...(context.platform === 'win32' ? READ_ONLY_POWERSHELL : [])];
   const rule = (command: string) => `${shell}(${command})`;
   const plugins = isStrings(fields.plugins) ? fields.plugins : [];
   const failures: string[] = [];
@@ -167,7 +168,7 @@ function resolveToolsIn(configDirectory: string, agent: unknown, context: runCon
   if (failures.length) throw new Error(failures.join('; '));
   return {
     tools: [shell, 'Read', 'Grep', 'Glob', ...(writes ? ['Edit', 'Write'] : []), ...(network ? WEB_TOOLS : [])],
-    allow: [...commands, ...readOnly].map(rule),
+    allow: [...commands, ...READ_ONLY_GIT].map(rule),
     deny: [...DENIED_COMMANDS.map(rule), ...(network ? [] : WEB_TOOLS)],
     pluginDirectories,
     hinted: hintedOf(fields),
@@ -243,24 +244,139 @@ export interface ClaudeCli {
   doctor(config?: unknown): unknown;
 }
 
-// stub: #425 Green builds run over runner.launch, and doctor, absent here so preflight still stops Claude; the
-// configuration directory is where the CLI writes its transcripts.
+// What run reads of the call beyond launchArgs's (docs/interfaces/harness.md, SentCall).
+interface RunCall extends ClaudeCall {
+  brief: string;
+  cwd: string;
+  previousUsage: events.Usage | null;
+  tools: ClaudeTools;
+  timeouts: { stallMs?: number; wallMs?: number };
+  env: Record<string, string>;
+}
+
+// The limits a call runs under when its Agent sets none (decision 3 of #425, G4 A).
+const DEFAULT_TIMEOUTS = { stallMs: 900_000, wallMs: 7_200_000 };
+
+// Where Claude Code writes a Session's transcript: projects/<cwd, each character not a letter or digit as "-">/<id>.
+const transcriptPathOf = (configDirectory: string, cwd: string, sessionId: string | null) =>
+  sessionId === null
+    ? null
+    : join(configDirectory, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${sessionId}.jsonl`);
+
+// The repository's own Claude configuration as the call found it: each file of .claude by its path and its hash.
+function repositoryDigestOf(cwd: string): string | null {
+  const directory = join(cwd, '.claude');
+  if (!existsSync(directory)) return null;
+  const listed = readdirSync(directory, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => join(entry.parentPath, entry.name))
+    .map((file) => `${relative(directory, file).split(sep).join('/')}\0${sha256(readFileSync(file, 'utf8'))}`);
+  return sha256(listed.sort().join('\n'));
+}
+
+// A call's Usage (request 3.7): the result's tokens and cost are the Session's running total, the stream's counts this
+// call's own, which a resumed call adds to the earlier total. delta is cumulative less the earlier total, except
+// peakContextTokens, a maximum, which is this call's own.
+function usageOf(stream: claudeStream.ClaudeStream, previous: events.Usage | null) {
+  const earlier = (field: contract.CountField) => previous?.[field] ?? 0;
+  const cumulative = contract.usageOf((field) => {
+    if (field === 'reasoningTokens') return null;
+    if (field === 'peakContextTokens') return Math.max(earlier(field), stream.peakContextTokens);
+    if (field === 'turns' || field === 'toolCalls' || field === 'compactions') return earlier(field) + stream[field];
+    return stream.totals?.[field] ?? earlier(field);
+  });
+  const delta = contract.usageOf((field) => {
+    const total = cumulative[field];
+    if (field === 'peakContextTokens') return stream.peakContextTokens;
+    return total === null ? null : total - earlier(field);
+  });
+  const costBasis = 'reported' as const;
+  return { cumulative: { ...cumulative, costBasis }, delta: { ...delta, costBasis } };
+}
+
+type RunResult = Awaited<ReturnType<runContext.Harness['run']>>;
+
+// A launch that ended, or could not start, read with the stream it gave: a stop or a cancel is no failure of the
+// stream's, and an executable that cannot start is an unknown failure, never a throw (request section 4).
+function resultOf(ended: exec.LaunchResult | Error, stream: claudeStream.ClaudeStream, call: RunCall): RunResult {
+  if (ended instanceof Error) {
+    const failure = { failureClass: 'unknown', message: ended.message };
+    const usage = usageOf(stream, call.previousUsage);
+    const result = { status: 'failed' as const, sessionId: null, transcriptPath: null, usage };
+    return { response: null, result: { ...result, cleanup: commandCleanup.NO_COMMAND }, failure };
+  }
+  const failure = ended.cancelled || ended.timedOut ? null : stream.failure;
+  const stopped = ended.cancelled ? 'killed' : ended.timedOut && 'timed-out';
+  return {
+    response: stream.response,
+    result: {
+      status: stopped || (failure ? 'failed' : 'completed'),
+      sessionId: stream.sessionId,
+      transcriptPath: null,
+      usage: usageOf(stream, call.previousUsage),
+      exitCode: ended.code,
+      exitSignal: ended.signal,
+      finalEventSubtype: stream.finalEventSubtype,
+      sessionInit: stream.sessionInit,
+      permissionDenials: stream.permissionDenials,
+      commandsRun: stream.commandsRun,
+      cleanup: ended.cleanup,
+      agentCliVersion: stream.cliVersion,
+      effectiveModel: stream.model,
+    },
+    failure,
+  };
+}
+
+// One Attempt: the files the launch names written into the Run directory and kept, the brief on stdin, and the stream
+// read once the launch ends. The stall clock re-arms from the transcript's last write, so a tool that runs silent while
+// the transcript grows keeps the call alive (decision 3).
+async function runIn(
+  runner: Pick<exec.Exec, 'launch'>,
+  configDirectory: string,
+  call: RunCall,
+  hooks: runContext.HarnessHooks,
+): Promise<RunResult> {
+  const launched = launchArgs(call, call.tools);
+  for (const [path, text] of Object.entries(launched.files)) writeFileSync(path, text);
+  const repositoryDigest = repositoryDigestOf(call.cwd);
+  const lines: string[] = [];
+  const transcriptPath = () => transcriptPathOf(configDirectory, call.cwd, claudeStream.read(lines).sessionId);
+  const lastWrite = () => {
+    const path = transcriptPath();
+    return path !== null && existsSync(path) ? statSync(path).mtimeMs : null;
+  };
+  const ended = await runner
+    .launch({
+      command: 'claude',
+      args: launched.argv,
+      cwd: call.cwd,
+      env: { ...launched.env, ...call.env },
+      input: call.brief,
+      stallMs: call.timeouts.stallMs ?? DEFAULT_TIMEOUTS.stallMs,
+      wallMs: call.timeouts.wallMs ?? DEFAULT_TIMEOUTS.wallMs,
+      signal: hooks.signal,
+      onStarted: (containment) => hooks.started({ kind: containment.kind === 'job' ? 'job' : 'none' }),
+      onLine: (line) => lines.push(line),
+      onIdle: lastWrite,
+    })
+    .catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))));
+  const { response, result, failure } = resultOf(ended, claudeStream.read(lines), call);
+  return { response, result: { ...result, transcriptPath: transcriptPath(), repositoryDigest }, failure };
+}
+
+const notImplemented = (): never => {
+  throw new Error('not implemented');
+};
+
+// The members that start the CLI, over the runner's launch, where configDirectory holds the CLI's transcripts.
+// interactiveArgs, metrics and doctor come with slice 7, gg stats and #427 (owner, #425 Q4 A).
 export const createCli = (
-  _runner: Pick<exec.Exec, 'launch'>,
-  _options: { configDirectory?: string } = { configDirectory: CONFIG_DIRECTORY },
-): ClaudeCli =>
-  ({
-    run: () =>
-      Promise.resolve({
-        response: null,
-        result: {
-          status: 'failed',
-          sessionId: null,
-          transcriptPath: null,
-          usage: { cumulative: contract.emptyUsage(capabilities), delta: contract.emptyUsage(capabilities) },
-        },
-        failure: null,
-      }),
-    interactiveArgs: () => [],
-    metrics: () => null,
-  }) as unknown as ClaudeCli;
+  runner: Pick<exec.Exec, 'launch'>,
+  { configDirectory = CONFIG_DIRECTORY }: { configDirectory?: string } = {},
+): ClaudeCli => ({
+  run: (call, hooks) => runIn(runner, configDirectory, call as unknown as RunCall, hooks),
+  interactiveArgs: notImplemented,
+  metrics: notImplemented,
+  doctor: notImplemented,
+});
