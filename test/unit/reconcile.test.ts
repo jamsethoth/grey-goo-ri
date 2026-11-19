@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import * as config from '../../lib/config.ts';
 import * as reset from '../../lib/effects/reset.ts';
 import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
@@ -238,9 +239,11 @@ for (const [change, harnessNow] of CHANGES)
         if (harnessNow && 'capabilities' in harnessNow)
           Object.assign(fixture.harness.capabilities, harnessNow.capabilities);
 
+        // This Run pins what a real gg run pins: the entry of the Harness the Flow uses now.
+        const launchProfile = moved ? MOVED : { fake: config.launchEntry(fixture.harness) };
         const ended = await interpreter.runExecution({
           ...fixture.options,
-          pinned: moved ? { ...pinned, configuration: { ...pinned.configuration, launchProfile: MOVED } } : pinned,
+          pinned: { ...pinned, configuration: { ...pinned.configuration, launchProfile } },
           record: executionReads.loadTicket(fixture),
         });
         const held = harnessNow !== null;
@@ -254,3 +257,23 @@ for (const [change, harnessNow] of CHANGES)
         );
       });
     }
+
+// gg work resume at the held Vertex starts a new Visit there with no Action yet and keeps the saved snapshot
+// (lib/work.ts), which is how a Ticket held for its Harness's launch gets out (#428 D3).
+test('a Visit resumed at the Vertex its launch hold stopped continues', async (t) => {
+  const fixture = await golden.fixture(t);
+  const { pinned } = fixture.options;
+  stateDatabase.savePinnedConfiguration(fixture.commonDir, pinned.hash, {
+    ...pinned.configuration,
+    launchProfile: { fake: PINNED_FAKE },
+  });
+  await crashResume.crashed(fixture, crashResume.EFFECTS.commit.place, 'after-completion');
+  const launch = { ...PINNED_FAKE, version: 2 };
+  const decide = (executionRecord: record.ExecutionRecord) =>
+    reconcile.reconcile({ ...crashResume.reconcileOptions(fixture, executionRecord), launch });
+  const executionRecord = executionReads.loadTicket(fixture);
+  assert.equal((await decide(executionRecord)).next, 'hold');
+
+  executionRecord.cursor = { vertex: 'green', visit: 2, action: null, recovery: 0, attempt: 1 };
+  assert.equal((await decide(executionRecord)).next, 'continue');
+});
