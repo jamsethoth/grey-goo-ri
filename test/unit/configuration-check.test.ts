@@ -418,6 +418,23 @@ test('every graph check runs on a user Flow beside a misfit of every command-nam
   assert.deepEqual(missed, []);
 });
 
+// A Flow that uses a misfit stays a misfit, a warning in gg doctor (Q21): its own graph checks wait, as before #433, so
+// none of their problems becomes an error that refuses every Run. The hold skips every graph check at once.
+test('a user Flow that uses a misfit is held from its own graph checks', async () => {
+  for (const kind of COMMAND_KINDS) {
+    const user = userSource(['strict'], (source, flows) => {
+      flows.strict!.ticket.vertices.green!.route = { ok: 'red' };
+      addMisfit(source, kind);
+    });
+    const checked = await checkOf(sources(repositorySource(), user));
+    const atStrict = [...checked.configurationErrors, ...checked.warnings].filter((problem) =>
+      problem.at.startsWith('user:flows.strict'),
+    );
+    assert.deepEqual(atStrict, [], kind);
+    assert.deepEqual([...checked.misfits.keys()], ['user:strict'], kind);
+  }
+});
+
 // A Check whose command is not a name is an error in any repository, so it still holds every Flow of the user's source.
 test('a user Check whose command is not a name holds the graph checks of every user Flow', async () => {
   const user = userSource(['loop'], (source, flows) => {
