@@ -416,6 +416,7 @@ const THROUGH_FLOW_ROUTES: Canary[] = [
   'loop through senior-green',
 ];
 const MAP_THROUGH_REVIEWER: Canary[] = ['pr-ready past green', 'cycle elsewhere'];
+const THROUGH_SENIOR_GREEN: Canary[] = ["senior-green's commit", 'loop through senior-green'];
 const AGENT_KEY_ROWS: Record<string, Row> = {
   harness: [7, THROUGH_GREEN],
   model: [7, THROUGH_GREEN],
@@ -491,6 +492,16 @@ const ROUTE_KEY_SITES: Record<string, Site> = {
 // ACTION_KEYS lists each kind's own keys (await-approval's `decisions`), not an Action's `id` and `do`, and a route's
 // end, a Claim token's keys and a Rule Table row's keys have none.
 const NESTED_KEY_SITES: Record<string, Site> = {
+  // senior-green and reviewer's repeat edge declare both max and exhausted, so a refused one is their only refusal: on
+  // green and its edge, the pair check refuses the other key too (#454, D8).
+  'bounded Vertex': {
+    path: ['flows', 'default', 'ticket', 'vertices', 'senior-green'],
+    keys: { max: [0, THROUGH_SENIOR_GREEN], exhausted: [7, THROUGH_SENIOR_GREEN] },
+  },
+  'bounded edge': {
+    path: [...REVIEWER, 'route', 'repeat'],
+    keys: { max: [0, MAP_THROUGH_REVIEWER], exhausted: [7, MAP_THROUGH_REVIEWER] },
+  },
   'Flow route': { path: ['flows', 'default', 'ticket', 'routes'], keys: { misscoped: [7, THROUGH_FLOW_ROUTES] } },
   'Vertex route': { path: [...REVIEWER, 'route', 'ok'], keys: { end: [7, MAP_THROUGH_REVIEWER] } },
   // green's edge has no max, so that the cycle through green fires; reviewer's repeat has one.
@@ -633,4 +644,151 @@ test('a Procedure with an unknown key or a null at any key is refused by its own
     return !report.isReported(procedure?.refused);
   });
   assert.deepEqual(notRefused, []);
+});
+
+// Each read a route-map check waits on, the refusals it reads among them: its file, its source (once in that file),
+// the mutant that drops it (null for a declaration, which tsc holds), and the test that fails under that mutant, or
+// why none can. A read no table row reaches, or one a second refusal at its Vertex masks, shows here (#454, D14).
+type WaitRead = readonly [file: string, read: string, mutant: string | null, fails: string];
+const KEY_TABLE = 'each key a route check reads, refused, holds the checks through its Vertex';
+const VERTEX_WORK = "a Vertex whose route target is refused shows no work for its Outcomes' routing";
+const AGENT_HOLD = 'a Vertex whose Agent has an error holds the checks that read it, and only those';
+const OWN_KEY = "an error at a Vertex's own key holds the cycle through it";
+const NO_VERTICES = 'malformed configuration is an error, never a throw: vertices that are a list';
+const SAME_REFUSAL = 'equivalent: reportedSince returns the same refusal';
+const DECLARATION = 'equivalent: declares the read below';
+const WAIT_READS: WaitRead[] = [
+  ['flows.ts', 'let verticesRefused: Reported | undefined;', null, DECLARATION],
+  [
+    'flows.ts',
+    'verticesRefused = report.errorOf(problems, atVertices, finding);',
+    'report.errorOf(problems, atVertices, finding);',
+    NO_VERTICES,
+  ],
+  ['flows.ts', '!verticesRefused && ', '', NO_VERTICES],
+  ['flows.ts', ' && !notAnObject }', ' }', KEY_TABLE],
+  ['flows.ts', 'id: string, refused: Reported | undefined)', null, DECLARATION],
+  ['flows.ts', "typeof use === 'string' && report.isReported(checking.agents.get(use)?.typed)", 'false', AGENT_HOLD],
+  [
+    'flows.ts',
+    '!report.isReported(procedure.refused) && ',
+    '',
+    'a Vertex whose Procedure has an error holds the checks that read it, and only those',
+  ],
+  ['flows.ts', '!agentRefused && ', '', AGENT_HOLD],
+  ['flows.ts', ' && !refused) state', ') state', OWN_KEY],
+  ['flows.ts', 'const ownRefused = report.reportedSince(problems, before);', 'const ownRefused = undefined;', OWN_KEY],
+  ['flows.ts', 'bound.refused, ', '', KEY_TABLE],
+  [
+    'flows.ts',
+    ', report.reportedSince(problems, afterRoutes)]',
+    ']',
+    "a Procedure error found in one Vertex's input scope holds only that Vertex",
+  ],
+  ['flows.ts', 'markWhole(checking, state, id, refused);', 'markWhole(checking, state, id, undefined);', OWN_KEY],
+  [
+    'flows.ts',
+    ' && Object.keys(vertices).every((id) => whole.has(id));',
+    ';',
+    'a Vertex whose Procedure has an error holds only its own route keys, and the Flow defaults',
+  ],
+  ['flows.ts', ' && !report.isReported(typed.routes);', ';', KEY_TABLE],
+  ['flows.ts', 'mapSound && !report.isReported(state.typed.get(id)?.route)', 'mapSound', KEY_TABLE],
+  [
+    'flows.ts',
+    ' && Object.keys(vertices).every((id) => mapped.has(id));',
+    ';',
+    'a Vertex that is not an object holds the warnings',
+  ],
+  [
+    'flows.ts',
+    'nullValues.reportNulls(problems, { ...vertex, route: undefined }, location);',
+    '',
+    "a null on a Vertex's own key or its Agent holds the cycle through it",
+  ],
+  ['graph.ts', '!report.isReported(max) && ', '', 'waits on D5: no test shows the work a refused max changes'],
+  [
+    'graph.ts',
+    ' && !report.isReported(exhausted))',
+    ')',
+    'waits on D5: no test shows the work a refused exhausted target changes',
+  ],
+  ['graph.ts', 'report.isReported(vertexRoutes) || ', '', VERTEX_WORK],
+  [
+    'graph.ts',
+    ' || report.isReported(graph.routes)) return null',
+    ') return null',
+    'a Flow whose route target is refused shows no work for the Outcomes its routes carry',
+  ],
+  [
+    'graph.ts',
+    'if (write && graph.whole.has(id)) checkWrites',
+    'if (write) checkWrites',
+    "a cycle among sound Vertices is reported beside another Vertex's Procedure error",
+  ],
+  ['graph.ts', 'work: target === null ? null : workOf(', 'work: workOf(', VERTEX_WORK],
+  [
+    'graph.ts',
+    'if (report.isReported(graph.entry)) return;',
+    '',
+    'an entry naming no Vertex holds only the checks that read the entry',
+  ],
+  ['routes.ts', 'if (report.isReported(to)) return to;', '', SAME_REFUSAL],
+  ['routes.ts', 'if (report.isReported(max)) return max;', '', SAME_REFUSAL],
+  ['routes.ts', 'if (report.isReported(exhausted)) return exhausted;', '', SAME_REFUSAL],
+  [
+    'routes.ts',
+    'const reported = report.reportedSince(problems, before);',
+    'const reported = undefined;',
+    'an unknown key on an edge holds the cycle through its Vertex',
+  ],
+  ['routes.ts', 'let refused: Reported | undefined;', null, DECLARATION],
+  ['routes.ts', 'if (report.isReported(checked)) refused', 'if (false) refused', VERTEX_WORK],
+  ['routes.ts', 'return refused ?? Object.fromEntries(typed);', 'return Object.fromEntries(typed);', VERTEX_WORK],
+  ['routes.ts', 'refused: [notAnObject, ', 'refused: [', KEY_TABLE],
+  ['routes.ts', 'notAnObject, max, ', 'notAnObject, ', KEY_TABLE],
+  ['routes.ts', ', exhausted].find', '].find', KEY_TABLE],
+  // The refusals those reads take from the Procedure, Agent and Vertex checks.
+  [
+    'index.ts',
+    'procedure.refused ??= report.reportedSince(problems, before);',
+    '',
+    'a Procedure error found in its references alone holds every Vertex naming it',
+  ],
+  [
+    'procedures.ts',
+    'procedure.refused = report.reportedSince(problems, before);',
+    '',
+    'a Procedure with an unknown key or a null at any key is refused by its own check',
+  ],
+  [
+    'agents.ts',
+    'nullValues.reportNulls(problems, agent, location);',
+    '',
+    'an Agent with a null at any key is refused by its own check',
+  ],
+  [
+    'procedures.ts',
+    'nullValues.reportNulls(problems, declaration, location);',
+    '',
+    "equivalent: each Procedure key's own check refuses a null",
+  ],
+];
+const WAIT_SOURCES = ['flows.ts', 'graph.ts', 'routes.ts', 'route-facts.ts'];
+const validateSource = (file: string) => readFileSync(new URL(`../../lib/validate/${file}`, import.meta.url), 'utf8');
+
+// The census holds the table to the source: a new read of a refusal without an entry fails it.
+test('every wait read in the route-map checks names the test that fails without it', () => {
+  const notOnce = WAIT_READS.filter(([file, read]) => validateSource(file).split(read).length !== 2).map(
+    ([file, read]) => `${file}: ${read}`,
+  );
+  const unnamed = WAIT_SOURCES.flatMap((file) =>
+    validateSource(file)
+      .split('\n')
+      .map((line, index) => ({ line, at: `${file}:${index + 1}` }))
+      .filter(({ line }) => !line.trim().startsWith('//') && /isReported|reportedSince|refused|Refused/.test(line))
+      .filter(({ line }) => !WAIT_READS.some(([readFile, read]) => readFile === file && line.includes(read)))
+      .map(({ at }) => at),
+  );
+  assert.deepEqual({ notOnce, unnamed }, { notOnce: [], unnamed: [] });
 });

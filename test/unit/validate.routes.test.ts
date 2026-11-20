@@ -248,6 +248,31 @@ test("a Vertex whose route target is refused shows no work for its Outcomes' rou
   });
 });
 
+// red's failed Outcome falls back to the Flow's "*", so its work is read from the Flow's routes, which one refused
+// target refuses whole (#454, D11).
+test('a Flow whose route target is refused shows no work for the Outcomes its routes carry', () => {
+  const config = exampleLayer.config();
+  config.flows.default.ticket.routes.misscoped = 7;
+  const { errors, declared } = exampleLayer.check(config);
+  assert.deepEqual(exampleLayer.firedRules(errors), [
+    { at: 'flows.default.ticket.routes.misscoped', code: 'malformed-route-target' },
+  ]);
+  assert.deepEqual(declared.default?.ticket.vertices.red?.routing.failed, {
+    target: { end: 'needs-human' },
+    by: 'Flow "*"',
+    work: null,
+  });
+});
+
+// A misspelt max leaves the edge unbounded as written, so the cycle through it waits on the refused edge (#454, D14).
+test('an unknown key on an edge holds the cycle through its Vertex', () => {
+  const config = exampleLayer.config();
+  config.flows.default.ticket.vertices.green.route['bad-test'] = { to: 'red', maxx: 2 };
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: `${VERTICES}.green.route.bad-test`, code: 'unknown-key' },
+  ]);
+});
+
 test('malformed routing is an error, never a throw, in the graph checks', () => {
   const config = exampleLayer.config();
   config.flows.default.ticket.vertices['senior-green'].exhausted = ['nowhere'];
