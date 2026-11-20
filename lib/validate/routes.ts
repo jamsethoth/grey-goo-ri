@@ -111,7 +111,8 @@ export function checkRoutes(
   return refused ?? Object.fromEntries(typed);
 }
 
-// A Vertex's routes and its own bound.
+// A Vertex's routes and its own bound, typed, and its own keys' refusal: a route that is not an object, its max or its
+// exhausted target. A refused route target is typed apart and changes no Outcome (#436, D3 C; #454).
 export function checkVertexRoutes(problems: report.Report, location: string, vertex: Value, vertices: Value) {
   const route = checkRoutes(problems, `${location}.route`, vertex.route, vertices);
   const notAnObject =
@@ -121,7 +122,8 @@ export function checkVertexRoutes(problems: report.Report, location: string, ver
   const max = checkBound(problems, { max: `${location}.max`, pair: location }, vertex, 'a Vertex');
   const exhausted =
     vertex.exhausted === undefined ? null : checkTarget(problems, `${location}.exhausted`, vertex.exhausted, vertices);
-  return { route: notAnObject ?? route, max: max ?? null, exhausted };
+  const typed = { route: notAnObject ?? route, max: max ?? null, exhausted };
+  return { typed, refused: [notAnObject, max, exhausted].find(report.isReported) };
 }
 
 // Each route key outside the Outcomes a Vertex can produce, which the router reads, so a route gg would never take is

@@ -10,6 +10,7 @@ import * as actionChecks from './actions.ts';
 import * as claimTokenChecks from './claim-tokens.ts';
 import * as rules from '../rules.ts';
 import * as conditions from './conditions.ts';
+import * as nullValues from './null-values.ts';
 import * as report from './report.ts';
 
 export type TableName = 'passed' | 'failed' | 'stopped';
@@ -54,6 +55,9 @@ export interface CheckedProcedure {
   malformed: Set<TableName>;
   otherwise: unknown;
   typed: TypedProcedure;
+  // Reported when any check of the Procedure reported, a null in it or its references typed alone among them: the whole
+  // Procedure is refused, which holds every route-map check through a Vertex naming it (#454, Q1 A).
+  refused: Reported | undefined;
 }
 // What the Resolved Flow carries of a Procedure, each part as its check typed it, or Reported where it reported. A
 // part is undefined where the check that refuses it is references.ts's, which reports it by the same rule: a tests
@@ -295,11 +299,13 @@ export function checkProcedure(
 ): CheckedProcedure | undefined {
   const location = `procedures.${name}`;
   const problems = declaring.report;
+  const before = problems.errors.length;
   report.checkName(problems, location, name, { what: 'Procedure', carried: true });
   if (!referencePaths.isRecord(declaration)) {
     report.error(problems, location, 'not-an-object', 'a Procedure must be an object');
     return undefined;
   }
+  nullValues.reportNulls(problems, declaration, location);
   report.unknownKeys(problems, declaration, PROCEDURE_KEYS, location);
   const actions: unknown[] = Array.isArray(declaration.actions) ? declaration.actions : [];
   let noActions: Reported | undefined;
@@ -339,8 +345,10 @@ export function checkProcedure(
     malformed,
     otherwise: report.isName(declaration.otherwise) ? declaration.otherwise : undefined, // reported, kept out (#174)
     typed: { actions: noActions ?? typedActions, claimTokens: typedTokens, ...settings.typed, ...rows, otherwise },
+    refused: undefined,
   };
   checkPrReady(problems, procedure);
+  procedure.refused = report.reportedSince(problems, before);
   return procedure;
 }
 

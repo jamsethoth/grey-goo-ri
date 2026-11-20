@@ -6,6 +6,7 @@ import * as referencePaths from '../reference-paths.ts';
 import * as capabilityChecks from './capabilities.ts';
 import type * as checked from './procedures.ts';
 import * as declaredFlows from './declared.ts';
+import * as nullValues from './null-values.ts';
 import * as report from './report.ts';
 
 // The keys an Agent may declare; any other is an unknown key (the request tables them). A Vertex takes them too.
@@ -169,10 +170,11 @@ function checkHarness(
   );
 }
 
-// One declared Agent's keys checked, typed when none reported.
+// One declared Agent's keys checked, typed when none reported, a null among them (#454, Q3 A).
 function checkedAgent(problems: report.Report, checking: Pick<AgentContext, 'harnesses'>, name: string, agent: Value) {
   const location = `agents.${name}`;
   const before = problems.errors.length;
+  nullValues.reportNulls(problems, agent, location);
   report.unknownKeys(problems, agent, AGENT_KEYS, location);
   const harness = checkHarness(
     { report: problems, harnesses: checking.harnesses },
@@ -195,13 +197,11 @@ function checkedAgent(problems: report.Report, checking: Pick<AgentContext, 'har
   return report.reportedSince(problems, before) ?? { harness, keys };
 }
 
-// Every declared Agent is checked once, used or not; its errors hold only the Vertices that use it (H6 (d)).
+// Every declared Agent is checked once, used or not; one refused holds only the Vertices that use it (H6 (d)).
 export function checkAgents(problems: report.Report, config: Value, harnesses: unknown, usedAgents: Set<unknown>) {
-  const failedAgents = new Set<unknown>();
   const agents = new Map<string, CheckedAgent>();
   for (const [name, agent] of report.entries(config.agents)) {
     const location = `agents.${name}`;
-    const before = problems.errors.length;
     const named = report.checkedName(problems, location, name, { what: 'Agent', carried: false });
     if (!referencePaths.isRecord(agent))
       agents.set(name, {
@@ -212,11 +212,10 @@ export function checkAgents(problems: report.Report, config: Value, harnesses: u
       const typed = checkedAgent(problems, { harnesses }, name, agent);
       agents.set(name, { declared: agent, typed: report.isReported(named) ? named : typed });
     }
-    if (problems.errors.length > before) failedAgents.add(name);
     if (!usedAgents.has(name))
       report.warn(problems, location, 'unused-agent', `agent ${name} is used by no Vertex`, { agent: name });
   }
-  return { failedAgents, agents };
+  return { agents };
 }
 
 // The Agent a Vertex names by `use`, or null when it names none.

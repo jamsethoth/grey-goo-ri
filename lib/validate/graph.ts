@@ -1,21 +1,27 @@
-// The graph checks: routing (R12b, R12c, H7), bounds (I3, V3), commits (S2, T1c), and pr-ready before ready-for-qa
-// and inputs over the route map (R11e, Q7, H1-H5); unreachable Vertices are warned.
-// The graph reads Procedures, routes and inputs as declared, so each check waits only on the values it reads: a check
-// of one Vertex on that Vertex, the route map on its routes and each Vertex it reads, what a route guarantees also on
-// the entry. `routing` is filled in either way, for gg doctor (H6; #436, D3 C; #449).
+// The graph checks: routing (R12b, R12c, H7), bounds (I3, V3), commits (S2, T1c); what a route guarantees is
+// route-facts.ts's (R11e, Q7, H1-H5).
+// The graph reads each route, bound and entry as its check typed it, so each check waits only on the values it reads:
+// a check of one Vertex on that Vertex, the route map on its routes and each Vertex it reads, what a route guarantees
+// also on the entry. `routing` is filled in either way, for gg doctor (H6; #436, D3 C; #449; #454).
 
 import * as flow from '../flow.ts';
-import * as labels from '../labels.ts';
+import type * as labels from '../labels.ts';
 import type * as model from '../model.ts';
-import * as referencePaths from '../reference-paths.ts';
+import type * as procedures from '../procedures.ts';
 import * as declaredFlows from './declared.ts';
 import * as checked from './procedures.ts';
 import * as report from './report.ts';
-
-const PR_READY = 'pr-ready';
+import * as routeFacts from './route-facts.ts';
 
 type FallThroughs = checked.FallThroughs;
 type OutcomeCase = checked.OutcomeCase;
+type Reported = report.Reported;
+// A Vertex's routes and bound as lib/validate/routes.ts typed them, or Reported where it refused one.
+export interface TypedRoutes {
+  route: Record<string, model.RouteTarget> | Reported;
+  max: number | null | Reported;
+  exhausted: model.Target | null | Reported;
+}
 // The Flow the graph checks read.
 export interface Graph {
   location: string;
@@ -23,56 +29,35 @@ export interface Graph {
   resolved: Map<string, model.DeclaredVertexJson>;
   vertexProcedures: Map<string, checked.CheckedProcedure | undefined>;
   fallsOf: Map<string, FallThroughs>;
+  // Each Vertex's routes and bound, and the Flow's routes, as typed.
+  typed: Map<string, TypedRoutes>;
+  routes: Record<string, model.RouteTarget> | Reported;
   // The Vertices whose Outcome lists are whole, and whether the Flow's routes are sound: an unrouted Outcome or a
   // commit of such a Vertex is reported while other errors stand (#436, D3 C; #449, Q1 A).
   whole: Set<string>;
   routesSound: boolean;
-  // The Vertices the route map reads, each whole with its route targets typed; whether the entry is (#449).
+  // The Vertices the route map reads, each whole with its route targets typed, and whether they are all the Flow's;
+  // the entry as typed (#449).
   mapped: Set<string>;
-  entrySound: boolean;
+  complete: boolean;
+  entry: string | Reported;
 }
+// A Vertex's bound as typed: a Vertex whose bound was refused is in no map of these, so nothing lands on it.
+type Bounds = Map<string, { max: number | null; exhausted: model.Target | null }>;
 // Where a route lands: a Vertex or an end, and whether only an exhausted Bound leads there.
 interface Landing {
   vertex?: string;
   end?: labels.EndState;
   exhausted: boolean;
 }
-interface Edge {
+export interface Edge {
   from: string;
   outcome: string;
-  target: unknown;
+  target: model.RouteTarget | null;
   landings: Landing[];
-  bounded: unknown;
+  bounded: model.Target | null;
   cases: OutcomeCase[];
   write: boolean;
-}
-
-// The output an Action kind leaves only on a passed ending: a commit's files, and a Decision, which takes the passed
-// table's place (X1c).
-const PASSED_OUTPUTS = new Map<unknown, string>([
-  ['commit', 'files'],
-  ['await-approval', 'decision'],
-]);
-
-// The outputs a Visit of Vertex `id` leaves when it ends in `ending` (H3): the agent's response on any Claim (N10);
-// effects, and the evidence of each Check the token requires (N9), only from the passed table (S4); and, when `rescued`
-// asks, the rescue when failing work moves on to a Vertex (R5a, W3).
-function leaves(id: string, procedure: checked.CheckedProcedure, ending: OutcomeCase, rescued: boolean) {
-  const passed = ending.table === 'passed';
-  const keys = [];
-  for (const action of ending.table === null ? [] : procedure.actions) {
-    if (!referencePaths.isRecord(action) || typeof action.id !== 'string') continue;
-    if (action.do === 'agent') keys.push(`${id}.${action.id}.response`);
-    else if (
-      passed &&
-      action.do === 'check' &&
-      checked.requiredCheckIds(procedure, ending.token as string).includes(action.id)
-    )
-      keys.push(`${id}.${action.id}.evidence`);
-    else if (passed && PASSED_OUTPUTS.has(action.do)) keys.push(`${id}.${action.id}.${PASSED_OUTPUTS.get(action.do)}`);
-    else if (passed && action.do === 'pr-ready') keys.push(PR_READY);
-  }
-  return !passed && rescued ? [...keys, `${id}.rescue`] : keys;
 }
 
 // The strongly connected components of `next` that hold a cycle, each in declaration order (Tarjan).
@@ -102,34 +87,61 @@ function cycles(next: Map<string, string[]>) {
   return found;
 }
 
-// A route lands on its Vertex, and on every exhausted target its edge's max or a Vertex's max can reach (H2, U5).
-// `exhausted` marks a landing that no edge max bounds. A missing exhausted target is H8's error, so its needs-human
-// here only fills in routing for doctor.
-function landingsOf(
-  resolved: Map<string, model.DeclaredVertexJson>,
-  target: unknown,
-  exhausted = false,
-  seen: string[] = [],
-): Landing[] {
-  if (referencePaths.isRecord(target) && Object.hasOwn(target, 'to')) {
-    const bounded = report.isCount(target.max);
-    return [
-      ...landingsOf(resolved, target.to, exhausted, seen),
-      ...(bounded ? landingsOf(resolved, target.exhausted ?? flow.NEEDS_HUMAN_ROUTE, true, seen) : []),
-    ];
+// The bound of each Vertex in `ids` whose max and exhausted target were typed.
+function boundsOf(typed: Map<string, TypedRoutes>, ids: Iterable<string>): Bounds {
+  const bounds: Bounds = new Map();
+  for (const id of ids) {
+    const { max, exhausted } = typed.get(id) ?? {};
+    if (max !== undefined && exhausted !== undefined && !report.isReported(max) && !report.isReported(exhausted))
+      bounds.set(id, { max, exhausted });
   }
-  if (referencePaths.isRecord(target)) return flow.isEnd(target.end) ? [{ end: target.end, exhausted }] : [];
-  const vertex = typeof target === 'string' && !seen.includes(target) ? resolved.get(target) : undefined;
-  if (!vertex) return [];
+  return bounds;
+}
+
+// A route lands on its Vertex, and on every exhausted target its edge's max or a Vertex's max can reach (H2, U5).
+// `exhausted` marks a landing that no edge max bounds; `unsure` collects each Vertex reached whose bound was refused.
+interface Walk {
+  exhausted: boolean;
+  seen: string[];
+  unsure?: Set<string>;
+}
+function landingsOf(
+  bounds: Bounds,
+  target: model.RouteTarget | null,
+  walk: Walk = { exhausted: false, seen: [] },
+): Landing[] {
+  const { exhausted, seen } = walk;
+  if (target === null) return [];
+  if (typeof target !== 'string' && 'to' in target)
+    return [
+      ...landingsOf(bounds, target.to, walk),
+      ...(target.max === undefined
+        ? []
+        : landingsOf(bounds, target.exhausted ?? flow.NEEDS_HUMAN_ROUTE, { ...walk, exhausted: true })),
+    ];
+  if (typeof target !== 'string') return [{ end: target.end, exhausted }];
+  const vertex = seen.includes(target) ? undefined : bounds.get(target);
+  if (!vertex) {
+    if (!seen.includes(target)) walk.unsure?.add(target);
+    return [];
+  }
   const next = vertex.exhausted ?? flow.NEEDS_HUMAN_ROUTE;
   return [
-    { vertex: target as string, exhausted },
-    ...(report.isCount(vertex.max) ? landingsOf(resolved, next, true, [...seen, target as string]) : []),
+    { vertex: target, exhausted },
+    ...(vertex.max === null ? [] : landingsOf(bounds, next, { ...walk, exhausted: true, seen: [...seen, target] })),
   ];
 }
 
+// The typed target an Outcome of Vertex `id` routes to, or null when the routes it is read from were refused.
+function typedTarget(graph: Graph, id: string, name: string) {
+  const vertexRoutes = graph.typed.get(id)?.route;
+  if (vertexRoutes === undefined || report.isReported(vertexRoutes) || report.isReported(graph.routes)) return null;
+  return flow.typedRoute(vertexRoutes, graph.routes, name)?.target ?? null;
+}
+
 // Where a failure's work goes when a writing Vertex's Outcome routes on.
-function workOf(write: boolean, cases: OutcomeCase[], landings: Landing[]) {
+function workOf(write: boolean, cases: OutcomeCase[], landings: Landing[], unsure: Set<string>) {
+  if (unsure.size) return null;
   if (!write || cases.every((ending) => ending.table === 'passed')) return null;
   const rescued = landings.some((landing) => landing.vertex);
   const left = landings.some((landing) => landing.end);
@@ -137,14 +149,15 @@ function workOf(write: boolean, cases: OutcomeCase[], landings: Landing[]) {
   return rescued ? 'rescued' : 'left in place';
 }
 
-// A writing Vertex commits on every passing path, under a Claim token that requires a Check.
+// A writing Vertex commits on every passing path, under a Claim token that requires a Check. Only a whole Vertex is
+// checked, whose Procedure nothing refused, so its Actions are typed.
 function checkWrites(
   fail: (where: string, finding: report.Finding) => void,
   id: string,
   procedure: checked.CheckedProcedure,
 ) {
   if (!procedure.tokens.passed.length) return;
-  if (!procedure.actions.some((action) => referencePaths.isRecord(action) && action.do === 'commit')) {
+  if (!(procedure.typed.actions as procedures.Action[]).some((action) => action.do === 'commit')) {
     fail(id, {
       code: 'write-without-commit',
       message:
@@ -166,15 +179,15 @@ function checkWrites(
 // Each Vertex's Outcomes routed, the routing filled in for doctor, and the edges they take.
 function routeEdges(problems: report.Report, graph: Graph) {
   const { resolved, ticket } = graph;
-  const fail = (id: string, finding: report.Finding) => {
-    if (graph.whole.has(id)) report.errorOf(problems, `${graph.location}.ticket.vertices.${id}`, finding);
-  };
+  const fail = (id: string, finding: report.Finding) =>
+    report.errorOf(problems, `${graph.location}.ticket.vertices.${id}`, finding);
+  const bounds = boundsOf(graph.typed, graph.typed.keys());
   const edges: Edge[] = [];
   for (const [id, vertex] of resolved) {
     const procedure = graph.vertexProcedures.get(id);
     if (!procedure) continue;
     const write = vertex.access !== 'read-only';
-    if (write) checkWrites(fail, id, procedure);
+    if (write && graph.whole.has(id)) checkWrites(fail, id, procedure);
     const cases = checked.casesOf(procedure, graph.fallsOf.get(id) as FallThroughs);
     for (const name of vertex.outcomes) {
       const route = flow.route(vertex.route, ticket.routes, name);
@@ -187,43 +200,52 @@ function routeEdges(problems: report.Report, graph: Graph) {
           });
         continue;
       }
-      const landings = landingsOf(resolved, route.target);
+      const target = typedTarget(graph, id, name);
+      const unsure = new Set<string>();
+      const landings = landingsOf(bounds, target, { exhausted: false, seen: [], unsure });
       const mine = cases.filter((ending) => ending.outcome === name);
       // An own key, so an Outcome such as __proto__ or toString is data.
       Object.defineProperty(vertex.routing, name, {
         value: {
           target: declaredFlows.declaredValue(route.target) ?? null,
           by: route.by,
-          work: workOf(write, mine, landings),
+          // Where work goes is unknown while the routes it is read from, or a bound it passes, are refused.
+          work: target === null ? null : workOf(write, mine, landings, unsure),
         },
         enumerable: true,
         writable: true,
         configurable: true,
       });
-      const target = route.target;
-      const bounded = referencePaths.isRecord(target) && report.isCount(target.max) ? target.to : null;
-      edges.push({ from: id, outcome: name, target, landings, bounded, cases: mine, write });
+      const bounded = target !== null && typeof target !== 'string' && 'to' in target && target.max !== undefined;
+      edges.push({
+        from: id,
+        outcome: name,
+        target,
+        landings,
+        bounded: bounded ? target.to : null,
+        cases: mine,
+        write,
+      });
     }
   }
   return edges;
 }
 
 // A cycle needs an edge or Vertex with max; the Action Cap does not bound one.
-function checkCycles(problems: report.Report, graph: Graph, edges: Edge[]) {
-  const { resolved } = graph;
-  const bounded = (id: string) => report.isCount(resolved.get(id)?.max);
-  const next = new Map<string, string[]>([...resolved.keys()].map((id) => [id, []]));
+function checkCycles(problems: report.Report, location: string, bounds: Bounds, edges: Edge[]) {
+  const bounded = (id: string) => typeof bounds.get(id)?.max === 'number';
+  const next = new Map<string, string[]>([...bounds.keys()].map((id) => [id, []]));
   for (const edge of edges) {
     for (const landing of edge.landings) {
       const { vertex } = landing;
-      if (!vertex || !resolved.has(vertex) || bounded(edge.from) || bounded(vertex)) continue;
+      if (!vertex || !bounds.has(vertex) || bounded(edge.from) || bounded(vertex)) continue;
       if (vertex !== edge.bounded || landing.exhausted) next.get(edge.from)?.push(vertex);
     }
   }
   for (const cycle of cycles(next)) {
     report.error(
       problems,
-      `${graph.location}.ticket`,
+      `${location}.ticket`,
       'unbounded-cycle',
       `the cycle through ${cycle.join(', ')} has no edge or Vertex with max; the Action Cap does not bound a cycle`,
       { cycle },
@@ -232,22 +254,21 @@ function checkCycles(problems: report.Report, graph: Graph, edges: Edge[]) {
 }
 
 // Once every Vertex of such a loop is spent, an entry passes from exhausted target to exhausted target forever (H12).
-function checkExhaustedLoops(problems: report.Report, graph: Graph) {
-  const { resolved } = graph;
-  const ids = [...resolved.keys()];
+function checkExhaustedLoops(problems: report.Report, location: string, bounds: Bounds) {
+  const ids = [...bounds.keys()];
   const loops = new Map<string, string[]>();
   for (const id of ids) {
-    const chain: unknown[] = [];
-    let current: unknown = id;
+    const chain: model.Target[] = [];
+    let current: model.Target | null = id;
     for (
-      let vertex = resolved.get(id);
-      vertex && report.isCount(vertex.max) && !chain.includes(current);
-      vertex = typeof current === 'string' ? resolved.get(current) : undefined
+      let vertex = bounds.get(id);
+      vertex && vertex.max !== null && current !== null && !chain.includes(current);
+      vertex = typeof current === 'string' ? bounds.get(current) : undefined
     ) {
       chain.push(current);
       current = vertex.exhausted;
     }
-    if (!chain.includes(current)) continue;
+    if (current === null || !chain.includes(current)) continue;
     const loop = chain.slice(chain.indexOf(current));
     const members = ids.filter((member) => loop.includes(member));
     loops.set(JSON.stringify(members), members);
@@ -255,7 +276,7 @@ function checkExhaustedLoops(problems: report.Report, graph: Graph) {
   for (const members of loops.values()) {
     report.error(
       problems,
-      `${graph.location}.ticket`,
+      `${location}.ticket`,
       'exhausted-loop',
       `the exhausted targets of ${members.join(', ')} form a loop: ` +
         'once their Visits reach max, no Vertex is ever entered',
@@ -264,136 +285,18 @@ function checkExhaustedLoops(problems: report.Report, graph: Graph) {
   }
 }
 
-// The facts the graph checks reason over: each input's sources, as the outputs that produce them, and pr-ready.
-const producer = (source: unknown) => {
-  const [vertex, action, output] = referencePaths.parse(source).steps as string[];
-  return action === 'rescue' ? `${vertex}.rescue` : `${vertex}.${action}.${output}`;
-};
-function groupsOf(resolved: Map<string, model.DeclaredVertexJson>) {
-  const groups = new Map<string, string[]>();
-  for (const vertex of resolved.values())
-    for (const input of Object.values(vertex.inputs)) groups.set(JSON.stringify(input.from), input.from.map(producer));
-  return groups;
-}
-
-// The facts an Outcome guarantees, the inputs it produces a source of and whether pr-ready ran, are those every way
-// of reaching it does; each way is judged on its own first, so a list input (T6) may be met differently by each (H3). A
-// rescue may arrive, so it counts for an input on some route (`every` false), but a worktree with nothing to rescue
-// leaves none (N4), so it never guarantees one.
-function gained(graph: Graph, groups: Map<string, string[]>, edge: Edge, every: boolean) {
-  const ways = edge.cases.map((ending) => {
-    const procedure = graph.vertexProcedures.get(edge.from) as checked.CheckedProcedure;
-    const keys = leaves(edge.from, procedure, ending, edge.write && !every);
-    const facts = [...groups]
-      .filter(([, sources]) => sources.some((key) => keys.includes(key)))
-      .map(([group]) => group);
-    return keys.includes(PR_READY) ? [...facts, PR_READY] : facts;
-  });
-  return ways.reduce((common, way) => common.filter((fact) => way.includes(fact)), ways[0] ?? []);
-}
-
-function merge(old: string[] | undefined, reached: string[], every: boolean) {
-  if (!old) return reached;
-  return every ? old.filter((fact) => reached.includes(fact)) : report.unique([...old, ...reached]);
-}
-
-// The facts holding at each reachable Vertex's entry, on every route to it (`every`) or on some route.
-function factsAt(graph: Graph, edges: Edge[], groups: Map<string, string[]>, every: boolean) {
-  const facts = new Map<unknown, string[]>([[graph.ticket.entry, []]]);
-  const queue = [graph.ticket.entry];
-  while (queue.length) {
-    const from = queue.shift();
-    for (const edge of edges.filter((each) => each.from === from)) {
-      for (const { vertex } of edge.landings.filter((landing) => landing.vertex)) {
-        const reached = report.unique([...(facts.get(from) as string[]), ...gained(graph, groups, edge, every)]);
-        const old = facts.get(vertex);
-        const merged = merge(old, reached, every);
-        if (!old || merged.length !== old.length) {
-          facts.set(vertex, merged);
-          queue.push(vertex);
-        }
-      }
-    }
-  }
-  return facts;
-}
-
-// The two errors that may be guesses on the map say so, and name the workaround (H4); an optional input no route is
-// sure to produce is a warning (H5, T9).
-function checkFacts(problems: report.Report, graph: Graph, edges: Edge[], warn: boolean) {
-  const vertexAt = (id: string) => `${graph.location}.ticket.vertices.${id}`;
-  const groups = groupsOf(graph.resolved);
-  const every = factsAt(graph, edges, groups, true);
-  const some = factsAt(graph, edges, groups, false);
-  for (const id of graph.resolved.keys())
-    if (warn && !every.has(id))
-      report.warn(problems, vertexAt(id), 'unreachable-vertex', `Vertex ${id} is not reachable from the entry`, {
-        vertex: id,
-      });
-  for (const edge of edges) {
-    if (!every.has(edge.from) || !edge.landings.some((landing) => landing.end === 'ready-for-qa')) continue;
-    if (![...(every.get(edge.from) as string[]), ...gained(graph, groups, edge, false)].includes(PR_READY)) {
-      report.error(
-        problems,
-        vertexAt(edge.from),
-        'pr-ready-skippable',
-        `Outcome ${edge.outcome} reaches end ready-for-qa on a route that may skip pr-ready; ` +
-          'admission checks routes, not runs, so route it through the Vertex that runs pr-ready',
-        { outcome: edge.outcome },
-      );
-    }
-  }
-  for (const [id, vertex] of graph.resolved) {
-    if (every.has(id)) checkInputFacts(problems, { id, location: vertexAt(id), vertex, warn }, every, some);
-  }
-}
-
-function checkInputFacts(
-  problems: report.Report,
-  place: { id: string; location: string; vertex: model.DeclaredVertexJson; warn: boolean },
-  every: Map<unknown, string[]>,
-  some: Map<unknown, string[]>,
-) {
-  const { id } = place;
-  for (const [name, input] of Object.entries(place.vertex.inputs)) {
-    const group = JSON.stringify(input.from);
-    const where = `${place.location}.inputs.${name}`;
-    if (!input.optional && !(every.get(id) as string[]).includes(group)) {
-      report.error(
-        problems,
-        where,
-        'required-input-unsure',
-        `input ${name} is required, but some route to ${id} may not produce any of its sources; ` +
-          'admission checks routes, not runs, so if every run does produce one, mark the input optional',
-        { input: name, vertex: id },
-      );
-    }
-    if (place.warn && input.optional && !(some.get(id) as string[]).includes(group)) {
-      report.warn(
-        problems,
-        where,
-        'optional-input-unsure',
-        `input ${name} is optional, but no route to ${id} is sure to produce any of its sources; ` +
-          'admission checks routes, not runs, so it may still arrive on some runs',
-        { input: name, vertex: id },
-      );
-    }
-  }
-}
-
 // A Vertex the map does not read leaves it with its edges: they can only add a cycle or a route, so an error found on
 // the rest is real, but the warnings, which a missing route makes falsely, wait (#449, Q2 A).
 export function checkGraph(problems: report.Report, graph: Graph) {
   const edges = routeEdges(problems, graph);
-  const map = { ...graph, resolved: new Map([...graph.resolved].filter(([id]) => graph.mapped.has(id))) };
+  const bounds = boundsOf(graph.typed, graph.mapped);
   // An edge lands only on the Vertices the map reads, so a refused exhausted target adds nothing (#449).
   const mapEdges = edges
     .filter((edge) => graph.mapped.has(edge.from))
-    .map((edge) => ({ ...edge, landings: landingsOf(map.resolved, edge.target) }));
-  checkCycles(problems, map, mapEdges);
-  checkExhaustedLoops(problems, map);
-  // The warnings wait unless the map reads every declared Vertex, object or not (#449, Q2 A).
-  const declared = graph.ticket.vertices;
-  const complete = referencePaths.isRecord(declared) && map.resolved.size === Object.keys(declared).length;
-  if (graph.entrySound) checkFacts(problems, map, mapEdges, complete);
+    .map((edge) => ({ ...edge, landings: landingsOf(bounds, edge.target) }));
+  checkCycles(problems, graph.location, bounds, mapEdges);
+  checkExhaustedLoops(problems, graph.location, bounds);
+  if (report.isReported(graph.entry)) return;
+  const resolved = new Map([...graph.resolved].filter(([id]) => graph.mapped.has(id)));
+  routeFacts.checkFacts(problems, { ...graph, entry: graph.entry, resolved }, mapEdges, graph.complete);
 }

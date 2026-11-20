@@ -233,6 +233,101 @@ test("a cycle among sound Vertices is reported beside another Vertex's Procedure
   });
 });
 
+// Where work goes is read from the typed targets, so a Vertex whose routes were refused names none (#454).
+test("a Vertex whose route target is refused shows no work for its Outcomes' routing", () => {
+  const config = exampleLayer.config();
+  config.flows.default.ticket.vertices.green.route['bad-test'] = { to: 'nowhere' };
+  const { errors, declared } = exampleLayer.check(config);
+  assert.deepEqual(exampleLayer.firedRules(errors), [
+    { at: `${VERTICES}.green.route.bad-test`, code: 'unknown-vertex' },
+  ]);
+  assert.deepEqual(declared.default?.ticket.vertices.green?.routing.failed, {
+    target: 'senior-green',
+    by: 'Vertex route',
+    work: null,
+  });
+});
+
+// red's failed Outcome falls back to the Flow's "*", so its work is read from the Flow's routes, which one refused
+// target refuses whole (#454, D11).
+test('a Flow whose route target is refused shows no work for the Outcomes its routes carry', () => {
+  const config = exampleLayer.config();
+  config.flows.default.ticket.routes.misscoped = 7;
+  const { errors, declared } = exampleLayer.check(config);
+  assert.deepEqual(exampleLayer.firedRules(errors), [
+    { at: 'flows.default.ticket.routes.misscoped', code: 'malformed-route-target' },
+  ]);
+  assert.deepEqual(declared.default?.ticket.vertices.red?.routing.failed, {
+    target: { end: 'needs-human' },
+    by: 'Flow "*"',
+    work: null,
+  });
+});
+
+// green's failed Outcome routes to senior-green, whose refused bound leaves unknown whether its work is rescued
+// (#454, D5).
+for (const [key, value, code] of [
+  ['max', 0, 'not-a-positive-integer'],
+  ['exhausted', 7, 'malformed-route-target'],
+] as const) {
+  test(`a route through a Vertex whose ${key} is refused shows no work`, () => {
+    const config = exampleLayer.config();
+    config.flows.default.ticket.vertices['senior-green'][key] = value;
+    const { errors, declared } = exampleLayer.check(config);
+    assert.deepEqual(exampleLayer.firedRules(errors), [{ at: `${VERTICES}.senior-green.${key}`, code }]);
+    assert.deepEqual(declared.default?.ticket.vertices.green?.routing.failed?.work, null);
+  });
+}
+
+// The refused bound's unknown reaches green's failed work along every way a route lands on a Vertex: an edge's `to`,
+// an edge's exhausted target, and a Vertex's exhausted chain (#454, D5; review r4).
+for (const [shape, edit] of [
+  [
+    'an edge to it',
+    (vertices) => {
+      vertices.green.route.failed = { to: 'senior-green', max: 1, exhausted: { end: 'needs-human' } };
+    },
+  ],
+  [
+    'an edge exhausted into it',
+    (vertices) => {
+      vertices.green.route.failed = { to: 'senior-dev', max: 1, exhausted: 'senior-green' };
+    },
+  ],
+  [
+    'a Vertex exhausted into it',
+    (vertices) => {
+      vertices.green.route.failed = 'senior-dev';
+      vertices['senior-dev'].exhausted = 'senior-green';
+    },
+  ],
+] as const satisfies readonly (readonly [string, (vertices: any) => void])[]) {
+  test(`a route through ${shape}, a Vertex whose max is refused, shows no work`, () => {
+    const config = exampleLayer.config();
+    edit(config.flows.default.ticket.vertices);
+    config.flows.default.ticket.vertices['senior-green'].max = 0;
+    const { declared } = exampleLayer.check(config);
+    assert.deepEqual(declared.default?.ticket.vertices.green?.routing.failed?.work, null);
+  });
+}
+
+// An exhausted chain that loops back stops at the Vertex it has seen; a Vertex seen is not unknown (#454, D5).
+test('an exhausted chain back to a Vertex already seen leaves its work known', () => {
+  const config = exampleLayer.config();
+  config.flows.default.ticket.vertices['senior-green'].exhausted = 'senior-dev';
+  config.flows.default.ticket.vertices['senior-dev'].exhausted = 'senior-green';
+  assert.deepEqual(exampleLayer.check(config).declared.default?.ticket.vertices.green?.routing.failed?.work, 'rescued');
+});
+
+// A misspelt max leaves the edge unbounded as written, so the cycle through it waits on the refused edge (#454, D14).
+test('an unknown key on an edge holds the cycle through its Vertex', () => {
+  const config = exampleLayer.config();
+  config.flows.default.ticket.vertices.green.route['bad-test'] = { to: 'red', maxx: 2 };
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: `${VERTICES}.green.route.bad-test`, code: 'unknown-key' },
+  ]);
+});
+
 test('malformed routing is an error, never a throw, in the graph checks', () => {
   const config = exampleLayer.config();
   config.flows.default.ticket.vertices['senior-green'].exhausted = ['nowhere'];

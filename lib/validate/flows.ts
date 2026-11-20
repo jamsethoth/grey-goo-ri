@@ -11,6 +11,7 @@ import * as agentChecks from './agents.ts';
 import * as capabilityChecks from './capabilities.ts';
 import * as graph from './graph.ts';
 import * as inputs from './inputs.ts';
+import * as nullValues from './null-values.ts';
 import * as checked from './procedures.ts';
 import * as references from './references.ts';
 import * as report from './report.ts';
@@ -37,12 +38,6 @@ export interface FlowContext {
   labelPrefix: unknown;
   procedures: Map<string, checked.CheckedProcedure | undefined>;
   procedureFalls: Map<string, FallThroughs>;
-  // The Agents and Procedures whose own checks raised an error, which hold the checks that read each Vertex naming one
-  // and leave its Outcomes unknown (#449).
-  failedAgents: Set<unknown>;
-  failedProcedures: Set<unknown>;
-  // The nulls, which no check of a Vertex counts, though each is refused at its key (#449, D3 A).
-  nulls: report.Problem[];
   agents: Map<string, agentChecks.CheckedAgent>;
   harnesses: unknown;
   reader: templates.TemplateReader | null;
@@ -99,11 +94,12 @@ function checkFlowKeys(problems: report.Report, location: string, declaration: V
   }
   report.unknownKeys(problems, ticket, TICKET_KEYS, atTicket);
   const vertices = referencePaths.isRecord(ticket.vertices) ? ticket.vertices : {};
+  let verticesRefused: Reported | undefined;
   if (!Object.keys(vertices).length) {
     const code = referencePaths.isRecord(ticket.vertices) ? 'no-vertex-declared' : 'not-an-object';
     const atVertices = `${atTicket}.vertices`;
     const finding = report.absentOr(ticket.vertices, 'vertices', code, 'vertices must be a non-empty object');
-    report.errorOf(problems, atVertices, finding);
+    verticesRefused = report.errorOf(problems, atVertices, finding);
   }
   const entry = checkEntry(problems, `${atTicket}.entry`, ticket.entry, vertices);
   const notAnObject =
@@ -112,7 +108,8 @@ function checkFlowKeys(problems: report.Report, location: string, declaration: V
       : undefined;
   const flowRoutes = routes.checkRoutes(problems, `${atTicket}.routes`, ticket.routes, vertices);
   const typed: TypedFlow = { actionCap, entry, routes: notAnObject ?? flowRoutes };
-  return { ticket, vertices, typed };
+  // The Flow's routes are sound when neither they nor its Vertices were refused as a whole, a refused target aside.
+  return { ticket, vertices, typed, routesSound: !verticesRefused && !notAnObject };
 }
 
 function checkEntry(problems: report.Report, location: string, entry: unknown, vertices: Value) {
@@ -183,17 +180,13 @@ function accessConflict(problems: report.Report, location: string, procedure: { 
   report.error(problems, location, 'access-conflict', message, { procedure: procedure.name, ...(agent && { agent }) });
 }
 
-// A Vertex's Outcome list is whole when its Procedure's checks, its Agent's and its own, in the Procedure's scope too,
-// raised no error since `before` and it holds no null; an error at a route target changes no Outcome (#436, D3 C; #449,
-// Q1 A).
-function markWhole(checking: FlowContext, state: FlowState, vertex: { id: string; location: string }, before: number) {
-  const procedure = state.vertexProcedures.get(vertex.id);
-  const use = state.typed.get(vertex.id)?.use;
-  if (!procedure || checking.failedProcedures.has(procedure.name) || checking.failedAgents.has(use)) return;
-  const atRoute = `${vertex.location}.route.`;
-  const nulls = checking.nulls.filter((problem) => problem.at.startsWith(`${vertex.location}.`));
-  if ([...checking.report.errors.slice(before), ...nulls].every((problem) => problem.at.startsWith(atRoute)))
-    state.whole.add(vertex.id);
+// A Vertex's Outcome list is whole when neither its Procedure, its Agent nor the Vertex was refused, in the Procedure's
+// scope too; a refused one holds the checks that read the Vertex (#436, D3 C; #449, Q1 A; #454).
+function markWhole(checking: FlowContext, state: FlowState, id: string, refused: Reported | undefined) {
+  const procedure = state.vertexProcedures.get(id);
+  const use = state.typed.get(id)?.use;
+  const agentRefused = typeof use === 'string' && report.isReported(checking.agents.get(use)?.typed);
+  if (procedure && !report.isReported(procedure.refused) && !agentRefused && !refused) state.whole.add(id);
 }
 
 function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex: unknown) {
@@ -212,6 +205,8 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
   if (!referencePaths.isRecord(vertex))
     return report.error(problems, location, 'not-an-object', 'a Vertex must be an object');
   report.unknownKeys(problems, vertex, [...VERTEX_KEYS, ...agentChecks.AGENT_KEYS], location);
+  // A null refuses the Vertex like any other error in it; one in a route is the route check's (#454, Q3 A).
+  nullValues.reportNulls(problems, { ...vertex, route: undefined }, location);
   const ownKeys = agentChecks.checkAgentKeys(problems, location, vertex);
   const procedure = checking.procedures.get(vertex.procedure as string);
   const procedureName = checkProcedureName(checking, location, vertex.procedure);
@@ -223,17 +218,20 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
   capabilityChecks.checkSessionResume(checking, location, procedure, agent.declared);
   state.personas.push(...procedures.filesAt('agent', agent.declared));
   const typed = inputs.checkInputs(problems, location, vertex.inputs, state.sources);
+  const ownRefused = report.reportedSince(problems, before);
   const bound = routes.checkVertexRoutes(problems, location, vertex, state.vertices);
+  const afterRoutes = problems.errors.length;
   const falls = procedure ? vertexFalls(checking, { flow: state.name, id }, typed, procedure) : {};
+  const refused = [ownRefused, bound.refused, report.reportedSince(problems, afterRoutes)].find(report.isReported);
   const prefix = checking.labelPrefix === undefined ? undefined : report.shown(checking.labelPrefix);
   const approvalLabels = actionChecks.approvalLabelsOf(procedure?.actions, id, prefix);
   const resolved = { agent: agent.declared, inputs: typed.inputs, falls, approvalLabels };
   state.resolved.set(id, declaredFlows.declaredVertex(vertex, resolved, procedure));
   const access = procedure?.access === 'read-only' ? 'read-only' : (agent.access ?? 'read-only');
-  state.typed.set(id, { use, agent: agent.typed, procedure: procedureName, access, ...bound });
+  state.typed.set(id, { use, agent: agent.typed, procedure: procedureName, access, ...bound.typed });
   state.vertexProcedures.set(id, procedure);
   state.fallsOf.set(id, falls);
-  markWhole(checking, state, { id, location }, before);
+  markWhole(checking, state, id, refused);
 }
 
 // Checks one declared Flow and gives it declared, resolved when it can be, and what it uses; or reports that it is
@@ -241,13 +239,12 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
 export function checkFlow(checking: FlowContext, name: string, declaration: unknown) {
   const location = `flows.${name}`;
   const problems = checking.report;
-  const start = problems.errors.length;
   report.checkName(problems, location, name, { what: 'Flow', carried: false });
   if (!referencePaths.isRecord(declaration)) {
     report.error(problems, location, 'not-an-object', 'a Flow must be an object');
     return undefined;
   }
-  const { ticket, vertices, typed } = checkFlowKeys(problems, location, declaration);
+  const { ticket, vertices, typed, routesSound } = checkFlowKeys(problems, location, declaration);
   const state: FlowState = {
     name,
     location,
@@ -263,16 +260,16 @@ export function checkFlow(checking: FlowContext, name: string, declaration: unkn
   };
   for (const [id, vertex] of Object.entries(vertices)) checkVertex(checking, state, id, vertex);
   const { resolved, vertexProcedures, fallsOf, whole } = state;
-  // The Flow's routes are sound when neither they nor its Vertices are malformed as a whole.
-  const atTicket = [`${location}.ticket.vertices`, `${location}.ticket.routes`];
-  const routesSound = !problems.errors.slice(start).some((problem) => atTicket.includes(problem.at));
   const defaultsWhole = routesSound && Object.keys(vertices).every((id) => whole.has(id));
   routes.checkRouteKeys(problems, { location, ticket, resolved, whole, defaultsWhole });
   // The route map reads the Flow's routes and each Vertex's route targets: a Vertex whose are refused waits (#449).
   const mapSound = routesSound && !report.isReported(typed.routes);
   const mapped = new Set([...whole].filter((id) => mapSound && !report.isReported(state.typed.get(id)?.route)));
-  const holds = { whole, routesSound, mapped, entrySound: !report.isReported(typed.entry) };
-  graph.checkGraph(problems, { location, ticket, resolved, vertexProcedures, fallsOf, ...holds });
+  // The warnings wait unless the map reads every Vertex, object or not (#449, Q2 A).
+  const complete = mapSound && Object.keys(vertices).every((id) => mapped.has(id));
+  const holds = { whole, routesSound, mapped, complete, entry: typed.entry };
+  const read = { typed: state.typed, routes: typed.routes };
+  graph.checkGraph(problems, { location, ticket, resolved, vertexProcedures, fallsOf, ...read, ...holds });
   const { used, personas } = state;
   const declaredProcedures = checking.config.procedures;
   return declaredFlows.checkedFlow(name, declaration, {
