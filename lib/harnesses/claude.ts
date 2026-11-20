@@ -241,7 +241,7 @@ export interface ClaudeCli {
   run: runContext.Harness['run'];
   interactiveArgs(agent: unknown, opening: string, options?: unknown): string[];
   metrics(session: string): events.Usage | null;
-  doctor(config?: unknown): unknown;
+  doctor(options: { probe: boolean }): Promise<runContext.DoctorReport>;
 }
 
 // What run reads of the call beyond launchArgs's (docs/interfaces/harness.md, SentCall).
@@ -369,8 +369,13 @@ const notImplemented = (): never => {
   throw new Error('not implemented');
 };
 
+// The CLI's checks (#427): cheap mode starts no model call, and probe mode adds the model probes.
+// stub (#427 Red): reports every check passed without starting the CLI.
+const doctorIn = (_runner: Pick<exec.Exec, 'launch'>, _options: { probe: boolean }) =>
+  Promise.resolve<runContext.DoctorReport>({ ok: true, checks: [] });
+
 // The members that start the CLI, over the runner's launch, where configDirectory holds the CLI's transcripts.
-// interactiveArgs, metrics and doctor come with slice 7, gg stats and #427 (owner, #425 Q4 A).
+// interactiveArgs and metrics come with slice 7 and gg stats (owner, #425 Q4 A).
 export const createCli = (
   runner: Pick<exec.Exec, 'launch'>,
   { configDirectory = CONFIG_DIRECTORY }: { configDirectory?: string } = {},
@@ -378,5 +383,5 @@ export const createCli = (
   run: (call, hooks) => runIn(runner, configDirectory, call as unknown as RunCall, hooks),
   interactiveArgs: notImplemented,
   metrics: notImplemented,
-  doctor: notImplemented,
+  doctor: (options) => doctorIn(runner, options),
 });

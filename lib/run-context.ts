@@ -90,6 +90,18 @@ export interface HarnessResult {
 export interface HarnessStarted {
   kind: string;
 }
+// What a Harness's doctor found (#427, Q1 A): each check it ran by name, whether it passed, whether a failure is an
+// error or a warning, and what it saw.
+export interface DoctorCheck {
+  name: string;
+  ok: boolean;
+  severity: 'error' | 'warning';
+  message: string;
+}
+export interface DoctorReport {
+  ok: boolean;
+  checks: DoctorCheck[];
+}
 // `signal` travels beside the call, never inside it: the copy the Harness gets would turn it into `{}`.
 export interface HarnessHooks {
   started(report: HarnessStarted): void;

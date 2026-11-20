@@ -337,11 +337,45 @@ test('a call whose signal aborts is killed', CASE, async (t) => {
   assert.deepEqual({ status: result.status, failure }, { status: 'killed', failure: null });
 });
 
-test('interactiveArgs, metrics and doctor throw not implemented until their slices', (t) => {
+test('interactiveArgs and metrics throw not implemented until their slices', (t) => {
   const { harness } = fakeCli(t, { scenario: 'success' });
   assert.throws(() => harness.interactiveArgs({}, 'opening'), { message: 'not implemented' });
   assert.throws(() => harness.metrics(SUCCESS_SESSION), { message: 'not implemented' });
-  assert.throws(() => harness.doctor({}), { message: 'not implemented' });
+});
+
+// The cheap checks over the fake CLI, which prints the answers recorded from Claude Code (#427, Q2 A): the checks every
+// platform runs, by name, beside the shell's on win32.
+const CHEAP_CHECKS = ['executable', 'version', 'login', 'bare-help'];
+
+// Each check doctor ran that failed, by name.
+const failedChecks = async (fake: claudeOverFakeCli.ClaudeOverFakeCli) =>
+  (await fake.harness.doctor({ probe: false })).checks
+    .filter(({ ok }) => !ok)
+    .map(({ name, severity }) => ({ name, severity }));
+
+test('doctor passes every cheap check of the recorded CLI', CASE, async (t) => {
+  const { checks, ok } = await fakeCli(t, { scenario: 'success' }).harness.doctor({ probe: false });
+  assert.deepEqual(
+    CHEAP_CHECKS.filter((name) => !checks.some((check) => check.name === name && check.ok)),
+    [],
+    JSON.stringify(checks),
+  );
+  assert.equal(ok, true);
+});
+
+test('doctor fails the executable check when the CLI cannot start', CASE, async (t) => {
+  const fake = fakeCli(t, { scenario: 'success', command: 'gg-no-such-claude' });
+  assert.deepEqual(await failedChecks(fake), [{ name: 'executable', severity: 'error' }]);
+});
+
+test('doctor fails the version check on a CLI older than the minimum', CASE, async (t) => {
+  const fake = fakeCli(t, { scenario: 'success', mode: 'old-version' });
+  assert.deepEqual(await failedChecks(fake), [{ name: 'version', severity: 'error' }]);
+});
+
+test('doctor fails the login check on a logged-out CLI', CASE, async (t) => {
+  const fake = fakeCli(t, { scenario: 'success', mode: 'logged-out' });
+  assert.deepEqual(await failedChecks(fake), [{ name: 'login', severity: 'error' }]);
 });
 
 // Every way a call can fail resolves a typed result: a Harness never throws or rejects for an expected failure

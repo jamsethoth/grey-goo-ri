@@ -15,7 +15,8 @@ const { launch } = exec.createExec();
 export interface FakeCli {
   // The recording the fake replays, by its name in test/fixtures/claude/.
   scenario: string;
-  // How the fake changes the replay (fake-claude.ts): `no-result`, `garbage`, `hang` or `hang-no-transcript`.
+  // How the fake changes the replay (fake-claude.ts): `no-result`, `garbage`, `hang` or `hang-no-transcript`; or its
+  // answer to a command that is no model call: `old-version` or `logged-out`.
   mode?: string;
   // The executable launched in place of claude, node unless a case names one that does not exist.
   command?: string;

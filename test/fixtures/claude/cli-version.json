@@ -1,0 +1,11 @@
+{
+  "placeholder": "hand-written until the owner runs: node scripts/record-claude.ts cli-version cli-auth-status cli-auth-status-logged-out cli-help",
+  "cliVersion": "2.1.328 (Claude Code)",
+  "command": "cli-version",
+  "purpose": "the version doctor holds to the pinned minimum",
+  "argv": ["--version"],
+  "env": {},
+  "exitCode": 0,
+  "stdout": "2.1.328 (Claude Code)\n",
+  "stderr": ""
+}

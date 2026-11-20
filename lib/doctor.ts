@@ -194,6 +194,8 @@ export interface DoctorOptions {
   harnesses: Record<string, unknown>;
   gh: github.Gh;
   cwd: string;
+  // gg doctor --probe: each used Harness's doctor adds its model probes (#427).
+  probe?: boolean;
 }
 
 // gg doctor prints the checked configuration gg run admits by, so it never passes what gg run refuses (V1, #362):

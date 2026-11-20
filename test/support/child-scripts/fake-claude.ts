@@ -5,13 +5,31 @@
 // `no-result` leaves out the result line, `garbage` sends a line that is not JSON after the init line, and `hang`
 // leaves out the result line and then outlives any case, so only a kill ends it; `hang-no-transcript` hangs as `hang`
 // does and writes no transcript.
+// A command that is no model call (--version, auth status --json, --help) prints its recorded answer
+// (recorded-cli.ts, #427) instead: `old-version` prints a version below the minimum, `logged-out` answers auth status
+// as the logged-out recording; a model call under either replays as `replay` does.
 // The test runner also loads this file with no FAKE_CLAUDE_SCENARIO, where it does nothing.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as childScripts from '../child-scripts.ts';
+import * as recordedCli from '../recorded-cli.ts';
 
+const COMMAND_MODES = ['old-version', 'logged-out'];
 const scenario = process.env.FAKE_CLAUDE_SCENARIO;
-if (scenario) await replay(scenario, process.env.FAKE_CLAUDE_MODE ?? 'replay');
+const fakeMode = process.env.FAKE_CLAUDE_MODE ?? 'replay';
+const argv = process.argv.slice(2);
+if (scenario && !argv.includes('-p')) answerCommand(fakeMode);
+else if (scenario) await replay(scenario, COMMAND_MODES.includes(fakeMode) ? 'replay' : fakeMode);
+
+function answerCommand(mode: string) {
+  const state = {
+    loggedOut: mode === 'logged-out',
+    ...(mode === 'old-version' && { version: recordedCli.OLD_VERSION }),
+  };
+  const { stdout, exitCode } = recordedCli.answer(argv, state);
+  process.stdout.write(stdout);
+  process.exitCode = exitCode;
+}
 
 async function replay(name: string, mode: string) {
   let stdin = '';

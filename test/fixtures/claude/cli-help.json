@@ -1,0 +1,11 @@
+{
+  "placeholder": "hand-written from third-party reports, an excerpt, until the owner runs: node scripts/record-claude.ts cli-version cli-auth-status cli-auth-status-logged-out cli-help",
+  "cliVersion": "2.1.328 (Claude Code)",
+  "command": "cli-help",
+  "purpose": "the --bare line doctor reads in place of a model probe",
+  "argv": ["--help"],
+  "env": {},
+  "exitCode": 0,
+  "stdout": "Usage: claude [options] [command] [prompt]\n\nClaude Code - starts an interactive session by default, use -p/--print for non-interactive output\n\nOptions:\n  --bare                                            Minimal mode: skip hooks, LSP, plugin sync, attribution, auto-memory, background prefetches, keychain reads, and CLAUDE.md auto-discovery. Sets CLAUDE_CODE_SIMPLE=1. Anthropic auth is strictly ANTHROPIC_API_KEY or apiKeyHelper via --settings (OAuth and keychain are never read). 3P providers (Bedrock/Vertex/Foundry) use their own credentials. Skills still resolve via /skill-name. Explicitly provide context via: --system-prompt[-file], --append-system-prompt[-file], --add-dir (CLAUDE.md dirs), --mcp-config, --settings, --agents, --plugin-dir.\n  -p, --print                                       Print response and exit (useful for pipes).\n  -v, --version                                     Output the version number\n  -h, --help                                        Display help for command\n\nCommands:\n  auth                                              Manage authentication\n",
+  "stderr": ""
+}

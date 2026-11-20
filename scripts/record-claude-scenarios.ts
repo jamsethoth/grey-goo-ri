@@ -180,3 +180,28 @@ ${REPORT}`,
       'answer with the text of line 4000.',
   },
 ];
+
+// A command that is no model call, which gg doctor's cheap mode starts (#427, Q3 A): its argv after the executable,
+// and the variables it runs with ({base} as above).
+export interface CliCommand {
+  name: string;
+  purpose: string;
+  argv: string[];
+  env?: Record<string, string>;
+}
+
+export const COMMANDS: CliCommand[] = [
+  { name: 'cli-version', purpose: 'the version doctor holds to the pinned minimum', argv: ['--version'] },
+  {
+    name: 'cli-auth-status',
+    purpose: "the login doctor reads, in the user's own configuration directory",
+    argv: ['auth', 'status', '--json'],
+  },
+  {
+    name: 'cli-auth-status-logged-out',
+    purpose: 'the login doctor reads, in an empty configuration directory, logged out',
+    argv: ['auth', 'status', '--json'],
+    env: OWN_CONFIG,
+  },
+  { name: 'cli-help', purpose: 'the --bare line doctor reads in place of a model probe', argv: ['--help'] },
+];

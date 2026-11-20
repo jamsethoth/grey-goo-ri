@@ -383,6 +383,15 @@ test("gg doctor reads the repository's configuration and its schemas and prints 
   assertOnlyStubPreflight(result.stdout, result.status);
 });
 
+// --probe joins gg doctor's flags (#427, decision 4); the example's Agents run on the Codex stub, so it starts no CLI.
+test('gg doctor takes --probe and reports what gg doctor does', (t) => {
+  const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
+  writeExampleLayer(join(repo, '.agents', 'gg'));
+  stateDatabase.create(join(repo, '.git'));
+  const result = ggIn('doctor', '--probe');
+  assertOnlyStubPreflight(result.stdout, result.status);
+});
+
 for (const args of [['doctor'], ['run', '1']]) {
   test(`gg ${args[0]} names a malformed gg.json without a stack trace`, (t) => {
     const { repo, ggIn } = tempRepo(t);

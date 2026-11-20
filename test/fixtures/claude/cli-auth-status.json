@@ -1,0 +1,11 @@
+{
+  "placeholder": "hand-written from third-party reports until the owner runs: node scripts/record-claude.ts cli-version cli-auth-status cli-auth-status-logged-out cli-help",
+  "cliVersion": "2.1.328 (Claude Code)",
+  "command": "cli-auth-status",
+  "purpose": "the login doctor reads, in the user's own configuration directory",
+  "argv": ["auth", "status", "--json"],
+  "env": {},
+  "exitCode": 0,
+  "stdout": "{\n  \"loggedIn\": true,\n  \"authMethod\": \"claude.ai\",\n  \"apiProvider\": \"firstParty\"\n}\n",
+  "stderr": ""
+}
