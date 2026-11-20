@@ -99,26 +99,36 @@ function boundsOf(typed: Map<string, TypedRoutes>, ids: Iterable<string>): Bound
 }
 
 // A route lands on its Vertex, and on every exhausted target its edge's max or a Vertex's max can reach (H2, U5).
-// `exhausted` marks a landing that no edge max bounds.
+// `exhausted` marks a landing that no edge max bounds; `unsure` collects each Vertex reached whose bound was refused.
+interface Walk {
+  exhausted: boolean;
+  seen: string[];
+  unsure?: Set<string>;
+}
 function landingsOf(
   bounds: Bounds,
   target: model.RouteTarget | null,
-  exhausted = false,
-  seen: string[] = [],
+  walk: Walk = { exhausted: false, seen: [] },
 ): Landing[] {
+  const { exhausted, seen } = walk;
   if (target === null) return [];
   if (typeof target !== 'string' && 'to' in target)
     return [
-      ...landingsOf(bounds, target.to, exhausted, seen),
-      ...(target.max === undefined ? [] : landingsOf(bounds, target.exhausted ?? flow.NEEDS_HUMAN_ROUTE, true, seen)),
+      ...landingsOf(bounds, target.to, walk),
+      ...(target.max === undefined
+        ? []
+        : landingsOf(bounds, target.exhausted ?? flow.NEEDS_HUMAN_ROUTE, { ...walk, exhausted: true })),
     ];
   if (typeof target !== 'string') return [{ end: target.end, exhausted }];
   const vertex = seen.includes(target) ? undefined : bounds.get(target);
-  if (!vertex) return [];
+  if (!vertex) {
+    if (!seen.includes(target)) walk.unsure?.add(target);
+    return [];
+  }
   const next = vertex.exhausted ?? flow.NEEDS_HUMAN_ROUTE;
   return [
     { vertex: target, exhausted },
-    ...(vertex.max === null ? [] : landingsOf(bounds, next, true, [...seen, target])),
+    ...(vertex.max === null ? [] : landingsOf(bounds, next, { ...walk, exhausted: true, seen: [...seen, target] })),
   ];
 }
 
@@ -130,7 +140,8 @@ function typedTarget(graph: Graph, id: string, name: string) {
 }
 
 // Where a failure's work goes when a writing Vertex's Outcome routes on.
-function workOf(write: boolean, cases: OutcomeCase[], landings: Landing[]) {
+function workOf(write: boolean, cases: OutcomeCase[], landings: Landing[], unsure: Set<string>) {
+  if (unsure.size) return null;
   if (!write || cases.every((ending) => ending.table === 'passed')) return null;
   const rescued = landings.some((landing) => landing.vertex);
   const left = landings.some((landing) => landing.end);
@@ -168,9 +179,8 @@ function checkWrites(
 // Each Vertex's Outcomes routed, the routing filled in for doctor, and the edges they take.
 function routeEdges(problems: report.Report, graph: Graph) {
   const { resolved, ticket } = graph;
-  const fail = (id: string, finding: report.Finding) => {
-    if (graph.whole.has(id)) report.errorOf(problems, `${graph.location}.ticket.vertices.${id}`, finding);
-  };
+  const fail = (id: string, finding: report.Finding) =>
+    report.errorOf(problems, `${graph.location}.ticket.vertices.${id}`, finding);
   const bounds = boundsOf(graph.typed, graph.typed.keys());
   const edges: Edge[] = [];
   for (const [id, vertex] of resolved) {
@@ -191,15 +201,16 @@ function routeEdges(problems: report.Report, graph: Graph) {
         continue;
       }
       const target = typedTarget(graph, id, name);
-      const landings = landingsOf(bounds, target);
+      const unsure = new Set<string>();
+      const landings = landingsOf(bounds, target, { exhausted: false, seen: [], unsure });
       const mine = cases.filter((ending) => ending.outcome === name);
       // An own key, so an Outcome such as __proto__ or toString is data.
       Object.defineProperty(vertex.routing, name, {
         value: {
           target: declaredFlows.declaredValue(route.target) ?? null,
           by: route.by,
-          // Where work goes is unknown while the routes it is read from are refused.
-          work: target === null ? null : workOf(write, mine, landings),
+          // Where work goes is unknown while the routes it is read from, or a bound it passes, are refused.
+          work: target === null ? null : workOf(write, mine, landings, unsure),
         },
         enumerable: true,
         writable: true,

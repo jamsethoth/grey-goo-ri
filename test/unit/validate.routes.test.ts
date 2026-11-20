@@ -264,6 +264,21 @@ test('a Flow whose route target is refused shows no work for the Outcomes its ro
   });
 });
 
+// green's failed Outcome routes to senior-green, whose refused bound leaves unknown whether its work is rescued
+// (#454, D5).
+for (const [key, value, code] of [
+  ['max', 0, 'not-a-positive-integer'],
+  ['exhausted', 7, 'malformed-route-target'],
+] as const) {
+  test(`a route through a Vertex whose ${key} is refused shows no work`, () => {
+    const config = exampleLayer.config();
+    config.flows.default.ticket.vertices['senior-green'][key] = value;
+    const { errors, declared } = exampleLayer.check(config);
+    assert.deepEqual(exampleLayer.firedRules(errors), [{ at: `${VERTICES}.senior-green.${key}`, code }]);
+    assert.deepEqual(declared.default?.ticket.vertices.green?.routing.failed?.work, null);
+  });
+}
+
 // A misspelt max leaves the edge unbounded as written, so the cycle through it waits on the refused edge (#454, D14).
 test('an unknown key on an edge holds the cycle through its Vertex', () => {
   const config = exampleLayer.config();

@@ -488,9 +488,10 @@ const ROUTE_KEY_SITES: Record<string, Site> = {
     },
   },
 };
-// The keys the route checks read inside those sites' values. No exported list holds these rows: lib/procedures.ts's
-// ACTION_KEYS lists each kind's own keys (await-approval's `decisions`), not an Action's `id` and `do`, and a route's
-// end, a Claim token's keys and a Rule Table row's keys have none.
+// The keys the route checks read inside those sites' values. lib/procedures.ts's ACTION_KEYS lists each kind's own
+// keys (await-approval's `decisions`), not an Action's `id` and `do`; a route's end and a Rule Table row's keys have no
+// list; a Claim token's forms are CLAIM_TOKEN_FORMS, whose `comment` no route check reads, so its rows are the two keys
+// the commit checks read, `requires` and `stop`, which sorts the passing tokens (#454, D13).
 const NESTED_KEY_SITES: Record<string, Site> = {
   // senior-green and reviewer's repeat edge declare both max and exhausted, so a refused one is their only refusal: on
   // green and its edge, the pair check refuses the other key too (#454, D8).
@@ -706,12 +707,12 @@ const WAIT_READS: WaitRead[] = [
     '',
     "a null on a Vertex's own key or its Agent holds the cycle through it",
   ],
-  ['graph.ts', '!report.isReported(max) && ', '', 'waits on D5: no test shows the work a refused max changes'],
+  ['graph.ts', '!report.isReported(max) && ', '', 'a route through a Vertex whose max is refused shows no work'],
   [
     'graph.ts',
     ' && !report.isReported(exhausted))',
     ')',
-    'waits on D5: no test shows the work a refused exhausted target changes',
+    'a route through a Vertex whose exhausted is refused shows no work',
   ],
   ['graph.ts', 'report.isReported(vertexRoutes) || ', '', VERTEX_WORK],
   [
@@ -777,8 +778,9 @@ const WAIT_READS: WaitRead[] = [
 const WAIT_SOURCES = ['flows.ts', 'graph.ts', 'routes.ts', 'route-facts.ts'];
 const validateSource = (file: string) => readFileSync(new URL(`../../lib/validate/${file}`, import.meta.url), 'utf8');
 
-// The census holds the table to the source: a new read of a refusal without an entry fails it.
-test('every wait read in the route-map checks names the test that fails without it', () => {
+// The census holds the table to the source: a new read of a refusal without an entry fails it. It matches refusal
+// words only, so a read of a derived set such as `whole` or `mapped` passes it unlisted (#454, D16).
+test('every refusal read in the route-map checks names the test that fails without it', () => {
   const notOnce = WAIT_READS.filter(([file, read]) => validateSource(file).split(read).length !== 2).map(
     ([file, read]) => `${file}: ${read}`,
   );
