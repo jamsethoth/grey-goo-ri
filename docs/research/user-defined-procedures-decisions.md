@@ -1164,6 +1164,11 @@ exact admission must be, or which way it may be wrong.
     `unreachable-vertex` and `optional-input-unsure` wait while any Vertex waits, since a route left out makes them
     appear falsely. A Procedure's error, in either source, holds only the Vertices that name it (owner, 2026-11-19, Q1
     A, Q2 A, Q3 A). Issue #449.
+  - (e) A check learns that a value it reads waits from the value its own check gave, never from the errors reported
+    around it (#391): a Procedure, an Agent or a Vertex is refused as a whole when any of its checks reports an error, a
+    null in it among them, and so holds as (d) says. An error in a Procedure's references read in one Vertex's scope
+    holds that Vertex only. The separate null report stays, first in the output, and merges with each check's own
+    (owner, 2026-11-19, Q1 A, Q2 A, Q3 A). Issue #454.
 - H7. An Outcome's route is the first of these that the configuration names:
   1. the Vertex's `route` for that Outcome;
   2. the Flow's `routes` for that Outcome;

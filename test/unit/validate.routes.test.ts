@@ -233,6 +233,21 @@ test("a cycle among sound Vertices is reported beside another Vertex's Procedure
   });
 });
 
+// Where work goes is read from the typed targets, so a Vertex whose routes were refused names none (#454).
+test("a Vertex whose route target is refused shows no work for its Outcomes' routing", () => {
+  const config = exampleLayer.config();
+  config.flows.default.ticket.vertices.green.route['bad-test'] = { to: 'nowhere' };
+  const { errors, declared } = exampleLayer.check(config);
+  assert.deepEqual(exampleLayer.firedRules(errors), [
+    { at: `${VERTICES}.green.route.bad-test`, code: 'unknown-vertex' },
+  ]);
+  assert.deepEqual(declared.default?.ticket.vertices.green?.routing.failed, {
+    target: 'senior-green',
+    by: 'Vertex route',
+    work: null,
+  });
+});
+
 test('malformed routing is an error, never a throw, in the graph checks', () => {
   const config = exampleLayer.config();
   config.flows.default.ticket.vertices['senior-green'].exhausted = ['nowhere'];

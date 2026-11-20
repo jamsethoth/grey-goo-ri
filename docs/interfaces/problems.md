@@ -230,13 +230,16 @@ The rule each code names:
 ## What one run cannot report
 
 `gg doctor` reports every failure it can in one run. These wait until another error is fixed, since the value they read
-is unknown until then:
+is unknown until then. A value is unknown when the check that judges it refused it, and a check waits on that refusal
+alone, never on the errors reported around it: a Procedure, an Agent or a Vertex is refused as a whole when any of its
+checks reports an error, a null in it among them.
 
 1. A Vertex's `unknown-outcome`, `unrouted-outcome`, `write-without-commit` and `commit-without-check`, while its
-   Procedure or its Agent has an error (in the user's directory, a command the repository does not declare among
-   them), or the Vertex itself has one apart from its route targets: its Outcomes or its access may be wrong.
-   `unrouted-outcome` also waits while the Flow's `vertices` or `routes` is malformed: whether an Outcome is routed is
-   unknown.
+   Procedure or its Agent is refused (in the user's directory, a command the repository does not declare among
+   its errors), or the Vertex itself has an error apart from its route targets, one found in its Procedure's
+   references read in the Vertex's scope among them: its Outcomes or its access may be wrong. That last holds only that
+   Vertex, not the Procedure's others. `unrouted-outcome` also waits while the Flow's `vertices` or `routes` is
+   malformed: whether an Outcome is routed is unknown.
 2. `unknown-outcome` at the Flow's default `routes`, while any Vertex waits as in 1, or the Flow's `vertices` or
    `routes` is malformed: the union of its Vertices' Outcomes is unknown.
 3. `unbounded-cycle`, `exhausted-loop`, `pr-ready-skippable` and `required-input-unsure` that pass through a Vertex

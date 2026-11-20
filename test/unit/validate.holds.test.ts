@@ -26,9 +26,13 @@ test('a commit no Check guards is reported beside an unrelated error', () => {
   ]);
 });
 
-// Each route-map check's code in lib/validate/graph.ts, read from its source so a new one joins the case below.
+// Each route-map check's code in lib/validate/graph.ts and the module only it imports, read from their source so a new
+// one joins the case below.
+const GRAPH_SOURCES = ['graph.ts', 'route-facts.ts'].map((file) =>
+  readFileSync(new URL(`../../lib/validate/${file}`, import.meta.url), 'utf8'),
+);
 const ROUTE_MAP_CODES = report.PROBLEM_CODES.filter((code) =>
-  readFileSync(new URL('../../lib/validate/graph.ts', import.meta.url), 'utf8').includes(`'${code}'`),
+  GRAPH_SOURCES.some((source) => source.includes(`'${code}'`)),
 );
 
 type Layer = exampleLayer.Layer;

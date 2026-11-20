@@ -356,12 +356,12 @@ test("a user misfit does not skip the graph checks of the user's other Flows", a
   assert.deepEqual([...checked.misfits.keys()], ['user:strict']);
 });
 
-// Each graph check's code in lib/validate/graph.ts, read from its source so a new one joins the case below.
-const GRAPH_CODES = report.PROBLEM_CODES.filter((code) =>
-  readFileSync(join(fileURLToPath(new URL('../../', import.meta.url)), 'lib/validate/graph.ts'), 'utf8').includes(
-    `'${code}'`,
-  ),
+// Each graph check's code in lib/validate/graph.ts and the module only it imports, read from their source so a new one
+// joins the case below.
+const GRAPH_SOURCES = ['graph.ts', 'route-facts.ts'].map((file) =>
+  readFileSync(join(fileURLToPath(new URL('../../', import.meta.url)), 'lib/validate', file), 'utf8'),
 );
+const GRAPH_CODES = report.PROBLEM_CODES.filter((code) => GRAPH_SOURCES.some((source) => source.includes(`'${code}'`)));
 
 // A change to Flow `other` that fires each graph check.
 const GRAPH_CASES: Record<string, (user: Repository, other: Flow) => void> = {
