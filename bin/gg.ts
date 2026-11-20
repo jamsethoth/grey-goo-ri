@@ -85,6 +85,7 @@ async function doctorCommand(parsed: options.ParsedOptions, gh: github.Gh) {
     gh,
     cwd: mainRoot,
     commonDir: gitCommonDir,
+    probe: parsed.probe === true,
   });
   process.stdout.write(text);
   process.exitCode = exitCode;
@@ -139,8 +140,8 @@ const COMMANDS: Record<string, Command> = {
     run: initCommand,
   },
   doctor: {
-    summary: 'validate the configuration and print each Resolved Flow',
-    flags: { values: ['repo'] },
+    summary: 'validate the configuration and print each Resolved Flow; --probe adds the model probes',
+    flags: { bools: ['probe'], values: ['repo'] },
     run: doctorCommand,
   },
   plan: {

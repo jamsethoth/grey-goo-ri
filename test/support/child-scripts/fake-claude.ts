@@ -8,7 +8,8 @@
 // ends itself with SIGTERM. FAKE_CLAUDE_STDERR is written to stderr first. FAKE_CLAUDE_ORPHAN starts a descendant
 // before the replay, through a middle process that exits once the descendant has written its pid to that file, so the
 // descendant is an orphan the CLI left: detached on Windows, which keeps it out of the job libuv gives node's children;
-// elsewhere in the CLI's process group, as a CLI's own children are.
+// elsewhere in the CLI's process group, as a CLI's own children are. A command that is no model call (--version, auth
+// status --json, --help) prints instead the answer FAKE_CLAUDE_COMMANDS holds for its argv (recorded-cli.ts, #427).
 // Its tests copy it alone to a directory whose path holds spaces, so it imports nothing.
 // The test runner also loads this file with no FAKE_CLAUDE_RECORDING, where it does nothing.
 import { spawn, spawnSync } from 'node:child_process';
@@ -22,11 +23,26 @@ const LIVES_MS = 600_000;
 const role = process.env.FAKE_CLAUDE_ROLE;
 const orphanFile = process.env.FAKE_CLAUDE_ORPHAN;
 const recording = process.env.FAKE_CLAUDE_RECORDING;
+const commands = process.env.FAKE_CLAUDE_COMMANDS;
 if (role === 'orphan' && orphanFile) {
   writeFileSync(orphanFile, String(process.pid));
   setTimeout(() => {}, LIVES_MS);
 } else if (role === 'middle' && orphanFile) startOrphan(orphanFile);
+else if (commands && !process.argv.includes('-p')) answerCommand(commands);
 else if (recording) await replay(recording, process.env.FAKE_CLAUDE_MODE ?? 'replay');
+
+function answerCommand(commandsPath: string) {
+  const asked = JSON.stringify(process.argv.slice(2));
+  const answers = JSON.parse(readFileSync(commandsPath, 'utf8')) as {
+    argv: string[];
+    stdout: string;
+    exitCode: number;
+  }[];
+  const answered = answers.find(({ argv }) => JSON.stringify(argv) === asked);
+  if (!answered) throw new Error(`fake claude has no answer for claude ${asked}`);
+  process.stdout.write(answered.stdout);
+  process.exitCode = answered.exitCode;
+}
 
 function startOrphan(pidFile: string) {
   spawn(process.execPath, [fileURLToPath(import.meta.url)], {

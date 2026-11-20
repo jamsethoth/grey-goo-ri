@@ -5,10 +5,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type * as config from '../../lib/config.ts';
 import * as configurationCheck from '../../lib/configuration-check.ts';
+import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as procedureKinds from '../../lib/procedures.ts';
 import * as report from '../../lib/validate/report.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
 import type * as golden from '../support/golden.ts';
+import * as recordedCli from '../support/recorded-cli.ts';
 import * as runFixture from '../support/run-fixture.ts';
 import * as seededRecords from '../support/seeded-records.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
@@ -115,14 +117,66 @@ test('preflight names a Harness that fails in a Flow --flow does not name', asyn
   ]);
 });
 
-// The preflight stop for Claude is gone (#425, G7): the Claude Harness shipped builds passes preflight, before any
-// spawn.
-test('preflight admits the Claude Harness shipped builds', async () => {
+// The preflight stop for Claude is gone (#425, G7): the Claude Harness shipped builds passes preflight over a CLI
+// logged in at the minimum version, whose cheap checks preflight runs (#427).
+test('preflight admits the Claude Harness shipped builds over a logged-in CLI', async () => {
   const repository = repositorySource();
   Object.assign(repository.agents.implementer!, { harness: 'claude' });
-  const shipped = await import('../../lib/harnesses/shipped.ts');
-  const { claude } = shipped.shipped({ launch: () => Promise.reject(new Error('preflight starts no CLI')) });
+  const { claude } = shipped.shipped(recordedCli.recordedCli());
   assert.deepEqual(errorLines(await checkOf(sources(repository), { harnesses: { claude } })), []);
+});
+
+// Q1 A: a failed check is one error for the Harness, at no configuration path, naming the check.
+test('preflight fails a Flow whose Claude CLI is logged out', async () => {
+  const repository = repositorySource();
+  Object.assign(repository.agents.implementer!, { harness: 'claude' });
+  const { claude } = shipped.shipped(recordedCli.recordedCli({ loggedOut: true }));
+  const checked = await checkOf(sources(repository), { harnesses: { claude } });
+  const failed = checked.environmentErrors.filter(
+    (problem): problem is report.Problem<'harness-doctor-failed'> => problem.code === 'harness-doctor-failed',
+  );
+  assert.deepEqual(
+    failed.map((problem) => ({ location: problem.at, harness: problem.params.harness, check: problem.params.check })),
+    [{ location: '', harness: 'claude', check: 'login' }],
+  );
+  assert.deepEqual(
+    errorLines(checked),
+    failed.map((problem) => report.line('error', problem)),
+  );
+});
+
+// G15: gg run preflight runs each used Harness's doctor in cheap mode, once whatever the number of its Vertices and
+// Flows, and starts no Harness its Flows do not use.
+test('preflight runs the cheap doctor of each Harness the Flows use, once, and of no other', async () => {
+  const repository = repositorySource();
+  const other = repositorySource().flows.default as golden.ConfiguredFlow;
+  repository.agents.other = { ...repository.agents.implementer, harness: 'other' };
+  (other.ticket.vertices.red as { use: string }).use = 'other';
+  repository.flows.other = other;
+  const doctored: [string, unknown][] = [];
+  const recording = (name: string) => ({
+    ...fakeHarness.fakeHarness({ name }),
+    doctor: (options: unknown) => {
+      doctored.push([name, options]);
+      return Promise.resolve({ ok: true, checks: [] });
+    },
+  });
+  const harnesses = Object.fromEntries(['fake', 'other', 'unused'].map((name) => [name, recording(name)]));
+  await checkOf(sources(repository), { harnesses });
+  // The Harnesses the Flows' Agents use, read from the configuration.
+  const agents = new Map(Object.entries(repository.agents));
+  const used = new Set(
+    Object.values(repository.flows as Record<string, golden.ConfiguredFlow>).flatMap((flow) =>
+      Object.values(flow.ticket.vertices).flatMap(({ use }) =>
+        typeof use === 'string' ? [String(agents.get(use)?.harness)] : [],
+      ),
+    ),
+  );
+  assert.ok(used.size > 1 && used.size < Object.keys(harnesses).length, 'two Harnesses used, one not');
+  assert.deepEqual(
+    doctored.toSorted(([left], [right]) => left.localeCompare(right)),
+    [...used].sort().map((name) => [name, { probe: false }]),
+  );
 });
 
 // The agent Action copies what resolveTools returns at once, so preflight refuses an answer it could not copy (#411).

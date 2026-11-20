@@ -194,17 +194,19 @@ export interface DoctorOptions {
   harnesses: Record<string, unknown>;
   gh: github.Gh;
   cwd: string;
+  // gg doctor --probe: each used Harness's doctor adds its model probes (#427).
+  probe?: boolean;
 }
 
 // gg doctor prints the checked configuration gg run admits by, so it never passes what gg run refuses (V1, #362):
 // every error, each record gg run would keep for its Flow being gone (A2), an owner/name gh cannot read, even beside
 // the configuration's errors (#372), and each misfit as a warning, since gg run refuses one only when selected (Q21).
 // Schemas and templates are read from the files each source's gg.json names (`config.files`).
-export async function doctor({ config: configuration, harnesses, gh, cwd, commonDir }: DoctorOptions): Promise<{
+export async function doctor({ config: configuration, harnesses, gh, cwd, commonDir, probe }: DoctorOptions): Promise<{
   text: string;
   exitCode: number;
 }> {
-  const checked = await configurationCheck.check({ config: configuration, harnesses, commonDir });
+  const checked = await configurationCheck.check({ config: configuration, harnesses, commonDir, probe });
   const read = await configurationCheck.readRepository(gh, cwd);
   const errors = [
     ...checked.configurationErrors,

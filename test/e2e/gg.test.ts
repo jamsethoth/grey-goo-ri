@@ -57,7 +57,10 @@ test('usage marks each unimplemented command', () => {
     .filter((line) => line.endsWith(' (not implemented)'))
     .map((line) => line.trim().split(' ')[0]);
   assert.deepEqual(marked, ['plan', 'publish', 'trace', 'stats']);
-  assert.match(gg('--help').stdout, /^ {2}doctor {4}validate the configuration and print each Resolved Flow$/m);
+  assert.match(
+    gg('--help').stdout,
+    /^ {2}doctor {4}validate the configuration and print each Resolved Flow; --probe adds the model probes$/m,
+  );
 });
 
 test('gg with an unknown command prints usage to stderr and exits 1', () => {
@@ -380,6 +383,15 @@ test("gg doctor reads the repository's configuration and its schemas and prints 
     result.stdout + result.stderr,
   );
   assert.ok(result.stdout.includes('\n  routes: misscoped -> end needs-replan, * -> end needs-human\n'), result.stdout);
+  assertOnlyStubPreflight(result.stdout, result.status);
+});
+
+// --probe joins gg doctor's flags (#427, decision 4); the example's Agents run on the Codex stub, so it starts no CLI.
+test('gg doctor takes --probe and reports what gg doctor does', (t) => {
+  const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
+  writeExampleLayer(join(repo, '.agents', 'gg'));
+  stateDatabase.create(join(repo, '.git'));
+  const result = ggIn('doctor', '--probe');
   assertOnlyStubPreflight(result.stdout, result.status);
 });
 

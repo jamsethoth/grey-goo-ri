@@ -1,0 +1,402 @@
+// gg doctor's checks of the CLI each used Harness starts (#427): over the Claude Harness shipped builds, its CLI
+// answering in-process as recorded (Q2 A), in cheap mode and under --probe, and the same errors gg run's preflight
+// gives.
+import { test, type TestContext } from 'node:test';
+import assert from 'node:assert/strict';
+import * as config from '../../lib/config.ts';
+import * as doctor from '../../lib/doctor.ts';
+import * as github from '../../lib/github.ts';
+import * as claude from '../../lib/harnesses/claude.ts';
+import * as shipped from '../../lib/harnesses/shipped.ts';
+import * as run from '../../lib/run.ts';
+import * as caseEnv from '../support/case-env.ts';
+import * as claudeRecordings from '../support/claude-recordings.ts';
+import * as exampleLayer from '../support/example-layer.ts';
+import * as fakeGh from '../support/fake-gh.ts';
+import * as fakeHarness from '../support/fake-harness.ts';
+import * as recordedCli from '../support/recorded-cli.ts';
+import * as runFixture from '../support/run-fixture.ts';
+import * as tempDirectory from '../support/temp-directory.ts';
+
+const FAKE_HARNESS = fakeHarness.fakeHarness();
+// A case that asks nobody reads no labels.
+const DEPS = { gh: github.createGh(fakeGh.fakeGh({ branch: 'b', ticket: 1 }).gh), cwd: '/repo' };
+const file = (bytes: string) => ({ bytes, hash: config.sha256(bytes) });
+
+// `repository` as the repository's source, beside a user source that holds only the machine settings.
+const sources = (repository: config.Source): config.Configuration => ({
+  repository,
+  user: { maxParallel: 2, worktreeRoot: '~/worktrees', files: {} },
+  repositoryFile: '/repo/.agents/gg/gg.json',
+  userFile: '/home/.agents/gg/gg.json',
+});
+
+// The example Layer as loadLayers gives it, with every Agent on the Claude Harness, as gg init --harness claude writes
+// it: seven Vertices on one CLI.
+function claudeExample() {
+  const layer = exampleLayer.config();
+  layer.files = Object.fromEntries(
+    exampleLayer.WRITTEN_NAMES.filter((name) => name !== 'gg.json').map((name) => [
+      name,
+      file(exampleLayer.fixtureText(name)),
+    ]),
+  );
+  for (const agent of Object.values<Record<string, unknown>>(layer.agents)) agent.harness = 'claude';
+  return layer;
+}
+
+// gg doctor over the Claude Harness shipped builds, its CLI answering as recorded, changed by `state`, and every
+// launch the Harness asked for.
+async function doctorOverCli(state: recordedCli.CliState = {}, { probe = false } = {}) {
+  const cli = recordedCli.recordedCli(state);
+  const harnesses = { ...shipped.shipped(cli), fake: FAKE_HARNESS };
+  const result = await doctor.doctor({ config: sources(claudeExample()), ...DEPS, harnesses, probe });
+  return { ...result, launches: cli.launches };
+}
+
+const linesOf = (text: string, severity: 'error' | 'warning') =>
+  text.split('\n').filter((line) => line.startsWith(`${severity}: `));
+const doctorLines = (text: string, severity: 'error' | 'warning') =>
+  linesOf(text, severity).filter((line) => line.endsWith(' [harness-doctor-failed]'));
+
+// A failed check prints once for its Harness, however many Vertices run on it (Q1 A), and names the Harness and the
+// check, and is gg doctor's only error.
+function assertOneDoctorError(text: string, check: string) {
+  assert.deepEqual(linesOf(text, 'error'), doctorLines(text, 'error'), text);
+  assert.equal(doctorLines(text, 'error').length, 1, text);
+  const [line] = doctorLines(text, 'error');
+  assert.ok(line!.includes('claude') && line!.includes(check), line);
+}
+
+// What the --bare line says today, which the cheap mode reads in place of a model probe (decision 2). The CLI wraps its
+// help to a width, so the words may break across lines.
+const BARE_AUTH = /OAuth\s+and\s+keychain\s+are\s+never\s+read/;
+const changedHelp = (text: string) => text.replace(BARE_AUTH, 'OAuth is read from CLAUDE_CODE_OAUTH_TOKEN');
+const sameArgv = (left: readonly string[], right: readonly string[]) =>
+  left.length === right.length && left.every((arg, index) => arg === right[index]);
+
+test('gg doctor reports a Claude CLI older than the minimum', async () => {
+  const { text, exitCode } = await doctorOverCli({ version: recordedCli.OLD_VERSION });
+  assertOneDoctorError(text, 'version');
+  const [line] = doctorLines(text, 'error');
+  assert.ok(line!.includes(recordedCli.OLD_VERSION) && line!.includes('2.1.328'), line);
+  assert.equal(exitCode, 1);
+});
+
+test('gg doctor reports a logged-out Claude CLI', async () => {
+  const { text, exitCode } = await doctorOverCli({ loggedOut: true });
+  assertOneDoctorError(text, 'login');
+  assert.equal(exitCode, 1);
+});
+
+test('gg doctor reports a missing Claude CLI', async () => {
+  const { text, exitCode } = await doctorOverCli({ missing: true });
+  assertOneDoctorError(text, 'executable');
+  assert.equal(exitCode, 1);
+});
+
+// Every state of the CLI a cheap check meets, so every argv cheap mode starts is seen.
+const CLI_STATES: [string, recordedCli.CliState][] = [
+  ['a logged-in CLI at the minimum', {}],
+  ['an old CLI', { version: recordedCli.OLD_VERSION }],
+  ['a logged-out CLI', { loggedOut: true }],
+  ['a CLI whose help no longer says bare mode never reads OAuth', { help: changedHelp }],
+  ['a missing CLI', { missing: true }],
+];
+
+// Decision 1 (Q5 A): only --probe makes a model call, so every argv cheap mode starts is one of its three commands.
+test('gg doctor without --probe runs no model call', async () => {
+  const started: string[][] = [];
+  for (const [, state] of CLI_STATES) started.push(...(await doctorOverCli(state)).launches.map(({ args }) => args));
+  for (const args of started)
+    assert.ok(
+      recordedCli.CHEAP_ARGVS.some((argv) => sameArgv(argv, args)),
+      `cheap mode started claude ${args.join(' ')}`,
+    );
+  for (const argv of recordedCli.CHEAP_ARGVS)
+    assert.ok(
+      started.some((args) => sameArgv(args, argv)),
+      `cheap mode checks the CLI with claude ${argv.join(' ')}`,
+    );
+});
+
+// Decision 3: the profile probe runs a model call with the launch profile's argv and environment.
+test('gg doctor --probe runs the profile probe', async () => {
+  const { launches } = await doctorOverCli({}, { probe: true });
+  const profile = launches.filter(({ args }) => args.includes('-p') && !args.includes('--bare'));
+  assert.equal(profile.length, 1, JSON.stringify(launches.map(({ args }) => args)));
+  const [{ args, env }] = profile as [(typeof profile)[number]];
+  for (const flag of ['--setting-sources', '--strict-mcp-config', '--append-system-prompt-file'])
+    assert.ok(args.includes(flag), `the profile probe passes ${flag}`);
+  assert.equal(env?.CLAUDE_CODE_DISABLE_CLAUDE_MDS, '1');
+});
+
+// The bare probe's token, left out of the case's environment until it ends.
+function withoutToken(t: TestContext) {
+  const token = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  t.after(() => {
+    if (token !== undefined) process.env.CLAUDE_CODE_OAUTH_TOKEN = token;
+  });
+}
+
+// Decision 3: with a long-lived token, --probe also runs the --bare probe.
+test('gg doctor --probe runs the bare probe when CLAUDE_CODE_OAUTH_TOKEN is set', async (t) => {
+  caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
+  const { launches } = await doctorOverCli({}, { probe: true });
+  assert.equal(launches.filter(({ args }) => args.includes('-p') && args.includes('--bare')).length, 1);
+});
+
+// Q5 A: no token skips the bare probe with a warning naming claude setup-token; the profile probe still runs.
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('gg doctor --probe without CLAUDE_CODE_OAUTH_TOKEN skips the bare probe with a warning naming claude setup-token', async (t) => {
+  withoutToken(t);
+  const { text, launches, exitCode } = await doctorOverCli({}, { probe: true });
+  assert.deepEqual(
+    launches.filter(({ args }) => args.includes('--bare')),
+    [],
+  );
+  assert.equal(launches.filter(({ args }) => args.includes('-p')).length, 1, 'the profile probe runs');
+  const warnings = doctorLines(text, 'warning');
+  assert.equal(warnings.length, 1, text);
+  assert.ok(warnings[0]!.includes('claude setup-token'), warnings[0]);
+  assert.equal(exitCode, 0, text);
+});
+
+// Q4 A: a changed --bare line is a sign, not proof, that bare mode takes a subscription, so it warns and stops no Run.
+test('gg doctor warns, naming gg doctor --probe, when the help stops saying bare mode never reads OAuth', async () => {
+  assert.match(recordedCli.recordedHelp(), BARE_AUTH, 'the recorded --bare line says OAuth is never read');
+  const { text, exitCode } = await doctorOverCli({ help: changedHelp });
+  assert.deepEqual(linesOf(text, 'error'), [], text);
+  const warnings = doctorLines(text, 'warning');
+  assert.equal(warnings.length, 1, text);
+  assert.ok(warnings[0]!.includes('gg doctor --probe'), warnings[0]);
+  assert.equal(exitCode, 0);
+});
+
+// D2 A: a cheap command that times out keeps its reason, and a hung --help claims no change to its --bare line.
+test('gg doctor reports the timeout of a claude --version or --help that does not finish', async () => {
+  const checksOf = async (hangs: string) =>
+    (await claude.createCli(recordedCli.recordedCli({ hangs })).doctor({ probe: false })).checks;
+  const version = (await checksOf('--version')).find(({ name }) => name === 'version');
+  assert.ok(version?.message.endsWith('claude --version timed out'), version?.message ?? 'no version check');
+  const help = (await checksOf('--help')).find(({ name }) => name === 'bare-help');
+  assert.equal(help?.severity, 'warning');
+  assert.ok(help.message.endsWith('claude --help timed out') && !help.message.includes('no longer'), help.message);
+});
+
+// D5 A: a cheap command that exits with an error names its exit; a failed --help claims no change to its --bare line.
+test('gg doctor names the exit of a claude --version or --help that fails having printed nothing', async () => {
+  const checksOf = async (fails: string) =>
+    (await claude.createCli(recordedCli.recordedCli({ fails })).doctor({ probe: false })).checks;
+  const version = (await checksOf('--version')).find(({ name }) => name === 'version');
+  assert.ok(version?.message.endsWith('claude --version exited 1'), version?.message ?? 'no version check');
+  const help = (await checksOf('--help')).find(({ name }) => name === 'bare-help');
+  assert.equal(help?.severity, 'warning');
+  assert.ok(help.message.endsWith('claude --help exited 1') && !help.message.includes('no longer'), help.message);
+});
+
+// V1, ADR 0014: each state of the CLI a cheap check fails, by what fails.
+const FAILING_CLI = CLI_STATES.filter(([, state]) => Boolean(state.missing || state.loggedOut || state.version));
+
+test("gg doctor gives the error gg run's preflight refuses each failing Claude CLI with, line for line", async (t) => {
+  assert.equal(FAILING_CLI.length, 3);
+  for (const [fails, state] of FAILING_CLI) {
+    const harnesses = { ...shipped.shipped(recordedCli.recordedCli(state)), fake: FAKE_HARNESS };
+    const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-doctor-cli-parity-');
+    const configuration = sources(runFixture.testConfig('', { harness: 'claude' }));
+    let refused: string[] = [];
+    await run.admitConfiguration({ commonDir, config: configuration, harnesses }).catch((err: Error) => {
+      refused = err.message.split('\n').filter((line) => line.startsWith('error: '));
+    });
+    assert.equal(
+      refused.filter((line) => line.endsWith(' [harness-doctor-failed]')).length,
+      1,
+      `gg run refuses ${fails}`,
+    );
+    const { text } = await doctor.doctor({ config: configuration, ...DEPS, harnesses, commonDir });
+    assert.deepEqual(linesOf(text, 'error'), refused, fails);
+  }
+});
+
+// The Claude Harness's checks under --probe over the CLI as recorded, changed by `state`, and its launches.
+async function probeChecks(state: recordedCli.CliState) {
+  const cli = recordedCli.recordedCli(state);
+  const { checks } = await claude.createCli(cli).doctor({ probe: true });
+  const named = (name: string) => checks.find((check) => check.name === name);
+  return { bare: named('bare-probe'), profile: named('profile-probe'), launches: cli.launches };
+}
+
+type StreamLine = Record<string, unknown>;
+
+// A stream recording with each line changed by `edit`, which drops a line by giving null.
+const eachLine = (edit: (line: StreamLine) => StreamLine | null) => (stream: string) =>
+  stream
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((text) => {
+      const line = edit(JSON.parse(text) as StreamLine);
+      return line ? [JSON.stringify(line)] : [];
+    })
+    .join('\n');
+const isInit = (line: StreamLine) => line.type === 'system' && line.subtype === 'init';
+const keySource = (source: string, line: StreamLine) => (isInit(line) ? { ...line, apiKeySource: source } : line);
+const success = () => claudeRecordings.lines('success').join('\n');
+
+// F1: only the subscription token may answer the --bare probe, so gg's other credentials are blanked for its launch.
+test('the --bare probe blanks the other credentials bare mode takes', async (t) => {
+  caseEnv.caseEnv(t, {
+    CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token',
+    ANTHROPIC_API_KEY: 'sk-ant-case-key',
+    CLAUDE_CODE_USE_BEDROCK: '1',
+  });
+  const { launches } = await probeChecks({});
+  const [bare] = launches.filter(({ args }) => args.includes('--bare'));
+  for (const name of [
+    'ANTHROPIC_API_KEY',
+    'CLAUDE_CODE_USE_BEDROCK',
+    'CLAUDE_CODE_USE_VERTEX',
+    'CLAUDE_CODE_USE_FOUNDRY',
+  ])
+    assert.equal(bare?.env?.[name], '', `the --bare launch blanks ${name}`);
+});
+
+// D3 A: a provider switch would send the call to that provider, so every one gg's environment sets is blanked, by
+// prefix, as a later CLI may add one.
+test('the --bare probe blanks every CLAUDE_CODE_USE_ switch set in its environment', async (t) => {
+  const switches = ['CLAUDE_CODE_USE_ANTHROPIC_AWS', 'CLAUDE_CODE_USE_A_LATER_PROVIDER', 'claude_code_use_mantle'];
+  caseEnv.caseEnv(t, {
+    CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token',
+    ...Object.fromEntries(switches.map((name) => [name, '1'])),
+  });
+  const { launches } = await probeChecks({});
+  const [bare] = launches.filter(({ args }) => args.includes('--bare'));
+  for (const name of switches) assert.equal(bare?.env?.[name], '', `the --bare launch blanks ${name}`);
+});
+
+// D6 A: another Anthropic credential, endpoint or header, or a settings file's env block, could answer in the token's
+// place, so the --bare launch blanks every ANTHROPIC_ variable and loads no settings source.
+test('the --bare probe blanks every ANTHROPIC_ variable gg holds and reads no settings file', async (t) => {
+  const anthropic = ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'Anthropic_Custom_Headers'];
+  caseEnv.caseEnv(t, {
+    CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token',
+    ...Object.fromEntries(anthropic.map((name) => [name, 'set'])),
+  });
+  const { launches } = await probeChecks({});
+  const [bare] = launches.filter(({ args }) => args.includes('--bare'));
+  for (const name of anthropic) assert.equal(bare?.env?.[name], '', `the --bare launch blanks ${name}`);
+  assert.equal(bare?.env?.CLAUDE_CODE_OAUTH_TOKEN, undefined, 'the --bare launch leaves the token as gg holds it');
+  const sources = bare?.args.indexOf('--setting-sources') ?? -1;
+  assert.ok(sources !== -1 && bare?.args[sources + 1] === '', `the --bare launch loads no settings source`);
+});
+
+test('a --bare probe that ran on an API key warns, naming it, and passes nothing', async (t) => {
+  caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
+  const { bare } = await probeChecks({
+    bare: () => eachLine((line) => keySource('ANTHROPIC_API_KEY', line))(success()),
+  });
+  assert.equal(bare?.ok, false);
+  assert.equal(bare.severity, 'warning');
+  assert.ok(bare.message.includes('ANTHROPIC_API_KEY') && !bare.message.includes('adopt'), bare.message);
+});
+
+test("a --bare probe refused on an invalid API key warns with the CLI's reason, not a pass", async (t) => {
+  caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
+  const { bare } = await probeChecks({});
+  assert.equal(bare?.ok, false);
+  assert.equal(bare.severity, 'warning');
+  assert.ok(bare.message.includes('Invalid API key'), bare.message);
+});
+
+test("a --bare probe refused with authentication_failed and no API key passes, keeping the CLI's reason", async (t) => {
+  caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
+  const { bare } = await probeChecks({ bare: eachLine((line) => keySource('none', line)) });
+  assert.equal(bare?.ok, true, bare?.message ?? 'no bare-probe check');
+  assert.ok(bare.message.includes('Invalid API key'), bare.message);
+});
+
+test('a --bare probe failed on another auth error with no API key warns that it failed', async (t) => {
+  caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
+  const onHold = (line: StreamLine) =>
+    keySource('none', line.type === 'assistant' ? { ...line, error: 'account_on_hold' } : line);
+  const { bare } = await probeChecks({ bare: eachLine(onHold) });
+  assert.equal(bare?.ok, false);
+  assert.equal(bare.severity, 'warning');
+  assert.ok(bare.message.includes('failed'), bare.message);
+});
+
+// The recorded refusal on no API key, each line changed by `edit`.
+const onNone = (edit: (line: StreamLine) => StreamLine | null) => eachLine((line) => edit(keySource('none', line)));
+const assistantError = (error: string) => onNone((line) => (line.type === 'assistant' ? { ...line, error } : line));
+const ASSISTANT_ERRORS = [
+  'account_on_hold',
+  'oauth_org_not_allowed',
+  'cloud_credential_error',
+  'billing_error',
+  'rate_limit',
+  'overloaded',
+  'an_unmapped_error',
+];
+
+// Every ending of the --bare call: only the refusal stand-in shows bare mode still refuses the token.
+const BARE_ENDINGS: [string, (stream: string) => string][] = [
+  ['the refusal stand-in', onNone((line) => line)],
+  ['authentication_failed then no result line', onNone((line) => (line.type === 'result' ? null : line))],
+  [
+    'authentication_failed then a budget result',
+    onNone((line) => (line.type === 'result' ? { ...line, subtype: 'error_max_budget_usd' } : line)),
+  ],
+  [
+    'authentication_failed, a result not an error and init plugin errors',
+    onNone((line) => {
+      if (isInit(line)) return { ...line, plugin_errors: ['a plugin failed'] };
+      return line.type === 'result' ? { ...line, is_error: false } : line;
+    }),
+  ],
+  ...ASSISTANT_ERRORS.map((error): [string, (stream: string) => string] => [error, assistantError(error)]),
+  ['a success', () => onNone((line) => line)(success())],
+  ['the recorded refusal on ANTHROPIC_API_KEY', (stream) => stream],
+];
+
+// F3: a pass needs the parser's auth class as well as authentication_failed, so every other ending warns.
+test('a --bare probe passes only on the refusal stand-in, of every ending', async (t) => {
+  caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
+  const passing: string[] = [];
+  for (const [ending, bare] of BARE_ENDINGS) {
+    const { bare: check } = await probeChecks({ bare });
+    if (check?.ok) passing.push(ending);
+    else assert.equal(check?.severity, 'warning', `${ending}: ${check?.message}`);
+  }
+  assert.deepEqual(passing, ['the refusal stand-in']);
+});
+
+// F2: a profile probe passes only on the evidence it checks, its init's plugin list and its structured answer.
+test('the profile probe fails, naming the answer, when the call sent no structured answer', async () => {
+  const noSchema = () => claudeRecordings.lines('no-schema').join('\n');
+  const wordInResult = (line: StreamLine) => (line.type === 'result' ? { ...line, result: 'marigold' } : line);
+  for (const profile of [noSchema, () => eachLine(wordInResult)(noSchema())]) {
+    const { profile: check } = await probeChecks({ profile });
+    assert.equal(check?.ok, false);
+    assert.equal(check.severity, 'error');
+    assert.ok(check.message.includes('no answer'), check.message);
+  }
+});
+
+test('the profile probe fails, naming the plugin list, when the init sent none', async () => {
+  const noInit = eachLine((line) => (isInit(line) ? null : line));
+  const notAList = eachLine((line) => (isInit(line) ? { ...line, plugins: 'builtin' } : line));
+  for (const edit of [noInit, notAList]) {
+    const { profile } = await probeChecks({ profile: edit });
+    assert.equal(profile?.ok, false);
+    assert.equal(profile.severity, 'error');
+    assert.ok(profile.message.includes('plugin list'), profile.message);
+  }
+});
+
+test('the profile probe fails when its answer holds the CLAUDE.md word in any case', async () => {
+  const capitalised = (line: StreamLine) =>
+    line.type === 'result' ? { ...line, structured_output: { answer: 'Marigold' } } : line;
+  const { profile } = await probeChecks({ profile: eachLine(capitalised) });
+  assert.equal(profile?.ok, false);
+  assert.ok(profile.message.includes('CLAUDE.md'), profile.message);
+});

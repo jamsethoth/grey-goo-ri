@@ -23,5 +23,6 @@ second, bare mode adopted the day it works on a subscription.
 
 Repository `.claude/skills`, `.claude/commands` and `.claude/agents` content is potentially discoverable under the
 profile; it is fingerprinted per attempt and protected from agent edits rather than excluded. The doctor probes bare
-mode with the OAuth token on every run. The launch profile is part of the config hash, so evaluations never mix the
+mode with the OAuth token on every run. Superseded in part by ADR 0028: the bare probe runs only under
+`gg doctor --probe`, and every run makes cheap checks with no model call. The launch profile is part of the config hash, so evaluations never mix the
 two.

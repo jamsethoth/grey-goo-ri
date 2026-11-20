@@ -1,9 +1,10 @@
 // Records the Claude CLI for the Claude Harness's tests (#425). Each scenario and probe runs `claude -p` once, with the
 // launch profile lib/harnesses/claude.ts builds, in a fresh temporary repository beside a local bare remote; its output
 // lines, redacted, land in test/fixtures/claude/<name>.jsonl, and the command that made them, each line's arrival time
-// and what the call left behind in <name>.json. It calls the real CLI and spends tokens: run it to re-record a new
-// Claude version, never from a test.
-import { execFileSync, spawn } from 'node:child_process';
+// and what the call left behind in <name>.json. Each command that is no model call (#427) runs once, and its argv, exit
+// code and output, redacted, land in test/fixtures/claude/<name>.json. It calls the real CLI and spends tokens: run it
+// to re-record a new Claude version, never from a test.
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -13,13 +14,14 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import * as commandShim from '../lib/command-shim.ts';
 import * as claude from '../lib/harnesses/claude.ts';
-import { SCENARIOS, type Scenario } from './record-claude-scenarios.ts';
+import { type CliCommand, COMMANDS, SCENARIOS, type Scenario } from './record-claude-scenarios.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const OUTPUT = join(root, 'test', 'fixtures', 'claude');
-const USAGE = `usage: node scripts/record-claude.ts [scenario ...]
-  no scenario: every one, in order (a resume scenario needs the one it resumes)
-  scenarios: ${SCENARIOS.map((scenario) => scenario.name).join(', ')}`;
+const USAGE = `usage: node scripts/record-claude.ts [name ...]
+  no name: every scenario, in order (a resume scenario needs the one it resumes), then every command
+  scenarios: ${SCENARIOS.map((scenario) => scenario.name).join(', ')}
+  commands, none a model call: ${COMMANDS.map((command) => command.name).join(', ')}`;
 const SCHEMA = {
   type: 'object',
   properties: { answer: { type: 'string' } },
@@ -282,10 +284,45 @@ function save(name: string, redact: (text: string) => string, lines: string[], m
   writeFileSync(join(OUTPUT, `${name}.json`), `${redact(JSON.stringify(meta, null, 2))}\n`);
 }
 
+// The keys of auth status --json kept as the CLI printed them: every other string in its output names the account.
+const ACCOUNT_KEPT = new Set(['authMethod', 'apiProvider']);
+function redactAccount(stdout: string) {
+  try {
+    const parsed: unknown = JSON.parse(stdout);
+    const kept = (key: string, value: unknown) =>
+      typeof value === 'string' && !ACCOUNT_KEPT.has(key) ? '<redacted>' : value;
+    return `${JSON.stringify(parsed, kept, 2)}\n`;
+  } catch {
+    return stdout; // not JSON: the version and the help text
+  }
+}
+
+// One command that is no model call, in a directory of its own, whose config directory is empty.
+function recordCommand(command: CliCommand, cliVersion: string, base: string) {
+  mkdirSync(join(base, 'config'), { recursive: true });
+  const env = Object.fromEntries(Object.entries(command.env ?? {}).map(([key, value]) => [key, fill(value, { base })]));
+  const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !INHERITED.test(key)));
+  const argv = commandShim.argvOf('claude', command.argv);
+  const ran = spawnSync(argv.command, argv.args, { env: { ...inherited, ...env }, encoding: 'utf8', timeout: 60_000 });
+  const meta = {
+    cliVersion,
+    command: command.name,
+    purpose: command.purpose,
+    argv: command.argv,
+    env,
+    exitCode: ran.status,
+    stdout: redactAccount(ran.stdout),
+    stderr: ran.stderr,
+  };
+  writeFileSync(join(OUTPUT, `${command.name}.json`), `${redactorOf(base)(JSON.stringify(meta, null, 2))}\n`);
+  console.log(`${command.name}: exit ${ran.status}`);
+}
+
 async function main(names: string[]) {
-  const unknown = names.filter((name) => !SCENARIOS.some((scenario) => scenario.name === name));
+  const named = [...SCENARIOS, ...COMMANDS].map((recorded) => recorded.name);
+  const unknown = names.filter((name) => !named.includes(name));
   if (unknown.length || names.includes('--help')) {
-    console.error(unknown.length ? `unknown scenario: ${unknown.join(', ')}\n${USAGE}` : USAGE);
+    console.error(unknown.length ? `unknown name: ${unknown.join(', ')}\n${USAGE}` : USAGE);
     return 2;
   }
   const chosen = SCENARIOS.filter((scenario) => !names.length || names.includes(scenario.name));
@@ -305,7 +342,12 @@ async function main(names: string[]) {
     const resumed = scenario.resumes === undefined ? undefined : recorded.get(scenario.resumes);
     recorded.set(scenario.name, await record(scenario, cliVersion, join(temporary, scenario.name), resumed));
   }
-  console.log(`recorded ${chosen.length} calls of ${cliVersion} into ${OUTPUT}; repositories left in ${temporary}`);
+  const commands = COMMANDS.filter((cliCommand) => !names.length || names.includes(cliCommand.name));
+  for (const cliCommand of commands) recordCommand(cliCommand, cliVersion, join(temporary, cliCommand.name));
+  console.log(
+    `recorded ${chosen.length} calls and ${commands.length} commands of ${cliVersion} into ${OUTPUT}; ` +
+      `repositories left in ${temporary}`,
+  );
   return 0;
 }
 

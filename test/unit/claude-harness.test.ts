@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as claude from '../../lib/harnesses/claude.ts';
 import type * as model from '../../lib/model.ts';
+import * as recordedCli from '../support/recorded-cli.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
 // The Claude Harness as a pure declaration (#424): what it refuses, the tools and rules it resolves, and the argv and
@@ -521,4 +522,24 @@ test('--autocompact stays within the window Claude accepts, 100,000 to 1,000,000
   assert.equal(autocompact(100000), '125000');
   assert.equal(autocompact(100001), '125002');
   assert.equal(autocompact(1000000), '1000000');
+});
+
+// The pinned minimum is 2.1.328, the version #425's recordings came from (decision 2 of #427): each part of a version
+// is compared as a number, so 2.10.0 is newer than 2.1.328.
+const VERSIONS: [string, boolean][] = [
+  ['2.0.999', false],
+  ['2.1.327', false],
+  ['2.1.328', true],
+  ['2.1.400', true],
+  ['2.10.0', true],
+  ['3.0.0', true],
+];
+
+test('the version check passes a CLI at or above 2.1.328, comparing each part as a number', async () => {
+  const passed: [string, boolean][] = [];
+  for (const [version] of VERSIONS) {
+    const { checks } = await claude.createCli(recordedCli.recordedCli({ version })).doctor({ probe: false });
+    passed.push([version, checks.find(({ name }) => name === 'version')?.ok === true]);
+  }
+  assert.deepEqual(passed, VERSIONS);
 });

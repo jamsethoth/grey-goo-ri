@@ -139,7 +139,15 @@ interface PreflightHarness {
   run?: unknown;
   validate?(agent: unknown): Promise<{ ok: boolean; errors: string[] }>;
   resolveTools: runContext.Harness['resolveTools'];
+  doctor?(options: { probe: boolean }): runContext.DoctorReport | Promise<runContext.DoctorReport>;
 }
+
+// The name of each registered Harness a Vertex's Agent selects.
+const harnessNamesOf = (flow: model.DeclaredFlowJson, harnesses: Record<string, unknown>) =>
+  Object.values(flow.ticket.vertices).flatMap(({ agent }) => {
+    const harnessName = referencePaths.isRecord(agent) ? agent.harness : undefined;
+    return typeof harnessName === 'string' && Object.hasOwn(harnesses, harnessName) ? [harnessName] : [];
+  });
 
 // Each Vertex's registered Harness, checked by name before any GitHub access, in the Flow as written: a Flow with an
 // error is checked too, so gg doctor and gg run list the same errors (#362).
@@ -170,6 +178,33 @@ async function harnessProblems(
       const location = `flows.${flow.name}.ticket.vertices.${id}`;
       const message = `vertex ${id}: harness ${harnessName}: ${reason}`;
       report.error(failed, location, 'harness-preflight-failed', message, { vertex: id, harness: harnessName, reason });
+    }
+  }
+}
+
+// Each used Harness's doctor, once however many Vertices run on it (Q1 A, G15): a failed check is one Problem at no
+// configuration path, as the State Database's is, an error or a warning as the check says.
+async function doctorProblems(
+  found: report.Report,
+  harnessNames: Set<string>,
+  { harnesses, probe }: { harnesses: Record<string, unknown>; probe: boolean },
+) {
+  for (const harnessName of harnessNames) {
+    const harness = harnesses[harnessName] as PreflightHarness;
+    // shortcut: a shipped Harness builds no doctor until its slice, so it has no checks to run; drop this in slice 3.
+    if (!harness.doctor) continue;
+    let checks: runContext.DoctorCheck[];
+    try {
+      ({ checks } = await harness.doctor({ probe }));
+    } catch (err) {
+      checks = [{ name: 'doctor', ok: false, severity: 'error', message: (err as Error).message.split('\n')[0]! }];
+    }
+    for (const { name: check, ok, severity, message } of checks) {
+      if (ok) continue;
+      const text = `harness ${harnessName}: ${check}: ${message}`;
+      const params = { harness: harnessName, check, reason: message };
+      if (severity === 'warning') report.warn(found, '', 'harness-doctor-failed', text, params);
+      else report.error(found, '', 'harness-doctor-failed', text, params);
     }
   }
 }
@@ -209,6 +244,8 @@ interface CheckOptions {
   harnesses: Record<string, unknown>;
   commonDir?: string;
   database?: Database;
+  // gg doctor --probe: each used Harness's doctor adds its model probes; preflight runs the cheap checks alone.
+  probe?: boolean;
 }
 
 // The checked configuration: every declared Flow, the configuration's errors (the settings' first, as #301 lists
@@ -233,6 +270,7 @@ export async function check({
   harnesses,
   commonDir,
   database = stateDatabase,
+  probe = false,
 }: CheckOptions): Promise<CheckedConfiguration> {
   const parsed = settingsModule.parse(configuration);
   const declared = declaredFlows(configuration, harnesses);
@@ -244,13 +282,15 @@ export async function check({
   // with them (D5 of #422).
   const commands = parsed.settings?.commands ?? parsed.commands ?? {};
   for (const [, { declared }] of admitted) await harnessProblems(environment, declared, { harnesses, commands });
+  const used = new Set(admitted.flatMap(([, { declared }]) => harnessNamesOf(declared, harnesses)));
+  await doctorProblems(environment, used, { harnesses, probe });
   return {
     flows: declared.flows,
     configurationErrors: [...(parsed.errors ?? []), ...declared.errors],
     environmentErrors: environment.errors,
     goneFlowRecords: () =>
       readable ? goneFlowRecords(commonDir, new Set(admitted.map(([name]) => name)), database) : [],
-    warnings: declared.warnings,
+    warnings: [...declared.warnings, ...environment.warnings],
     misfits: declared.misfits,
     ...(parsed.settings && { settings: parsed.settings }),
   };

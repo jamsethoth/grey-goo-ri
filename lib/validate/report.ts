@@ -114,6 +114,7 @@ export const PROBLEM_CODES = [
   // The repository's commands, testPaths, GitHub owner/name and State Database, each Vertex's Harness and the Flow
   // gg run runs, which its preflight checks.
   'harness-preflight-failed',
+  'harness-doctor-failed',
   'repository-unread',
   'state-database-missing',
   'invalid-command-line',
@@ -213,6 +214,7 @@ interface ProblemParams {
   'invalid-command-line': { command: string; file: string };
   'invalid-glob': { glob: unknown; file: string };
   'harness-preflight-failed': { vertex: string; harness: string; reason: string };
+  'harness-doctor-failed': { harness: string; check: string; reason: string };
   'repository-unread': { path: string; reason: string };
   'state-database-missing': { path: string };
   'unknown-flow': { name: string; declared: string[]; ticket?: number };

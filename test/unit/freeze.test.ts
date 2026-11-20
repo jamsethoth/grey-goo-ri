@@ -123,6 +123,7 @@ const HARNESS_SHAPES = [
   ['lib/agent-action.ts', 'SentCall'],
   ['lib/run-context.ts', 'HarnessResult'],
   ['lib/run-context.ts', 'HarnessStarted'],
+  ['lib/run-context.ts', 'DoctorReport'],
   ['lib/visit.ts', 'HarnessFailure'],
 ] as const;
 
@@ -207,7 +208,7 @@ test('records and events carry the frozen version constants', (t) => {
   assert.equal(record.createExecutionRecord(START).schemaVersion, record.RECORD_SCHEMA_VERSION);
   assert.equal(record.createEpicRecord({ commonDir: 'C:/x', epic: 3 }).schemaVersion, record.RECORD_SCHEMA_VERSION);
   assert.equal(events.EVENT_SCHEMA_VERSION, 3);
-  assert.equal(fakeHarness.FAKE_HARNESS_VERSION, 4);
+  assert.equal(fakeHarness.FAKE_HARNESS_VERSION, 5);
   const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-freeze-');
   events.eventLog(directory)('run_start', { run: 'r' });
   assert.deepEqual(

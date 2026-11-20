@@ -116,6 +116,7 @@ write-without-commit
 repository-labels-missing
 repository-labels-unread
 harness-preflight-failed
+harness-doctor-failed
 repository-unread
 state-database-missing
 invalid-command-line
@@ -221,6 +222,7 @@ The rule each code names:
 | `repository-labels-missing` | the repository lacks labels the Flows can request (warning) |
 | `repository-labels-unread` | the repository's labels could not be read (warning) |
 | `harness-preflight-failed` | a Vertex's Harness failed its preflight |
+| `harness-doctor-failed` | a check of a Harness's doctor failed, once for the Harness however many Vertices use it |
 | `repository-unread` | the repository's GitHub `owner/name` could not be read |
 | `state-database-missing` | the repository has no State Database: run `gg init` |
 | `invalid-command-line` | a Declared Command is not a valid command line |
@@ -480,6 +482,10 @@ harness-preflight-failed: object (report.ProblemParams)
 harness-preflight-failed.vertex: string
 harness-preflight-failed.harness: string
 harness-preflight-failed.reason: string
+harness-doctor-failed: object (report.ProblemParams)
+harness-doctor-failed.harness: string
+harness-doctor-failed.check: string
+harness-doctor-failed.reason: string
 repository-unread: object (report.ProblemParams)
 repository-unread.path: string
 repository-unread.reason: string
