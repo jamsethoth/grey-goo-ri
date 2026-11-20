@@ -38,6 +38,7 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | R3e: where `testPaths`' default lives | T12: in code, `DEFAULT_TEST_GLOBS` |
 | R12e: the shipped Flow | T8, T9, T13 and step 2's rewrite |
 | Q3e, R12b: `onFail` values among a Vertex's Outcomes | R14a (fixed in R12b in place) |
+| Q3d, T4d: the Check state `not-run` | #438: dropped; a Check records `passed` or `failed`, and admission refuses a rule on `not-run` |
 | D3, R12e, T3: shipped defaults-Layer Procedures and the shipped Flow | P1: no default Flow; the example Flow |
 | P1 (open): a library of shipped Procedures | P3: no library; `gg init` writes the whole example |
 | R3e, T12: `testPaths` defaults to `DEFAULT_TEST_GLOBS` | P4: `testPaths` is required |
@@ -162,6 +163,9 @@ Decisions are recorded in the order they were made; a later one wins. In particu
     (commit, push, comment, pr-upsert) are skipped. A Check that could not run records `not-run` with `runs: 0`.
   - Check states are therefore `passed`, `failed` and `not-run` (amends Q3b). Admission includes `not-run` when it
     enumerates combinations (Q4) and warns on a rule that references a Check always `not-run` in that table.
+  - Amended by the owner, 2026-11-20 (#438): `not-run` left with the later Phases R2 removed, since every Check of
+    a Visit runs before a table reads it. A Check records `passed` or `failed`, and admission refuses a rule on
+    `not-run` as a row that never matches.
 - Q3g. The publishing fence (closes the empty-`requires` question). An Outcome that routes directly to a publishing
   Terminal can only come from the `passed` table, or its default, of a token that requires at least one Check.
   Admission rejects a `failed` rule routed to a publishing Terminal, and `ok: { requires: [] }` routed to one.
@@ -523,6 +527,7 @@ The merged review is [user-defined-procedures-review2.md](user-defined-procedure
   - (d) A Vertex-level `pass` (Recovery Number + 1) runs from 1 to 1 + `recover.max` and is matchable in rules.
     Checks record only `state` (`passed`, `failed`, `not-run`) from the last pass; per-Check `runs` is dropped, and
     R8b's coupled state-and-runs field with it.
+    Amended by the owner, 2026-11-20 (#438): the states are `passed` and `failed`; `not-run` is dropped (Q3d).
   - (e) A different agent or approach for a failing Check is routing, not recovery: `recoverable: false` plus a
     `failed` rule to another Vertex (R5 rescues the work).
   - (f) The frozen Check signal (S6) is `{ id, kind, state, tree }`.

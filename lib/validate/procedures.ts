@@ -59,6 +59,9 @@ export interface CheckedProcedure {
   // Procedure is refused, which holds every route-map check through a Vertex naming it (#454, Q1 A).
   refused: Reported | undefined;
 }
+// A checked Procedure as the checks of what it produces read it, with no part that can hold a refusal: whether it was
+// refused is their caller's, and a held Vertex carries its typed Actions (#459, D1 B).
+export type HeldProcedure = Omit<CheckedProcedure, 'refused' | 'typed' | 'malformed'>;
 // What the Resolved Flow carries of a Procedure, each part as its check typed it, or Reported where it reported. A
 // part is undefined where the check that refuses it is references.ts's, which reports it by the same rule: a tests
 // path that is not a string (malformed-reference), and a row condition rules.isCondition refuses
@@ -88,7 +91,7 @@ const requiredOf = (
   report
     .unique(claimTokens[token].requires ?? [])
     .filter((id): id is string => checkIds.some((checkId) => checkId === id));
-export const requiredCheckIds = (procedure: CheckedProcedure, token: string) =>
+export const requiredCheckIds = (procedure: HeldProcedure, token: string) =>
   requiredOf(procedure.claimTokens, procedure.checkIds, token);
 
 // The tests setting: frozen, write, or the path its named tests are read from. A named path that is not a string is
@@ -355,7 +358,7 @@ export function checkProcedure(
 // The Outcomes a Procedure can produce (R12b, T7): each table's rows, and its default when some input falls through.
 // `falls` holds the tokens some input falls through a table for; every token reaching a table that was not analysed
 // falls through.
-export function outcomesOf(procedure: CheckedProcedure, falls: FallThroughs) {
+export function outcomesOf(procedure: HeldProcedure, falls: FallThroughs) {
   const { tokens, tables, otherwise } = procedure;
   const found: string[] = [];
   const add = (table: TableName, fallback: (fell: string[]) => unknown[]) => {
@@ -376,13 +379,13 @@ export function outcomesOf(procedure: CheckedProcedure, falls: FallThroughs) {
 
 // The ways a Procedure produces each Outcome (H3): each row of a table counting for every token of it (H2), and the
 // default for each token that falls through (outcomesOf, a token at a time); or a harness failure.
-export function casesOf(procedure: CheckedProcedure, falls: FallThroughs) {
+export function casesOf(procedure: HeldProcedure, falls: FallThroughs) {
   const cases: OutcomeCase[] = [];
   for (const table of TABLES) {
     for (const token of procedure.tokens[table]) {
       const tokens = Object.fromEntries(TABLES.map((each) => [each, each === table ? [token] : []]));
       const fell = falls[table] ? { [table]: falls[table].filter((name) => name === token) } : {};
-      const alone = { ...procedure, agent: null, tokens } as CheckedProcedure;
+      const alone = { ...procedure, agent: null, tokens: tokens as CheckedProcedure['tokens'] };
       for (const name of outcomesOf(alone, fell)) cases.push({ outcome: name, table, token });
     }
   }

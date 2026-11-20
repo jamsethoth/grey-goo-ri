@@ -72,7 +72,10 @@ interface FlowState {
   vertexProcedures: Map<string, checked.CheckedProcedure | undefined>;
   fallsOf: Map<string, FallThroughs>;
   // The Vertices whose Outcome lists are whole, which every check that reads a Vertex waits on (#436, D3 C; #449).
-  whole: Set<string>;
+  whole: Map<
+    string,
+    { vertex: model.DeclaredVertexJson; procedure: checked.CheckedProcedure; actions: procedures.Action[] }
+  >;
 }
 
 // The Flow's own keys, its ticket section and its routes; the ticket and its Vertices, whatever their shape.
@@ -185,8 +188,11 @@ function accessConflict(problems: report.Report, location: string, procedure: { 
 function markWhole(checking: FlowContext, state: FlowState, id: string, refused: Reported | undefined) {
   const procedure = state.vertexProcedures.get(id);
   const use = state.typed.get(id)?.use;
+  const vertex = state.resolved.get(id) as model.DeclaredVertexJson;
   const agentRefused = typeof use === 'string' && report.isReported(checking.agents.get(use)?.typed);
-  if (procedure && !report.isReported(procedure.refused) && !agentRefused && !refused) state.whole.add(id);
+  // A Procedure nothing refused has its Actions typed, which the route checks read.
+  if (procedure && !report.isReported(procedure.refused) && !agentRefused && !refused)
+    state.whole.set(id, { vertex, procedure, actions: procedure.typed.actions as procedures.Action[] });
 }
 
 function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex: unknown) {
@@ -234,6 +240,42 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
   markWhole(checking, state, id, refused);
 }
 
+// What the graph checks receive: each value its check refused is left out, so no check skips one itself (#459).
+function heldGraph(state: FlowState, flow: { ticket: Value; typed: TypedFlow; routesSound: boolean }): graph.Graph {
+  const vertexRoutes: graph.Graph['vertexRoutes'] = new Map();
+  const bounds: graph.Bounds = new Map();
+  for (const [id, { route, max, exhausted }] of state.typed) {
+    if (!report.isReported(route)) vertexRoutes.set(id, route);
+    if (!report.isReported(max) && !report.isReported(exhausted)) bounds.set(id, { max, exhausted });
+  }
+  const flowRoutes = report.isReported(flow.typed.routes) ? undefined : flow.typed.routes;
+  // The route map reads the Flow's routes and each whole Vertex's route targets: a Vertex whose are refused waits
+  // (#449).
+  const mapped: graph.Bounds = new Map(
+    [...bounds].filter(([id]) => flowRoutes !== undefined && state.whole.has(id) && vertexRoutes.has(id)),
+  );
+  const mappedVertices = new Map([...state.resolved].filter(([id]) => mapped.has(id)));
+  // The warnings wait unless the map reads every Vertex, object or not (#449, Q2 A).
+  const complete = Object.keys(state.vertices).every((id) => mapped.has(id));
+  const whole = new Map(
+    [...state.whole].map(([id, held]) => [id, { ...held, outcomes: flow.routesSound ? held.vertex.outcomes : [] }]),
+  );
+  return {
+    location: state.location,
+    ticket: flow.ticket,
+    resolved: state.resolved,
+    vertexProcedures: state.vertexProcedures,
+    fallsOf: state.fallsOf,
+    vertexRoutes,
+    bounds,
+    ...(flowRoutes && { flowRoutes }),
+    whole,
+    mapped,
+    warned: complete ? mappedVertices : new Map(),
+    ...(!report.isReported(flow.typed.entry) && { entry: flow.typed.entry }),
+  };
+}
+
 // Checks one declared Flow and gives it declared, resolved when it can be, and what it uses; or reports that it is
 // not an object.
 export function checkFlow(checking: FlowContext, name: string, declaration: unknown) {
@@ -256,21 +298,14 @@ export function checkFlow(checking: FlowContext, name: string, declaration: unkn
     personas: [],
     vertexProcedures: new Map(),
     fallsOf: new Map(),
-    whole: new Set(),
+    whole: new Map(),
   };
   for (const [id, vertex] of Object.entries(vertices)) checkVertex(checking, state, id, vertex);
-  const { resolved, vertexProcedures, fallsOf, whole } = state;
+  const { resolved, whole, used, personas } = state;
+  // The Flow's default route keys are held to every Vertex's Outcomes, so only while every Outcome list is whole.
   const defaultsWhole = routesSound && Object.keys(vertices).every((id) => whole.has(id));
-  routes.checkRouteKeys(problems, { location, ticket, resolved, whole, defaultsWhole });
-  // The route map reads the Flow's routes and each Vertex's route targets: a Vertex whose are refused waits (#449).
-  const mapSound = routesSound && !report.isReported(typed.routes);
-  const mapped = new Set([...whole].filter((id) => mapSound && !report.isReported(state.typed.get(id)?.route)));
-  // The warnings wait unless the map reads every Vertex, object or not (#449, Q2 A).
-  const complete = mapSound && Object.keys(vertices).every((id) => mapped.has(id));
-  const holds = { whole, routesSound, mapped, complete, entry: typed.entry };
-  const read = { typed: state.typed, routes: typed.routes };
-  graph.checkGraph(problems, { location, ticket, resolved, vertexProcedures, fallsOf, ...read, ...holds });
-  const { used, personas } = state;
+  routes.checkRouteKeys(problems, { location, whole, defaults: defaultsWhole ? ticket.routes : undefined });
+  graph.checkGraph(problems, heldGraph(state, { ticket, typed, routesSound }));
   const declaredProcedures = checking.config.procedures;
   return declaredFlows.checkedFlow(name, declaration, {
     ticket,

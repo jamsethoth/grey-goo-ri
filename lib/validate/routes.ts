@@ -128,17 +128,11 @@ export function checkVertexRoutes(problems: report.Report, location: string, ver
 
 // Each route key outside the Outcomes a Vertex can produce, which the router reads, so a route gg would never take is
 // refused at its key; "*" is the catch-all (#436). A Flow's default keys are held to every Vertex's Outcomes. Only a
-// Vertex whose Outcome list is whole is checked, and the defaults when every Vertex's is, since a refused declaration
-// leaves those Outcomes short; an error elsewhere holds nothing here (#436, D3 C).
+// Vertex whose Outcome list is whole is given, and the defaults only when every Vertex's is, since a refused
+// declaration leaves those Outcomes short; an error elsewhere holds nothing here (#436, D3 C).
 export function checkRouteKeys(
   problems: report.Report,
-  flow: {
-    location: string;
-    ticket: Value;
-    resolved: Map<string, model.DeclaredVertexJson>;
-    whole: Set<string>;
-    defaultsWhole: boolean;
-  },
+  flow: { location: string; whole: Map<string, { vertex: model.DeclaredVertexJson }>; defaults: unknown },
 ) {
   const refuse = (location: string, routes: unknown, outcomes: string[], what: string) => {
     for (const [outcome] of report.entries(routes))
@@ -151,9 +145,8 @@ export function checkRouteKeys(
           { outcome, outcomes },
         );
   };
-  for (const [id, vertex] of flow.resolved)
-    if (flow.whole.has(id))
-      refuse(`${flow.location}.ticket.vertices.${id}.route`, vertex.route, vertex.outcomes, `Vertex ${id}`);
-  const union = report.unique([...flow.resolved.values()].flatMap((vertex) => vertex.outcomes));
-  if (flow.defaultsWhole) refuse(`${flow.location}.ticket.routes`, flow.ticket.routes, union, 'a Vertex of the Flow');
+  for (const [id, { vertex }] of flow.whole)
+    refuse(`${flow.location}.ticket.vertices.${id}.route`, vertex.route, vertex.outcomes, `Vertex ${id}`);
+  const union = report.unique([...flow.whole.values()].flatMap(({ vertex }) => vertex.outcomes));
+  refuse(`${flow.location}.ticket.routes`, flow.defaults, union, 'a Vertex of the Flow');
 }

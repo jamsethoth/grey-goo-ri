@@ -7,9 +7,12 @@ import * as config from '../../lib/config.ts';
 
 const DIRECTORY = fileURLToPath(new URL('../fixtures/shipped-flow/', import.meta.url));
 
+// A source's gg.json, with the files it names under `files`, as a fixture edits them together.
+export type SourceWithFiles = config.Source & { files: config.SourceFiles };
+
 // The source as gg read it: gg.json, with every other file of the fixture by its path from there.
-export function shippedLayer(): config.Source {
-  const layer = JSON.parse(readFileSync(join(DIRECTORY, 'gg.json'), 'utf8')) as Omit<config.Source, 'files'>;
+export function shippedLayer(): SourceWithFiles {
+  const layer = JSON.parse(readFileSync(join(DIRECTORY, 'gg.json'), 'utf8')) as config.Source;
   const files = readdirSync(DIRECTORY, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name !== 'gg.json')
     .map((entry) => {

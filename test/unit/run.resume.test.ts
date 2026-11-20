@@ -259,10 +259,11 @@ test('a resumed Execution keeps its pinned Flow', async (t) => {
 // repository's Agents, Procedures and files, so only the source of the Flow differs.
 async function pinnedToUserFlow(t: TestContext, { declared }: { declared: boolean }) {
   const fixture = await pinnedTo(t, 'user:light');
-  const { repository, user } = fixture.options.config;
-  const { agents, procedures, files } = structuredClone(repository);
+  const { repository, user, files } = fixture.options.config;
+  const { agents, procedures } = structuredClone(repository);
   const flows = declared ? { light: runFixture.testConfig(fixture.root).flows.default! } : {};
-  Object.assign(user, { flows, agents, procedures, files });
+  Object.assign(user, { flows, agents, procedures });
+  files.user = structuredClone(files.repository);
   return fixture;
 }
 
