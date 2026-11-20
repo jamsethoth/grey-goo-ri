@@ -6,6 +6,7 @@ import * as referencePaths from '../reference-paths.ts';
 import type * as declaredFlows from './declared.ts';
 import * as agentChecks from './agents.ts';
 import * as flows from './flows.ts';
+import * as nullValues from './null-values.ts';
 import * as procedures from './procedures.ts';
 import * as references from './references.ts';
 import * as report from './report.ts';
@@ -48,18 +49,15 @@ const usedAgentsOf = (config: Value) =>
       ),
   );
 
-// The Procedures checked against their schemas and the commands the repository declares, with those that erred, which
-// hold only the Vertices naming them (#449, Q3 A).
+// The Procedures checked against their schemas and the commands the repository declares; one refused holds only the
+// Vertices naming it (#449, Q3 A).
 function checkProcedures(problems: report.Report, config: Value, readSchema: Sources['readSchema'], commands: unknown) {
   const declaring = { report: problems, readSchema, schemas: new Map(), commands };
   const checkedProcedures = new Map<string, procedures.CheckedProcedure | undefined>();
-  const failedProcedures = new Set<unknown>();
-  for (const [name, declaration] of report.entries(config.procedures)) {
-    const before = problems.errors.length;
+  for (const [name, declaration] of report.entries(config.procedures))
     checkedProcedures.set(name, procedures.checkProcedure(declaring, name, declaration));
-    if (problems.errors.length > before) failedProcedures.add(name);
-  }
-  // Each Procedure's references typed alone; each Vertex using it types those that read `inputs`.
+  // Each Procedure's references typed alone, an error there refusing it; each Vertex using it types those that read
+  // `inputs`, an error there holding only that Vertex (#454, Q2 A).
   const procedureFalls = new Map<string, Partial<Record<procedures.TableName, string[]>>>();
   for (const procedure of checkedProcedures.values()) {
     if (!procedure) continue;
@@ -70,33 +68,9 @@ function checkProcedures(problems: report.Report, config: Value, readSchema: Sou
       vertex: null,
     });
     procedureFalls.set(procedure.name, falls);
-    if (problems.errors.length > before) failedProcedures.add(procedure.name);
+    procedure.refused ??= report.reportedSince(problems, before);
   }
-  return { procedures: checkedProcedures, procedureFalls, failedProcedures };
-}
-
-// In a configuration file null is never a value, where a missing key is inherited, optional or required (#298). Every
-// null is reported at its path, and the check of the key it sits on still runs on it.
-function reportNulls(problems: report.Report, value: unknown, location: string) {
-  if (value === null) {
-    report.error(
-      problems,
-      location,
-      'null-value',
-      'null is not a value in a configuration file; set a value or leave the key out',
-    );
-  } else if (Array.isArray(value)) {
-    value.forEach((item, index) => reportNulls(problems, item, `${location}[${index}]`));
-  } else if (referencePaths.isRecord(value)) {
-    for (const [key, entry] of Object.entries(value))
-      reportNulls(problems, entry, location === '' ? key : `${location}.${key}`);
-  }
-}
-
-// A null is refused at its key, so it fails its Agent or Procedure like any other error there (#449, Q1 A, D3 A).
-function failNulled(nulls: report.Problem[], config: Value, section: 'agents' | 'procedures', failed: Set<unknown>) {
-  for (const [name] of report.entries(config[section]))
-    if (nulls.some((problem) => problem.at.startsWith(`${section}.${name}.`))) failed.add(name);
+  return { procedures: checkedProcedures, procedureFalls };
 }
 
 export function validate(config: unknown, { harnesses, readSchema, readTemplate, contract }: Sources) {
@@ -105,16 +79,17 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate,
     report.error(problems, '', 'not-an-object', 'the configuration must be an object');
     return { flows: {}, declared: {}, uses: {}, ...problems };
   }
-  // Null errors come first in the report; the key's own check holds what a null breaks.
+  // Every null first in the report, including those no check reads; each check that judges one also reports it, and
+  // the two merge (#454, Q3 A).
   const nulls = report.newReport();
-  reportNulls(nulls, config, '');
+  nullValues.reportNulls(nulls, config, '');
   if (config.procedures !== undefined && !referencePaths.isRecord(config.procedures))
     report.error(problems, 'procedures', 'not-an-object', 'procedures must be an object from name to Procedure');
   if (config.agents !== undefined && !referencePaths.isRecord(config.agents))
     report.error(problems, 'agents', 'not-an-object', 'agents must be an object from name to Agent');
   const { commands, labelPrefix } = contract ?? config;
   const procedureChecks = checkProcedures(problems, config, readSchema, commands);
-  const { failedAgents, agents } = agentChecks.checkAgents(problems, config, harnesses, usedAgentsOf(config));
+  const { agents } = agentChecks.checkAgents(problems, config, harnesses, usedAgentsOf(config));
   if (config.flows !== undefined && !referencePaths.isRecord(config.flows))
     report.error(problems, 'flows', 'not-an-object', 'flows must be an object from name to Flow');
   else if (!Object.keys(config.flows ?? {}).length) {
@@ -125,15 +100,12 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate,
       "no Flow is declared; run gg init to write the example Flow into the repository's .agents/gg/",
     );
   }
-  failNulled(nulls.errors, config, 'procedures', procedureChecks.failedProcedures);
-  failNulled(nulls.errors, config, 'agents', failedAgents);
   const reader = templates.templateReader(readTemplate);
   const checking = {
     report: problems,
     config,
     labelPrefix,
     ...procedureChecks,
-    failedAgents,
     nulls: nulls.errors,
     agents,
     harnesses,

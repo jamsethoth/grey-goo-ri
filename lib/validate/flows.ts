@@ -37,10 +37,6 @@ export interface FlowContext {
   labelPrefix: unknown;
   procedures: Map<string, checked.CheckedProcedure | undefined>;
   procedureFalls: Map<string, FallThroughs>;
-  // The Agents and Procedures whose own checks raised an error, which hold the checks that read each Vertex naming one
-  // and leave its Outcomes unknown (#449).
-  failedAgents: Set<unknown>;
-  failedProcedures: Set<unknown>;
   // The nulls, which no check of a Vertex counts, though each is refused at its key (#449, D3 A).
   nulls: report.Problem[];
   agents: Map<string, agentChecks.CheckedAgent>;
@@ -189,7 +185,9 @@ function accessConflict(problems: report.Report, location: string, procedure: { 
 function markWhole(checking: FlowContext, state: FlowState, vertex: { id: string; location: string }, before: number) {
   const procedure = state.vertexProcedures.get(vertex.id);
   const use = state.typed.get(vertex.id)?.use;
-  if (!procedure || checking.failedProcedures.has(procedure.name) || checking.failedAgents.has(use)) return;
+  // A refused Procedure or Agent holds the checks that read each Vertex naming it and leaves its Outcomes unknown.
+  const agentRefused = typeof use === 'string' && report.isReported(checking.agents.get(use)?.typed);
+  if (!procedure || report.isReported(procedure.refused) || agentRefused) return;
   const atRoute = `${vertex.location}.route.`;
   const nulls = checking.nulls.filter((problem) => problem.at.startsWith(`${vertex.location}.`));
   if ([...checking.report.errors.slice(before), ...nulls].every((problem) => problem.at.startsWith(atRoute)))
