@@ -89,7 +89,8 @@ test('the Claude Harness sends the prompt on stdin, never argv', CASE, async (t)
 
 // Every path the call carries, by its role: the repository, the settings and persona files launchArgs names in the
 // Run directory, a listed plugin's directory and the Claude configuration directory, each as the Harness gave launch;
-// the fake's own script, recording, received and pid files, each shown reached by what the fake did with it.
+// the fake's own script, recording, received and pid files, each shown reached by what the fake did with it. The
+// fixture checks every absolute path in each launch's working directory, argv and environment holds a space.
 test('every path a Claude call carries holds a space', CASE, async (t) => {
   const fake = fakeCli(t, { scenario: 'success', orphan: true });
   const plugin = join(fake.configDirectory, 'plugins', 'a plugin');

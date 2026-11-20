@@ -1,9 +1,11 @@
 // The Claude Harness over the fake claude CLI (child-scripts/fake-claude.ts): gg's real launch, with the command it
 // starts replaced by node running the fake, which replays one recorded call. Every path the call carries holds a
-// space, the fake's own script and recording included. It spawns, so only medium tests call it.
+// space, the fake's own script and recording included, and each launch checks it. It spawns, so only medium tests call
+// it.
 import type { TestContext } from 'node:test';
+import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as exec from '../../lib/exec.ts';
 import * as claude from '../../lib/harnesses/claude.ts';
@@ -27,6 +29,16 @@ export interface FakeCli {
   stderr?: string;
   // The executable launched in place of claude, node unless a case names one that does not exist.
   command?: string;
+}
+
+// Every path a launch carries, the Harness's and the fake's, in its working directory, argv or environment, holds a
+// space, so no Claude case runs under a path without one (#426). The command is node, claude's stand-in.
+function assertSpaced(launched: exec.LaunchOptions) {
+  for (const carried of [launched.cwd ?? '', ...launched.args, ...Object.values(launched.env ?? {})])
+    assert.ok(
+      !isAbsolute(carried) || carried.includes(' '),
+      `the path ${carried} a Claude call carries holds no space`,
+    );
 }
 
 // A Claude Harness whose launches start the fake, in a temp directory that holds the Claude configuration directory,
@@ -58,7 +70,7 @@ export function claudeOverFakeCli(t: TestContext, cli: FakeCli) {
   const launches: exec.LaunchOptions[] = [];
   const overFake = (options: exec.LaunchOptions) => {
     launches.push(options);
-    return launch({
+    const launched = {
       ...options,
       command,
       args: [fakeScript, ...options.args],
@@ -72,7 +84,9 @@ export function claudeOverFakeCli(t: TestContext, cli: FakeCli) {
         ...(orphan && { FAKE_CLAUDE_ORPHAN: orphanPidFile }),
         ...(stderr !== undefined && { FAKE_CLAUDE_STDERR: stderr }),
       },
-    });
+    };
+    assertSpaced(launched);
+    return launch(launched);
   };
   const harness = {
     ...claude.createClaude({ configDirectory }),
