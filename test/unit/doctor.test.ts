@@ -26,11 +26,21 @@ const file = (bytes: string) => ({ bytes, hash: config.sha256(bytes) });
 const REPOSITORY_FILE = '/repo/.agents/gg/gg.json';
 const USER_FILE = '/home/.agents/gg/gg.json';
 
-// `repository` as the repository's source, beside a user source that holds only the machine settings, or `user`.
+// `repository` as the repository's source, beside a user source that holds only the machine settings, or `user`; the
+// files each names move beside it.
 const sources = (
-  repository: config.Source,
-  user: config.Source = { maxParallel: 2, worktreeRoot: '~/worktrees', files: {} },
-): config.Configuration => ({ repository, user, repositoryFile: REPOSITORY_FILE, userFile: USER_FILE });
+  { files: repositoryFiles = {}, ...repository }: config.Source & { files?: config.SourceFiles },
+  { files: userFiles = {}, ...user }: config.Source & { files?: config.SourceFiles } = {
+    maxParallel: 2,
+    worktreeRoot: '~/worktrees',
+  },
+): config.Configuration => ({
+  repository,
+  user,
+  repositoryFile: REPOSITORY_FILE,
+  userFile: USER_FILE,
+  files: { repository: repositoryFiles, user: userFiles },
+});
 
 // The example Layer as loadLayers gives it: every file it names loaded beside it.
 function example() {

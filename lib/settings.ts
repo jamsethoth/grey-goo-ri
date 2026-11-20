@@ -1,8 +1,11 @@
 // The settings both gg.json files hold beside their Flows, checked before any Flow by gg doctor and gg run preflight
-// alike (D7): the repository contract, the user's machine settings, and the keys each file may hold (ADR 0022).
+// alike (D7): the repository contract, the user's machine settings, and the keys each file may hold (ADR 0022). Each
+// check gives the setting it judged, or Reported where it reported, so nothing judges a setting again (#391).
 import type * as config from './config.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as report from './validate/report.ts';
+
+type Reported = report.Reported;
 
 // What each source's gg.json may hold. The repository contract is the repository's alone, whichever Flow runs, and the
 // machine settings the person's (ADR 0022).
@@ -23,7 +26,7 @@ const FEATURE_FLOW_KEYS = new Map([
   ['contextBudget', 'agents'],
 ]);
 
-// Each key of a source outside what it may hold, as an unknown-key Problem naming its file. `files` is gg's own.
+// Each key of a source outside what it may hold, as an unknown-key Problem naming its file.
 function keyProblems(
   found: report.Report,
   source: config.Source,
@@ -35,7 +38,7 @@ function keyProblems(
   }: { file: string; prefix: string; allowed: string[]; misplaced: (key: string) => string | null },
 ) {
   for (const key of Object.keys(source)) {
-    if (key === 'files' || allowed.includes(key)) continue;
+    if (allowed.includes(key)) continue;
     const replacement = FEATURE_FLOW_KEYS.get(key);
     const message =
       misplaced(key) ??
@@ -51,37 +54,39 @@ const LABEL_PREFIX = /^[^\s:]+$/;
 const BRANCH =
   /^(?![-./])(?!.*(?:\.\.|\/\/|\/\.|@\{|\.lock\/))(?!.*(?:[/.]|\.lock)$)(?!(?:@|HEAD)$)[^\s\x00-\x1f\x7f~^:?*[\\]+$/;
 
-// The repository's labelPrefix or baseBranch as Problems, naming `file`.
-function nameProblems(
+// The repository's labelPrefix or baseBranch, or Reported naming `file`.
+function nameOf(
   found: report.Report,
   value: unknown,
   { key, file, missing, form, rule }: { key: string; file: string; missing: string; form: RegExp; rule: string },
-) {
-  if (value === undefined) report.error(found, key, 'required-key-missing', missing, { key, file });
-  else if (typeof value !== 'string')
-    report.error(found, key, 'not-a-string', `${file}: ${key} must be a string`, { file });
-  else if (!form.test(value))
-    report.error(found, key, 'invalid-name', `${file}: ${key} ${JSON.stringify(value)} must ${rule}`, {
-      name: value,
-      file,
-    });
+): string | Reported {
+  if (value === undefined) return report.error(found, key, 'required-key-missing', missing, { key, file });
+  if (typeof value !== 'string')
+    return report.error(found, key, 'not-a-string', `${file}: ${key} must be a string`, { file });
+  if (form.test(value)) return value;
+  return report.error(found, key, 'invalid-name', `${file}: ${key} ${JSON.stringify(value)} must ${rule}`, {
+    name: value,
+    file,
+  });
 }
 
-export function labelPrefixProblems(labelPrefix: unknown, file: string): report.Problem[] {
-  const found = report.newReport();
-  nameProblems(found, labelPrefix, {
+const labelPrefixOf = (found: report.Report, labelPrefix: unknown, file: string) =>
+  nameOf(found, labelPrefix, {
     key: 'labelPrefix',
     file,
     missing: `${file} declares no labelPrefix; set "labelPrefix": "gg" in it`,
     form: LABEL_PREFIX,
     rule: 'be non-empty with no ":" or whitespace',
   });
+
+export function labelPrefixProblems(labelPrefix: unknown, file: string): report.Problem[] {
+  const found = report.newReport();
+  labelPrefixOf(found, labelPrefix, file);
   return found.errors;
 }
 
-function baseBranchProblems(baseBranch: unknown, file: string): report.Problem[] {
-  const found = report.newReport();
-  nameProblems(found, baseBranch, {
+const baseBranchOf = (found: report.Report, baseBranch: unknown, file: string) =>
+  nameOf(found, baseBranch, {
     key: 'baseBranch',
     file,
     missing: `${file} declares no baseBranch; set it to the branch each Ticket's branch starts from`,
@@ -90,31 +95,49 @@ function baseBranchProblems(baseBranch: unknown, file: string): report.Problem[]
       'be a branch name: not "@" or HEAD, not starting with "-", "." or "/", not ending with "/" or ".", with no ' +
       'part ending ".lock", and with no "..", "//", "/.", "@{", whitespace, control character or any of ~ ^ : ? * [ \\',
   });
-  return found.errors;
-}
 
-// The user's machine settings as Problems, each at user:<key> and naming `file`.
-function machineProblems(found: report.Report, user: config.Source, file: string) {
-  const { maxParallel, worktreeRoot } = user;
+// The user's maxParallel, or Reported at user:maxParallel naming `file`.
+function maxParallelOf(found: report.Report, maxParallel: unknown, file: string): number | Reported {
   if (maxParallel === undefined) {
     const message = `${file} declares no maxParallel; set it to the most Tickets a Run carries at once`;
-    report.error(found, 'user:maxParallel', 'required-key-missing', message, { key: 'maxParallel', file });
-  } else if (!report.isCount(maxParallel)) {
-    const message = `${file}: maxParallel must be a positive integer, the most Tickets a Run carries at once`;
-    report.error(found, 'user:maxParallel', 'not-a-positive-integer', message, { file });
+    return report.error(found, 'user:maxParallel', 'required-key-missing', message, { key: 'maxParallel', file });
   }
+  if (report.isCount(maxParallel)) return maxParallel;
+  const message = `${file}: maxParallel must be a positive integer, the most Tickets a Run carries at once`;
+  return report.error(found, 'user:maxParallel', 'not-a-positive-integer', message, { file });
+}
+
+// The user's worktreeRoot, or Reported at user:worktreeRoot naming `file`.
+function worktreeRootOf(found: report.Report, worktreeRoot: unknown, file: string): string | Reported {
   if (worktreeRoot === undefined) {
     const message = `${file} declares no worktreeRoot; set it to the directory ticket worktrees go under`;
-    report.error(found, 'user:worktreeRoot', 'required-key-missing', message, { key: 'worktreeRoot', file });
-  } else if (!report.isName(worktreeRoot)) {
-    const message = `${file}: worktreeRoot must be a non-empty string`;
-    report.error(found, 'user:worktreeRoot', 'not-a-string', message, { file });
+    return report.error(found, 'user:worktreeRoot', 'required-key-missing', message, { key: 'worktreeRoot', file });
+  }
+  if (report.isName(worktreeRoot)) return worktreeRoot;
+  const message = `${file}: worktreeRoot must be a non-empty string`;
+  return report.error(found, 'user:worktreeRoot', 'not-a-string', message, { file });
+}
+
+// An unqualified Flow name is the repository's and user:<name> the user's, so no Flow shadows another (Q18).
+function reservedNameProblems(found: report.Report, repository: config.Source, file: string) {
+  for (const name of Object.keys(referencePaths.isRecord(repository.flows) ? repository.flows : {})) {
+    if (!name.startsWith('user:')) continue;
+    const message =
+      `${file}: Flow name ${JSON.stringify(name)} is reserved: user:<name> names a Flow in the user's ` + 'directory';
+    report.error(found, `flows.${name}`, 'reserved-name', message, { name, file });
   }
 }
 
-// What gg doctor and gg run preflight both check of the two gg.json files before any Flow: each key, the repository
-// contract, the machine settings, and the repository's Flow names (D7).
-function sourceProblems({ repository, user, repositoryFile, userFile }: config.Configuration): report.Problem[] {
+// The two gg.json files' settings: Settings when they hold no error, else the errors, never both, so tsc stops a
+// caller reading Settings it has not checked (#362). Beside the errors come the Declared Commands when none of the
+// errors is theirs, so preflight still checks each Harness with them (D5 of #422).
+type ParsedSettings =
+  | { settings: config.Settings; errors?: never; commands?: never }
+  | { errors: report.Problem[]; settings?: never; commands?: Record<string, string> };
+
+// What gg doctor and gg run preflight both check of the two gg.json files before any Flow (D7): each key, the
+// repository contract, the repository's Flow names, and the machine settings.
+export function parse({ repository, user, repositoryFile, userFile }: config.Configuration): ParsedSettings {
   const found = report.newReport();
   keyProblems(found, repository, {
     file: repositoryFile,
@@ -125,15 +148,8 @@ function sourceProblems({ repository, user, repositoryFile, userFile }: config.C
         ? `${repositoryFile}: ${key} is a machine setting, which only the user's gg.json declares, at ${userFile}`
         : null,
   });
-  found.errors.push(...contractProblems(repository, repositoryFile));
-  // An unqualified Flow name is the repository's and user:<name> the user's, so no Flow shadows another (Q18).
-  for (const name of Object.keys(referencePaths.isRecord(repository.flows) ? repository.flows : {})) {
-    if (!name.startsWith('user:')) continue;
-    const message =
-      `${repositoryFile}: Flow name ${JSON.stringify(name)} is reserved: user:<name> names a Flow in the user's ` +
-      'directory';
-    report.error(found, `flows.${name}`, 'reserved-name', message, { name, file: repositoryFile });
-  }
+  const { commands, testPaths, approvers, labelPrefix, baseBranch } = contractOf(found, repository, repositoryFile);
+  reservedNameProblems(found, repository, repositoryFile);
   keyProblems(found, user, {
     file: userFile,
     prefix: 'user:',
@@ -144,39 +160,19 @@ function sourceProblems({ repository, user, repositoryFile, userFile }: config.C
           `at ${repositoryFile}`
         : null,
   });
-  machineProblems(found, user, userFile);
-  return found.errors;
-}
-
-// The two gg.json files' settings: Settings when they hold no error, else the errors, never both, so tsc stops a
-// caller reading Settings it has not checked (#362). Beside the errors come the Declared Commands when none of the
-// errors is theirs, so preflight still checks each Harness with them (D5 of #422).
-type ParsedSettings =
-  | { settings: config.Settings; errors?: never; commands?: never }
-  | { errors: report.Problem[]; settings?: never; commands?: Record<string, string> };
-
-const isStrings = (value: unknown): value is string[] =>
-  Array.isArray(value) && value.every((item) => typeof item === 'string');
-const isCommands = (value: unknown): value is Record<string, string> =>
-  referencePaths.isRecord(value) && Object.values(value).every((line) => typeof line === 'string');
-
-export function parse(configuration: config.Configuration): ParsedSettings {
-  const errors = sourceProblems(configuration);
-  const { labelPrefix, baseBranch, commands = {}, testPaths, approvers } = configuration.repository;
-  const { worktreeRoot, maxParallel } = configuration.user;
-  // sourceProblems has checked every value; tsc cannot follow a list of Problems, so each is narrowed here again.
-  const valid =
-    typeof labelPrefix === 'string' &&
-    typeof baseBranch === 'string' &&
-    typeof worktreeRoot === 'string' &&
-    typeof maxParallel === 'number' &&
-    isCommands(commands) &&
-    isStrings(testPaths) &&
-    (approvers === undefined || isStrings(approvers));
-  if (errors.length || !valid) {
-    const commandsHold = isCommands(commands) && !commandProblems(commands, configuration.repositoryFile).length;
-    return { errors, ...(commandsHold && { commands }) };
-  }
+  const maxParallel = maxParallelOf(found, user.maxParallel, userFile);
+  const worktreeRoot = worktreeRootOf(found, user.worktreeRoot, userFile);
+  if (
+    report.isReported(commands) ||
+    report.isReported(testPaths) ||
+    report.isReported(approvers) ||
+    report.isReported(labelPrefix) ||
+    report.isReported(baseBranch) ||
+    report.isReported(maxParallel) ||
+    report.isReported(worktreeRoot) ||
+    found.errors.length
+  )
+    return { errors: found.errors, ...(!report.isReported(commands) && { commands }) };
   return {
     settings: {
       labelPrefix,
@@ -192,58 +188,64 @@ export function parse(configuration: config.Configuration): ParsedSettings {
 
 // Only globs that git's pathspecs (rollback) and checks.testPathMatcher (Test Immutability) read alike, and that git
 // accepts inside the repository: git's `?` takes one byte of a UTF-8 name, and its brackets and backslash are syntax.
-const badGlob = (glob: unknown): boolean =>
-  typeof glob !== 'string' ||
-  !glob.trim() ||
-  /[[\]?\\:\x00-\x1f]/.test(glob) ||
-  glob
+const isGlob = (glob: unknown): glob is string =>
+  typeof glob === 'string' &&
+  !!glob.trim() &&
+  !/[[\]?\\:\x00-\x1f]/.test(glob) &&
+  !glob
     .split('/')
     .some((segment) => !segment || segment === '.' || segment === '..' || (segment.includes('**') && segment !== '**'));
 
-// The repository's testPaths as Problems, each sentence naming `file`; none for a non-empty list of globs.
-function testPathsProblems(testPaths: unknown, file: string): report.Problem[] {
-  const found = report.newReport();
+// The repository's testPaths, or Reported, each sentence naming `file`.
+function testPathsOf(found: report.Report, testPaths: unknown, file: string): string[] | Reported {
   if (testPaths === undefined) {
     const message = `${file} declares no testPaths; merge {"testPaths":["<glob>"]} into it`;
-    report.error(found, 'testPaths', 'required-key-missing', message, { key: 'testPaths', file });
-  } else if (!Array.isArray(testPaths) || !testPaths.length) {
-    const code = Array.isArray(testPaths) ? 'empty-list' : 'not-a-list';
-    report.error(found, 'testPaths', code, `${file}: testPaths must be a non-empty list of glob strings`, { file });
-  } else {
-    testPaths.forEach((glob, index) => {
-      if (!badGlob(glob)) return;
-      const message =
-        `${file}: testPaths entry ${JSON.stringify(glob)} must be a glob relative to the repository root: ` +
-        'non-empty segments split by "/", no "." or ".." segment, "**" only as a whole segment, ' +
-        'and no [ ] ? \\ : or control character';
-      report.error(found, `testPaths[${index}]`, 'invalid-glob', message, { glob, file });
-    });
+    return report.error(found, 'testPaths', 'required-key-missing', message, { key: 'testPaths', file });
   }
-  return found.errors;
+  if (!Array.isArray(testPaths) || !testPaths.length) {
+    const code = Array.isArray(testPaths) ? 'empty-list' : 'not-a-list';
+    const message = `${file}: testPaths must be a non-empty list of glob strings`;
+    return report.error(found, 'testPaths', code, message, { file });
+  }
+  const before = found.errors.length;
+  const globs: string[] = [];
+  for (const [index, glob] of (testPaths as unknown[]).entries()) {
+    if (isGlob(glob)) {
+      globs.push(glob);
+      continue;
+    }
+    const message =
+      `${file}: testPaths entry ${JSON.stringify(glob)} must be a glob relative to the repository root: ` +
+      'non-empty segments split by "/", no "." or ".." segment, "**" only as a whole segment, ' +
+      'and no [ ] ? \\ : or control character';
+    report.error(found, `testPaths[${index}]`, 'invalid-glob', message, { glob, file });
+  }
+  return report.reportedSince(found, before) ?? globs;
 }
 
-// The repository's approvers as Problems, naming `file`; none for no list or a list of logins.
-function approversProblems(approvers: unknown, file: string): report.Problem[] {
-  const found = report.newReport();
-  if (approvers === undefined) return found.errors;
-  // A login with space around it never matches the actor GitHub names.
-  const logins = Array.isArray(approvers) ? approvers : null;
-  const valid = logins?.every((login) => typeof login === 'string' && login.trim() && login === login.trim());
+// A login with space around it never matches the actor GitHub names.
+const isLogin = (login: unknown): login is string =>
+  typeof login === 'string' && !!login.trim() && login === login.trim();
+
+// The repository's approvers, undefined for none, or Reported naming `file`.
+function approversOf(found: report.Report, approvers: unknown, file: string): string[] | undefined | Reported {
+  if (approvers === undefined) return undefined;
   const message = `${file}: approvers must be a list of GitHub logins, each non-empty with no surrounding space`;
-  if (!valid) report.error(found, 'approvers', logins ? 'invalid-name' : 'not-a-list', message, { file });
-  return found.errors;
+  if (!Array.isArray(approvers)) return report.error(found, 'approvers', 'not-a-list', message, { file });
+  const logins = approvers as unknown[];
+  if (logins.every(isLogin)) return logins;
+  return report.error(found, 'approvers', 'invalid-name', message, { file });
 }
 
-// The repository's Declared Commands as Problems, each sentence naming `file`; none for a valid set with a test.
-function commandProblems(declared: unknown, file: string): report.Problem[] {
-  const found = report.newReport();
+// The repository's Declared Commands, or Reported, each sentence naming `file`; a valid set has a test.
+function commandsOf(found: report.Report, declared: unknown, file: string): Record<string, string> | Reported {
   const commands = declared === undefined ? {} : declared;
   if (!referencePaths.isRecord(commands)) {
-    report.error(found, 'commands', 'not-an-object', `${file}: commands must be an object from name to command line`, {
-      file,
-    });
-    return found.errors;
+    const message = `${file}: commands must be an object from name to command line`;
+    return report.error(found, 'commands', 'not-an-object', message, { file });
   }
+  const before = found.errors.length;
+  const lines: Record<string, string> = {};
   for (const [name, line] of Object.entries(commands)) {
     // A name that breaks the rule may hold any character, so it is located at commands, not in a path of its own.
     if (!/^[a-z][a-z0-9-]*$/.test(name)) {
@@ -252,20 +254,21 @@ function commandProblems(declared: unknown, file: string): report.Problem[] {
     } else if (typeof line !== 'string' || !line.trim() || /[\r\n]/.test(line)) {
       const message = `${file}: command ${name} must be a non-empty single-line string`;
       report.error(found, `commands.${name}`, 'invalid-command-line', message, { command: name, file });
-    }
+    } else lines[name] = line;
   }
   if (!Object.hasOwn(commands, 'test')) {
     const message = `${file} declares no test command; merge {"commands":{"test":"<command line>"}} into it`;
     report.error(found, 'commands', 'required-key-missing', message, { key: 'test', file });
   }
-  return found.errors;
+  return report.reportedSince(found, before) ?? lines;
 }
 
-// The repository contract at `file` as Problems: what gg run preflight and gg doctor both check of it (#301).
-const contractProblems = (repository: Record<string, unknown>, file: string): report.Problem[] => [
-  ...commandProblems(repository.commands, file),
-  ...testPathsProblems(repository.testPaths, file),
-  ...approversProblems(repository.approvers, file),
-  ...labelPrefixProblems(repository.labelPrefix, file),
-  ...baseBranchProblems(repository.baseBranch, file),
-];
+// The repository contract at `file`, each setting as its check gives it: what gg run preflight and gg doctor both
+// check of it (#301).
+const contractOf = (found: report.Report, repository: config.Source, file: string) => ({
+  commands: commandsOf(found, repository.commands, file),
+  testPaths: testPathsOf(found, repository.testPaths, file),
+  approvers: approversOf(found, repository.approvers, file),
+  labelPrefix: labelPrefixOf(found, repository.labelPrefix, file),
+  baseBranch: baseBranchOf(found, repository.baseBranch, file),
+});

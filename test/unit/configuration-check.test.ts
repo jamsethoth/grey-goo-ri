@@ -24,11 +24,18 @@ const HARNESSES = { fake: fakeHarness.fakeHarness() };
 // case changes before it checks.
 const repositorySource = (options: { fullFlow?: boolean } = {}) => runFixture.testConfig('', options);
 
-// `repository` as the repository's source, beside a user source that holds only the machine settings, or `user`.
+// `repository` as the repository's source, beside a user source that holds only the machine settings, or `user`; the
+// files each names move beside it.
 const sources = (
-  repository: config.Source,
-  user: config.Source = { ...MACHINE_SETTINGS, files: {} },
-): config.Configuration => ({ repository, user, repositoryFile: REPOSITORY_FILE, userFile: USER_FILE });
+  { files: repositoryFiles = {}, ...repository }: config.Source & { files?: config.SourceFiles },
+  { files: userFiles = {}, ...user }: config.Source & { files?: config.SourceFiles } = MACHINE_SETTINGS,
+): config.Configuration => ({
+  repository,
+  user,
+  repositoryFile: REPOSITORY_FILE,
+  userFile: USER_FILE,
+  files: { repository: repositoryFiles, user: userFiles },
+});
 
 const checkOf = (
   configuration: config.Configuration,

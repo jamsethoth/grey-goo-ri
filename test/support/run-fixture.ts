@@ -46,9 +46,9 @@ interface Configuration extends config.Configuration {
 
 // The repository source gg shipped until #120 with every Agent on `harness`, its test command and, unless `fullFlow`,
 // a red, green and publish Flow to ready-for-qa, whose publish reads green's report and evidence.
-export function testConfig(_root: string, { harness = 'fake', fullFlow = false } = {}): Repository {
+export function testConfig(_root: string, { harness = 'fake', fullFlow = false } = {}): Repository & shippedFlow.Layer {
   const { maxParallel: _maxParallel, worktreeRoot: _worktreeRoot, ...configured } = shippedFlow.shippedLayer();
-  const repository = configured as unknown as Repository;
+  const repository = configured as unknown as Repository & shippedFlow.Layer;
   repository.commands = { test: 'npm test' };
   repository.testPaths = [...exampleLayer.TEST_GLOBS];
   for (const agent of Object.values(repository.agents))
@@ -170,12 +170,12 @@ const fixtureSources = (
   root: string,
   mainRoot: string,
   options: { harness?: string; fullFlow?: boolean },
-): Configuration => ({
-  repository: testConfig(root, options),
-  user: { maxParallel: 2, worktreeRoot: join(root, 'wt'), files: {} },
-  repositoryFile: join(mainRoot, '.agents', 'gg', 'gg.json'),
-  userFile: join(root, 'home', 'gg.json'),
-});
+): Configuration => {
+  const { files, ...repository } = testConfig(root, options);
+  const user = { maxParallel: 2, worktreeRoot: join(root, 'wt') };
+  const [repositoryFile, userFile] = [join(mainRoot, '.agents', 'gg', 'gg.json'), join(root, 'home', 'gg.json')];
+  return { repository, user, repositoryFile, userFile, files: { repository: files, user: {} } };
+};
 
 // git is the fake unless the case asks for real git by name.
 export function fixture(t: TestContext, fixtureOptions: RunFixtureOptions = {}) {
@@ -280,14 +280,14 @@ export async function seedExecution(
 ) {
   const { mainRoot, worktree, commonDir, options } = runFixture;
   if (!resume) await git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
-  const configured = options.config.repository;
-  const flows = validate.validate(configured, {
+  const files = options.config.files.repository;
+  const flows = validate.validate(options.config.repository, {
     harnesses: options.harnesses,
-    readSchema: (name: string) => JSON.parse(config.namedFile(configured.files, name)),
-    readTemplate: (name: string) => config.namedFile(configured.files, name),
+    readSchema: (name: string) => JSON.parse(config.namedFile(files, name)),
+    readTemplate: (name: string) => config.namedFile(files, name),
   }).flows;
   const flow = model.fromJson(flows.default!);
-  const contract = { files: configured.files, commands: { test: 'npm test' }, testPaths: [...exampleLayer.TEST_GLOBS] };
+  const contract = { files, commands: { test: 'npm test' }, testPaths: [...exampleLayer.TEST_GLOBS] };
   const executionRecord = recordToSeed(runFixture, flow, resume);
   const database = options.deps.database as record.StateDatabase;
   await assert.rejects(

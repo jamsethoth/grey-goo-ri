@@ -13,16 +13,15 @@ const SETTINGS = {
 // The Problems the two sources give with `repository` and `user` set over the settings above (undefined leaves a
 // key out).
 function settingsProblems({ repository = {}, user = {} }: { repository?: object; user?: object }) {
-  const without = (value: object) => ({
-    ...Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)),
-    files: {},
-  });
+  const without = (value: object) =>
+    Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined));
   return (
     settings.parse({
       repository: without({ ...SETTINGS.repository, ...repository }),
       user: without({ ...SETTINGS.user, ...user }),
       repositoryFile: REPOSITORY_FILE,
       userFile: USER_FILE,
+      files: { repository: {}, user: {} },
     }).errors ?? []
   );
 }
@@ -391,10 +390,11 @@ test('the repository contract problems are its commands, testPaths, approvers, l
 // it has not checked (#362, decision 4).
 test('the parse gives every Setting with no error, else the errors and the Declared Commands that hold none', () => {
   const configuration = (repository: object) => ({
-    repository: { ...SETTINGS.repository, approvers: ['some-login'], ...repository, files: {} },
-    user: { ...SETTINGS.user, files: {} },
+    repository: { ...SETTINGS.repository, approvers: ['some-login'], ...repository },
+    user: SETTINGS.user,
     repositoryFile: REPOSITORY_FILE,
     userFile: USER_FILE,
+    files: { repository: {}, user: {} },
   });
   assert.deepEqual(settings.parse(configuration({})), {
     settings: {
@@ -449,10 +449,11 @@ test('each setting the parse gives is its value as written, else the parse gives
   const valid = { repository: { ...SETTINGS.repository, approvers: ['some-login'] }, user: SETTINGS.user };
   const parseWith = (changes: { repository?: object; user?: object }) =>
     settings.parse({
-      repository: { ...valid.repository, ...changes.repository, files: {} },
-      user: { ...valid.user, ...changes.user, files: {} },
+      repository: { ...valid.repository, ...changes.repository },
+      user: { ...valid.user, ...changes.user },
       repositoryFile: REPOSITORY_FILE,
       userFile: USER_FILE,
+      files: { repository: {}, user: {} },
     });
   const keys = Object.keys(parseWith({}).settings ?? {}) as (keyof config.Settings)[];
   assert.deepEqual(keys.length, 7);
