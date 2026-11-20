@@ -7,9 +7,11 @@ here outside the Reserved section needs a new ADR under `docs/adr/` and a versio
 - Code source: `ExecutionRecord` and `EpicRecord` (`lib/record.ts`), saved as `ExecutionRecordJson` and `EpicRecordJson`
   (`lib/record-json.ts`), and read back field by field by `lib/record-read.ts`, which refuses any other shape. The
   types are the one declaration: tsc holds each reader to its type both ways (#402).
-- Version: `RECORD_SCHEMA_VERSION = 2`, saved as each row's `schemaVersion`. A row of version 1, the one before, still
-  reads: each field version 2 added is optional, so a row without it reads (ADR 0024). Every save writes the current
+- Version: `RECORD_SCHEMA_VERSION = 3`, saved as each row's `schemaVersion`. A row of version 2, the one before, still
+  reads: each field version 3 added is optional, so a row without it reads (ADR 0024). Every save writes the current
   version, whichever version the row was read at. A row of any other version is a corrupt row, never read as this one.
+- Version 3 added the hand-off (#430, ADR 0029): the retry kind `handoff` in `retries.*` and `retryKind`, the fixed
+  rows `handed-off` and `handoff-exhausted`, and each Session an Action handed off, in `sessions.*.handedOff`.
 - Version 2 added the Harness Result's `repositoryDigest`, `agentCliVersion`, `effectiveModel` and `effectiveEffort`
   (#422).
 - The State Database version: `stateDatabase.SCHEMA_VERSION = 1`, its `user_version` (below).
@@ -217,6 +219,7 @@ cursor.attempt: number (record.Cursor)
 retries: keyed (recordJson.ExecutionRecordJson)
 retries.*: object
 retries.*.crash?: number
+retries.*.handoff?: number
 retries.*.parse?: number
 retries.*.timeout?: number
 retries.*.transient?: number
@@ -247,6 +250,23 @@ sessions.*.cumulativeUsage.costBasis?: "reported" | "priced" | null (events.Usag
 sessions.*.vertex: string (record.SessionEntry)
 sessions.*.model: string | null (record.SessionEntry)
 sessions.*.effort: string | null (record.SessionEntry)
+sessions.*.handedOff?: list (record.SessionEntry)
+sessions.*.handedOff[]: object
+sessions.*.handedOff[].attempt: number (record.HandedOffSession)
+sessions.*.handedOff[].cumulativeUsage: object (record.HandedOffSession)
+sessions.*.handedOff[].cumulativeUsage.cacheReadTokens: number | null (events.Usage)
+sessions.*.handedOff[].cumulativeUsage.cacheWriteTokens: number | null (events.Usage)
+sessions.*.handedOff[].cumulativeUsage.compactions: number | null (events.Usage)
+sessions.*.handedOff[].cumulativeUsage.costBasis?: "reported" | "priced" | null (events.Usage)
+sessions.*.handedOff[].cumulativeUsage.costUsd: number | null (events.Usage)
+sessions.*.handedOff[].cumulativeUsage.inputTokens: number | null (events.Usage)
+sessions.*.handedOff[].cumulativeUsage.outputTokens: number | null (events.Usage)
+sessions.*.handedOff[].cumulativeUsage.peakContextTokens: number | null (events.Usage)
+sessions.*.handedOff[].cumulativeUsage.reasoningTokens: number | null (events.Usage)
+sessions.*.handedOff[].cumulativeUsage.toolCalls: number | null (events.Usage)
+sessions.*.handedOff[].cumulativeUsage.turns: number | null (events.Usage)
+sessions.*.handedOff[].sessionId: string | null (record.HandedOffSession)
+sessions.*.handedOff[].transcriptPath: string | null (record.HandedOffSession)
 sessions.*.personaName: string (record.SessionEntry)
 attempts: number (recordJson.ExecutionRecordJson)
 outputs: list (recordJson.ExecutionRecordJson)
@@ -464,7 +484,7 @@ writeAheadLog[].evidence<reset.Evidence>.head: string
 writeAheadLog[].evidence<visit.TableResolution>.row: FixedRow | null
 writeAheadLog[].evidence<visit.TableResolution>.check: string | null
 writeAheadLog[].evidence<visit.TableResolution>.retryAfterMs: number | null
-writeAheadLog[].evidence<visit.TableResolution>.retryKind: "parse" | "timeout" | "transient" | "rateLimited" | null
+writeAheadLog[].evidence<visit.TableResolution>.retryKind: "parse" | "timeout" | "transient" | "rateLimited" | "handoff" | null
 writeAheadLog[].evidence<visit.TableResolution>.failureClass: string | null
 writeAheadLog[].evidence<visit.TableResolution>.sessionId?: string | null
 writeAheadLog[].evidence<visit.TableResolution>.reason?: string | null
@@ -698,7 +718,7 @@ visitState.settled.resolution: visit.TableResolution | visit.EffectResolution | 
 visitState.settled.resolution<visit.TableResolution>.row: FixedRow | null (visit.TableResolution)
 visitState.settled.resolution<visit.TableResolution>.check: string | null (visit.TableResolution)
 visitState.settled.resolution<visit.TableResolution>.retryAfterMs: number | null (visit.TableResolution)
-visitState.settled.resolution<visit.TableResolution>.retryKind: "parse" | "timeout" | "transient" | "rateLimited" | null (visit.TableResolution)
+visitState.settled.resolution<visit.TableResolution>.retryKind: "parse" | "timeout" | "transient" | "rateLimited" | "handoff" | null (visit.TableResolution)
 visitState.settled.resolution<visit.TableResolution>.failureClass: string | null (visit.TableResolution)
 visitState.settled.resolution<visit.TableResolution>.sessionId?: string | null (visit.TableResolution)
 visitState.settled.resolution<visit.TableResolution>.reason?: string | null (visit.TableResolution)

@@ -204,7 +204,7 @@ test('problems.md lists exactly the Problem codes', () => {
 });
 
 test('records and events carry the frozen version constants', (t) => {
-  assert.equal(record.RECORD_SCHEMA_VERSION, 2);
+  assert.equal(record.RECORD_SCHEMA_VERSION, 3);
   assert.equal(record.createExecutionRecord(START).schemaVersion, record.RECORD_SCHEMA_VERSION);
   assert.equal(record.createEpicRecord({ commonDir: 'C:/x', epic: 3 }).schemaVersion, record.RECORD_SCHEMA_VERSION);
   assert.equal(events.EVENT_SCHEMA_VERSION, 3);
