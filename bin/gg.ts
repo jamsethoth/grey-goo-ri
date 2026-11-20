@@ -133,6 +133,16 @@ async function workCommand(parsed: options.ParsedOptions, gh: github.Gh) {
   process.stdout.write(text);
 }
 
+// gg ask-session: a question to a Session an agent handed off past its contextBudget (#430 Q1 A).
+async function askSessionCommand(parsed: options.ParsedOptions) {
+  const [sessionId, question] = parsed._;
+  if (!sessionId || !question) throw new options.UsageError('ask-session takes a handed-off Session and a question');
+  const { gitCommonDir } = await git.repoInfo(repositoryPath(parsed));
+  const { askSession } = await import('../lib/harnesses/ask-session.ts');
+  const runner = exec.createExec({ kernel32: containment.openKernel32() });
+  process.stdout.write(`${await askSession({ runner, commonDir: gitCommonDir, sessionId, question })}\n`);
+}
+
 const COMMANDS: Record<string, Command> = {
   init: {
     summary: "write the example into the repository and the user's gg.json; --harness <name> names each Agent's",
@@ -161,6 +171,11 @@ const COMMANDS: Record<string, Command> = {
     flags: { bools: ['close'], values: ['at', 'repo'] },
     run: workCommand,
   },
+  'ask-session': {
+    summary: 'ask-session <session> <question> asks a Session an agent handed off, through a read-only copy of it',
+    flags: { values: ['repo'] },
+    run: askSessionCommand,
+  },
   trace: { summary: 'export a Trajectory' },
   stats: {
     summary: 'show usage and outcome statistics',
@@ -172,9 +187,10 @@ const usage = `Usage: gg <command>
 
 Commands:
 ${Object.entries(COMMANDS)
-  .map(([name, { summary, run: runs }]) => `  ${name.padEnd(10)}${summary}${runs ? '' : ' (not implemented)'}\n`)
+  .map(([name, { summary, run: runs }]) => `  ${name.padEnd(13)}${summary}${runs ? '' : ' (not implemented)'}\n`)
   .join('')}
-init, doctor, run and work act on the repository holding the current directory, or the one --repo <path> names.
+init, doctor, run, work and ask-session act on the repository holding the current directory, or the one
+--repo <path> names.
 `;
 
 // gg with `argv` after its own path, over `gh`: the entry point passes the real gh, and the tests that spawn gg pass

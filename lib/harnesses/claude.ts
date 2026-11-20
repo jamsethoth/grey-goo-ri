@@ -6,9 +6,10 @@ import * as commandCleanup from '../command-cleanup.ts';
 import type * as events from '../events.ts';
 import type * as exec from '../exec.ts';
 import type * as model from '../model.ts';
-import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
 import * as claudeDoctor from './claude-doctor.ts';
+import * as claudeHandoffHook from './claude-handoff-hook.ts';
+import * as claudePlugins from './claude-plugins.ts';
 import * as claudeStream from './claude-stream.ts';
 import * as contract from './contract.ts';
 
@@ -19,7 +20,7 @@ export const name = 'claude';
 
 // The launch profile the Config Hash pins: its name and version (request 3.2, decision 8 of #424). A change to the
 // argv, environment or settings file launchArgs builds bumps the version.
-export const launchProfile = { name: 'claude-headless', version: 2 };
+export const launchProfile = { name: 'claude-headless', version: 3 };
 
 // Decision 1 of #424, with the reporting the recordings showed (#425). No profile turns Claude's sandbox on, so every
 // platform runs in Trusted-Command Mode (ADR 0025).
@@ -63,6 +64,8 @@ export interface ClaudeCall {
   runDirectory: string;
   access: string;
   network?: boolean;
+  // Resume a copy of the Session, leaving the Session itself as it was (gg ask-session, #430 Q1 A).
+  fork?: boolean;
 }
 
 // A launch: the argv after the executable, the environment gg adds, and the files it names, by path, which the
@@ -103,43 +106,6 @@ export function validate(agent: unknown): Validated {
   return { ok: !errors.length, errors, hinted: hintedOf(fields) };
 }
 
-// A JSON file's object, or undefined when it is missing, unreadable or not an object.
-function readObject(path: string): Record<string, unknown> | undefined {
-  try {
-    const value: unknown = JSON.parse(readFileSync(path, 'utf8'));
-    return referencePaths.isRecord(value) ? value : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-const directories = (parent: string) =>
-  readdirSync(parent, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => join(parent, entry.name));
-
-// A listed plugin's directory, which a missing plugin fails before any spawn (ported, feature-flow 89e1d67
-// lib/toolkit.mjs:23-40): installed (marketplace) plugins first, then account-synced ones under
-// plugins/synced/<id>/[<id>/]<name>. `alpha@mkt` matches that installed key exactly; a bare `alpha` matches
-// `alpha@<any>` and must be unique.
-function pluginDirectory(plugin: string, configDirectory: string): string {
-  const installed = readObject(join(configDirectory, 'plugins', 'installed_plugins.json'))?.plugins;
-  const keys = Object.keys(referencePaths.isRecord(installed) ? installed : {}).filter((key) =>
-    plugin.includes('@') ? key === plugin : key.split('@')[0] === plugin,
-  );
-  if (keys.length > 1) throw new Error(`plugin ${plugin} ambiguous: ${keys.join(', ')}`);
-  const entry: unknown =
-    keys[0] === undefined ? undefined : [(installed as Record<string, unknown>)[keys[0]]].flat()[0];
-  const path = referencePaths.isRecord(entry) ? entry.installPath : undefined;
-  if (typeof path === 'string' && existsSync(path)) return path;
-  const synced = join(configDirectory, 'plugins', 'synced');
-  if (existsSync(synced))
-    for (const top of directories(synced))
-      for (const candidate of [...directories(top), ...directories(top).flatMap(directories)])
-        if (readObject(join(candidate, '.claude-plugin', 'plugin.json'))?.name === plugin) return candidate;
-  throw new Error(`plugin ${plugin} is not installed`);
-}
-
 // One table of command rules, emitted for the shell of the platform (G5 C). Claude's built-in read-only set joins
 // them on either shell: the recording showed it allows read-only PowerShell commands itself (#425 Q5 A, ADR 0025).
 const READ_ONLY_GIT = ['git diff:*', 'git log:*', 'git show:*', 'git status:*'];
@@ -159,7 +125,7 @@ function resolveToolsIn(configDirectory: string, agent: unknown, context: runCon
   const failures: string[] = [];
   const pluginDirectories = plugins.flatMap((plugin) => {
     try {
-      return [pluginDirectory(plugin, configDirectory)];
+      return [claudePlugins.pluginDirectory(plugin, configDirectory)];
     } catch (err) {
       failures.push((err as Error).message);
       return [];
@@ -190,12 +156,17 @@ const autocompactAt = (budget: number) =>
 // The argv and environment of the launch profile (request 3.2, bullets 1-3), and the files they name.
 export function launchArgs(call: ClaudeCall, tools: ClaudeTools): Launch {
   const readOnly = call.access !== 'workspace-write';
+  const { model: modelName, effort, contextBudget } = call.agent;
+  // Past its budget an Agent is asked to hand off (#430); its hook keeps each Session's last ask in the Run directory.
+  const hooks =
+    typeof contextBudget === 'number' &&
+    claudeHandoffHook.settings(contextBudget, join(call.runDirectory, 'handoff-hook'));
   const settings = JSON.stringify({
     permissions: { allow: tools.allow, deny: tools.deny, blockWritesOutsideWorkingDirectories: true },
+    ...(hooks && { hooks }),
   });
   const settingsPath = join(call.runDirectory, `claude-settings-${sha256(settings)}.json`);
   const personaPath = join(call.runDirectory, `persona-${call.persona.hash}.md`);
-  const { model: modelName, effort, contextBudget } = call.agent;
   const argv = [
     '-p',
     ...['--setting-sources', '', '--strict-mcp-config', '--settings', settingsPath],
@@ -208,7 +179,7 @@ export function launchArgs(call: ClaudeCall, tools: ClaudeTools): Launch {
     ...(effort == null ? [] : ['--effort', effort]),
     ...['--tools', tools.tools.join(',')],
     ...(typeof contextBudget === 'number' ? ['--autocompact', String(autocompactAt(contextBudget))] : []),
-    ...(call.resume === null ? [] : ['--resume', call.resume]),
+    ...(call.resume === null ? [] : ['--resume', call.resume, ...(call.fork === true ? ['--fork-session'] : [])]),
   ];
   const env: Record<string, string> = {
     CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
@@ -377,12 +348,15 @@ const notImplemented = (): never => {
   throw new Error('not implemented');
 };
 
-// gg doctor --probe's launch-profile call, its files in runDirectory, as an Attempt of its Agent would launch.
+// gg doctor --probe's launch-profile call, its files in runDirectory, as an Attempt of its Agent would launch, with the
+// hook events in its stream, which show whether the hand-off hook ran (#430 Q5 A).
 const probeLaunch =
   (configDirectory: string): claudeDoctor.ProfileLaunch =>
   (runDirectory) => {
     const call = claudeDoctor.probeCall(runDirectory);
-    return launchArgs(call, resolveToolsIn(configDirectory, call.agent, { commands: {}, platform: process.platform }));
+    const tools = resolveToolsIn(configDirectory, call.agent, { commands: {}, platform: process.platform });
+    const launched = launchArgs(call, tools);
+    return { ...launched, argv: [...launched.argv, '--include-hook-events'] };
   };
 
 // The members that start the CLI, over the runner's launch, where configDirectory holds the CLI's transcripts.

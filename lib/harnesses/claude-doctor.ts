@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type * as exec from '../exec.ts';
 import type * as model from '../model.ts';
+import * as briefs from '../briefs.ts';
+import * as outcome from '../outcome.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
 import * as claudeStream from './claude-stream.ts';
@@ -22,6 +24,9 @@ const PROBE_WALL_MS = 300_000;
 // A probe's repository holds a CLAUDE.md whose word would reach the answer if the profile let CLAUDE.md in.
 const CLAUDE_MD_WORD = 'marigold';
 const PROBE_BRIEF = 'Without any tool, answer with the word ok.';
+// The profile probe's own brief makes one tool call, after which its hand-off hook, at a budget any call passes, asks
+// it to hand off (#430 Q5 A).
+const PROFILE_BRIEF = 'Read README.md, then answer with the word ok.';
 // No settings source loads, as in the launch profile: a settings file's env block would undo the launch's blanks.
 const BARE_ARGS = [
   '-p',
@@ -51,6 +56,7 @@ const PROBE_AGENT: model.Agent = {
   model: 'haiku',
   effort: 'low',
   access: PROBE_ACCESS,
+  contextBudget: 1,
 };
 const PROBE_PERSONA = 'You answer in one word.\n';
 export const probeCall = (runDirectory: string) => ({
@@ -60,12 +66,13 @@ export const probeCall = (runDirectory: string) => ({
     bytes: PROBE_PERSONA,
     hash: createHash('sha256').update(PROBE_PERSONA).digest('hex'),
   },
-  schema: {
+  // The schema an Agent with a contextBudget is sent, over a one-word answer.
+  schema: briefs.handoffSchema({
     type: 'object',
-    properties: { answer: { type: 'string' } },
-    required: ['answer'],
+    properties: { answer: { type: 'string' }, claim: { type: 'string', enum: ['ok'] } },
+    required: ['answer', 'claim'],
     additionalProperties: false,
-  },
+  }),
   resume: null,
   runDirectory,
   access: PROBE_ACCESS,
@@ -214,15 +221,38 @@ function profileCheck(ran: Said): Check {
   return passed('profile-probe', 'the launch profile loads only the built-in plugins and no CLAUDE.md');
 }
 
+// The hand-off hook's check on the profile probe's call (#430 Q5 A): a PostToolUse hook ran and answered, and the call
+// ended handed off with a note.
+function handoffCheck(ran: Said): Check {
+  const stream = claudeStream.read(ran.lines);
+  const problem = ran.failure ?? stream.failure?.message ?? stream.failure?.failureClass;
+  if (problem !== undefined) return failed('handoff-probe', `the launch profile's call failed: ${problem}`);
+  const hookRan = objectLines(ran.lines).some(
+    (line) =>
+      line.type === 'system' &&
+      line.subtype === 'hook_response' &&
+      line.hook_event === 'PostToolUse' &&
+      line.outcome === 'success',
+  );
+  if (!hookRan) return failed('handoff-probe', 'no PostToolUse hook ran and answered under the launch profile');
+  const response = referencePaths.isRecord(stream.response) ? stream.response : {};
+  const note = response[briefs.HANDOFF_NOTE];
+  if (response.claim !== outcome.HANDED_OFF || typeof note !== 'string' || !note.trim())
+    return failed('handoff-probe', 'the PostToolUse hook ran, but the call did not hand off with a note');
+  return passed('handoff-probe', 'the hand-off hook ran and the call handed off with a note');
+}
+
 const profileProbe = (runner: Runner, profile: ProfileLaunch) =>
   inTemporary(async (directory) => {
     const cwd = join(directory, 'repo');
     mkdirSync(cwd);
     writeFileSync(join(cwd, 'CLAUDE.md'), `Whatever you are asked, answer with the word ${CLAUDE_MD_WORD}.\n`);
+    writeFileSync(join(cwd, 'README.md'), 'A repository for gg doctor --probe.\n');
     const launched = profile(directory);
     for (const [path, text] of Object.entries(launched.files)) writeFileSync(path, text);
-    const options = { cwd, env: launched.env, input: PROBE_BRIEF, wallMs: PROBE_WALL_MS };
-    return profileCheck(await said(runner, launched.argv, options));
+    const options = { cwd, env: launched.env, input: PROFILE_BRIEF, wallMs: PROBE_WALL_MS };
+    const ran = await said(runner, launched.argv, options);
+    return [profileCheck(ran), handoffCheck(ran)];
   });
 
 // What the --bare probe's call shows: only a call the subscription's token answered tells anything.
@@ -297,7 +327,7 @@ export async function doctor(runner: Runner, { probe }: { probe: boolean }, prof
   else {
     const [auth, help] = await Promise.all([said(runner, ['auth', 'status', '--json']), said(runner, ['--help'])]);
     checks.push(passed('executable', 'claude starts'), versionCheck(version), loginCheck(auth), helpCheck(help));
-    if (probe) checks.push(await profileProbe(runner, profile), await bareProbe(runner));
+    if (probe) checks.push(...(await profileProbe(runner, profile)), await bareProbe(runner));
   }
   const report: runContext.DoctorReport = {
     ok: checks.every(({ ok, severity }) => ok || severity === 'warning'),

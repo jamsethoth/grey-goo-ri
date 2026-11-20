@@ -155,8 +155,9 @@ leverage and a change lands in one place (locality).
 | `lib/locks.ts` | ticket, epic and repo locks as `node:sqlite` exclusive transactions |
 | `lib/harnesses/contract.ts` | the Harness contract check and shared Usage shape |
 | `lib/harnesses/shipped.ts` | the shipped Harnesses by name, as declared (`HARNESSES`), and each built from the `exec` `bin/gg.ts` passes (`shipped(exec)`), holding only the contract's members of each declaration; the only module outside a Harness that names one |
-| `lib/harnesses/claude.ts` | the Claude Code Harness: its declaration (Capabilities, `validate`, `resolveTools` with the tools, the permission rules for the platform's shell and each listed plugin's directory, `launchArgs` with the launch profile's argv, environment and files, and the launch profile's name and version), and `createCli(exec)`, whose `run` launches the CLI over `exec.launch` and gives the contract's result from its stream, Usage, transcript and repository digest, and `doctor` over `lib/harnesses/claude-doctor.ts`; `interactiveArgs` and `metrics` throw "not implemented" until their slices |
-| `lib/harnesses/claude-doctor.ts` | the Claude Harness's `doctor`, for `lib/harnesses/claude.ts` alone: the cheap checks with no model call (executable, version against the pinned minimum, login, the win32 shell, the `--bare` help line) and the probes `gg doctor --probe` adds (the launch profile's, and `--bare` with `CLAUDE_CODE_OAUTH_TOKEN`) (#427, ADR 0028) |
+| `lib/harnesses/claude.ts` | the Claude Code Harness: its declaration (Capabilities, `validate`, `resolveTools` with the tools, the permission rules for the platform's shell and each listed plugin's directory, `launchArgs` with the launch profile's argv, environment and files (the settings file with the hand-off hook of an Agent with a `contextBudget`, and `--fork-session` for gg ask-session's copy), and the launch profile's name and version), and `createCli(exec)`, whose `run` launches the CLI over `exec.launch` and gives the contract's result from its stream, Usage, transcript and repository digest, and `doctor` over `lib/harnesses/claude-doctor.ts`; `interactiveArgs` and `metrics` throw "not implemented" until their slices |
+| `lib/harnesses/claude-doctor.ts` | the Claude Harness's `doctor`, for `lib/harnesses/claude.ts` alone: the cheap checks with no model call (executable, version against the pinned minimum, login, the win32 shell, the `--bare` help line) and the probes `gg doctor --probe` adds (the launch profile's, the hand-off hook's on the same call, and `--bare` with `CLAUDE_CODE_OAUTH_TOKEN`) (#427, ADR 0028, #430) |
+| `lib/harnesses/claude-plugins.ts` | where a listed plugin is installed, read from Claude Code's configuration directory, for `lib/harnesses/claude.ts` alone (ported) |
 | `lib/harnesses/claude-stream.ts` | what a Claude call's `stream-json` lines say, read for `lib/harnesses/claude.ts` alone: its session, failure and Failure Class, response, counts and the Session's token totals (#425) |
 | `lib/harnesses/claude-handoff-hook.ts` | the PostToolUse hook gg's Claude settings file installs for an Agent with a `contextBudget`: past it, the request to hand off with a note of what remains, once in each 40,000 tokens further (#430) |
 | `lib/harnesses/ask-session.ts` | `gg ask-session`: a question to a Session an agent handed off, found on its Execution Record and asked through a read-only copy of it under the launch profile (#430) |
@@ -196,9 +197,9 @@ leverage and a change lands in one place (locality).
   the golden traces; gg ships no Flow now.
 - `.agents/feature-flow/` belongs to feature-flow until #97; it is not gg's configuration.
 - `git.ts`, `locks.ts` and `lib/state-database/index.ts` also export the functions of their real instance, for callers
-  that take no seam (`gg doctor`, `gg init`, `gg work abandon`, contract suites, helper processes); `record.ts` and
-  `event-read.ts` re-export its record and Event reads and writes for them. Code on a Run's path uses the deps it was
-  passed instead, which `test/unit/state-database.test.ts` holds.
+  that take no seam (`gg doctor`, `gg init`, `gg work abandon`, `gg ask-session`, contract suites, helper processes);
+  `record.ts` and `event-read.ts` re-export its record and Event reads and writes for them. Code on a Run's path uses
+  the deps it was passed instead, which `test/unit/state-database.test.ts` holds.
 
 ## Examples to copy
 

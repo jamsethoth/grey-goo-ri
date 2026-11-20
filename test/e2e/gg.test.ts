@@ -59,7 +59,7 @@ test('usage marks each unimplemented command', () => {
   assert.deepEqual(marked, ['plan', 'publish', 'trace', 'stats']);
   assert.match(
     gg('--help').stdout,
-    /^ {2}doctor {4}validate the configuration and print each Resolved Flow; --probe adds the model probes$/m,
+    /^ {2}doctor {7}validate the configuration and print each Resolved Flow; --probe adds the model probes$/m,
   );
 });
 

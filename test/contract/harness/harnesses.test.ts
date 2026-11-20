@@ -20,6 +20,7 @@ const NOT_HARNESSES = [
   'claude-stream.ts',
   'claude-doctor.ts',
   'claude-handoff-hook.ts',
+  'claude-plugins.ts',
   'ask-session.ts',
 ];
 after(() => Promise.all(dirs.map((directory) => rm(directory, { recursive: true, force: true }))));
