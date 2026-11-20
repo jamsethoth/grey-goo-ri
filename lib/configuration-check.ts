@@ -66,7 +66,6 @@ function validateSource(source: config.Source, harnesses: unknown, repository: c
     readSchema: (name) => JSON.parse(config.namedFile(source.files, name)),
     readTemplate: (name) => config.namedFile(source.files, name),
     contract: { commands: repository.commands, labelPrefix: repository.labelPrefix },
-    misfits: source !== repository,
   });
 }
 

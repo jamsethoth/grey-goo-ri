@@ -232,16 +232,20 @@ The rule each code names:
 `gg doctor` reports every failure it can in one run. These wait until another error is fixed, since the value they read
 is unknown until then:
 
-1. A Vertex's `unknown-outcome` and `unrouted-outcome`, while its Procedure has an error (in the user's directory, a
-   command the repository does not declare among them), or the Vertex itself has one apart from its route targets: its
-   Outcomes may be short. `unrouted-outcome` also waits while the Flow's `vertices` or `routes` is malformed: whether
-   an Outcome is routed is unknown.
+1. A Vertex's `unknown-outcome`, `unrouted-outcome`, `write-without-commit` and `commit-without-check`, while its
+   Procedure or its Agent has an error (in the user's directory, a command the repository does not declare among
+   them), or the Vertex itself has one apart from its route targets: its Outcomes or its access may be wrong.
+   `unrouted-outcome` also waits while the Flow's `vertices` or `routes` is malformed: whether an Outcome is routed is
+   unknown.
 2. `unknown-outcome` at the Flow's default `routes`, while any Vertex waits as in 1, or the Flow's `vertices` or
    `routes` is malformed: the union of its Vertices' Outcomes is unknown.
-3. Every other check over a Flow's route map (`write-without-commit`, `commit-without-check`, `unbounded-cycle`,
-   `exhausted-loop`, `pr-ready-skippable`, `required-input-unsure`, `optional-input-unsure` and `unreachable-vertex`),
-   while the Flow, or a section every Flow reads, has any error other than an `unknown-outcome` (H6). #449 narrows
-   this.
+3. `unbounded-cycle`, `exhausted-loop`, `pr-ready-skippable` and `required-input-unsure` that pass through a Vertex
+   that waits as in 1 or whose route targets are refused: the route map leaves that Vertex and its edges out, and the
+   rest is checked. All four wait while the Flow's `vertices` or `routes` is malformed or a target of its `routes` is
+   refused: every route is unknown. `pr-ready-skippable` and `required-input-unsure` also wait while the entry is
+   refused: what a route guarantees starts from it.
+4. `unreachable-vertex` and `optional-input-unsure`, while any Vertex of the Flow waits as in 3, or the route map or
+   the entry is unknown as in 3: a route left out would make them appear falsely.
 
 ## Their params
 

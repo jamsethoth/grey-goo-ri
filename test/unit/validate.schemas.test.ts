@@ -274,11 +274,14 @@ test(
     const files = exampleLayer.schemas();
     exampleLayer.putAt(files['implement.schema.json'], ['properties', 'claim', 'enum'], ['ok', 'blocked', 'partial']);
     config.procedures.fix.claimTokens.partial = { requires: [] };
+    // fix's partial commits with no Check, which implement's error no longer holds (#449, Q2 A).
     assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config, files).errors), [
       {
         at: 'procedures.implement.passed',
         code: 'unreachable-row',
       },
+      { at: `${VERTICES}.implementer-fix`, code: 'commit-without-check' },
+      { at: `${VERTICES}.senior-dev`, code: 'commit-without-check' },
     ]);
   },
 );
