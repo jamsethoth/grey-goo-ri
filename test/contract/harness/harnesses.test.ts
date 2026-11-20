@@ -14,7 +14,7 @@ const dirs: string[] = [];
 
 // The modules in lib/harnesses/ that are no Harness: the contract, the shipped list, and the modules a Harness splits
 // along a seam inside it.
-const NOT_HARNESSES = ['contract.ts', 'shipped.ts', 'claude-stream.ts'];
+const NOT_HARNESSES = ['contract.ts', 'shipped.ts', 'claude-stream.ts', 'claude-doctor.ts'];
 after(() => Promise.all(dirs.map((directory) => rm(directory, { recursive: true, force: true }))));
 
 const fakeHarness = async (options: Partial<fakeHarnessModule.FakeHarnessOptions> = {}) => {

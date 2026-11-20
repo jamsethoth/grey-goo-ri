@@ -8,6 +8,7 @@ import type * as exec from '../exec.ts';
 import type * as model from '../model.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
+import * as claudeDoctor from './claude-doctor.ts';
 import * as claudeStream from './claude-stream.ts';
 import * as contract from './contract.ts';
 
@@ -369,10 +370,13 @@ const notImplemented = (): never => {
   throw new Error('not implemented');
 };
 
-// The CLI's checks (#427): cheap mode starts no model call, and probe mode adds the model probes.
-// stub (#427 Red): reports every check passed without starting the CLI.
-const doctorIn = (_runner: Pick<exec.Exec, 'launch'>, _options: { probe: boolean }) =>
-  Promise.resolve<runContext.DoctorReport>({ ok: true, checks: [] });
+// gg doctor --probe's launch-profile call, its files in runDirectory, as an Attempt of its Agent would launch.
+const probeLaunch =
+  (configDirectory: string): claudeDoctor.ProfileLaunch =>
+  (runDirectory) => {
+    const call = claudeDoctor.probeCall(runDirectory);
+    return launchArgs(call, resolveToolsIn(configDirectory, call.agent, { commands: {}, platform: process.platform }));
+  };
 
 // The members that start the CLI, over the runner's launch, where configDirectory holds the CLI's transcripts.
 // interactiveArgs and metrics come with slice 7 and gg stats (owner, #425 Q4 A).
@@ -383,5 +387,5 @@ export const createCli = (
   run: (call, hooks) => runIn(runner, configDirectory, call as unknown as RunCall, hooks),
   interactiveArgs: notImplemented,
   metrics: notImplemented,
-  doctor: (options) => doctorIn(runner, options),
+  doctor: (options) => claudeDoctor.doctor(runner, options, probeLaunch(configDirectory)),
 });

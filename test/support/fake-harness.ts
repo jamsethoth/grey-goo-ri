@@ -14,7 +14,7 @@ import * as keys from './keys.ts';
 type Usage = events.Usage;
 
 // The frozen version of the fake harness's scripting keys (docs/interfaces/harness.md); a change needs a new ADR (#23).
-export const FAKE_HARNESS_VERSION = 4;
+export const FAKE_HARNESS_VERSION = 5;
 
 const DEFAULT_CAPABILITIES = {
   skills: 'exact',

@@ -122,10 +122,12 @@ The orchestrator validates the claim against the schema regardless of harness an
 transition table in 3.4. Outcomes are classified from the final event, not the exit code. A reported case where
 Codex did not enforce the schema with MCP tools active is kept as a versioned regression fixture, not a rule.
 
-`doctor` probes behaviour, not help text: CLI versions against pinned minimums, `codex exec resume` with
-`--output-schema`, login state, sandbox lock, labels the resolved flow references, the Claude launch profile below,
-and a `--bare` probe with `CLAUDE_CODE_OAUTH_TOKEN` so the switch to bare mode happens the day it works on a
-subscription. The launch profile in use is part of the config hash.
+`doctor` makes cheap checks on every `gg doctor` and `gg run` preflight, with no model call (ADR 0028): CLI versions
+against pinned minimums, login state, the platform's shell, sandbox lock, labels the resolved flow references, and the
+`--bare` help line, whose change is a warning naming `gg doctor --probe`. Model probes run only under
+`gg doctor --probe`: `codex exec resume` with `--output-schema`, the Claude launch profile below, and a `--bare` probe
+with `CLAUDE_CODE_OAUTH_TOKEN` so the switch to bare mode happens the day it works on a subscription; with no token it is
+skipped with a warning naming `claude setup-token`. The launch profile in use is part of the config hash.
 
 Claude launch profile, validated on 2026-10-15 against claude 2.1.300 on this machine with a subscription login:
 
@@ -793,7 +795,7 @@ hang, and a capability matrix the validator reads.
 
 ## 7. Deferred
 
-Bare-mode launch profile (switch when subscription auth works; doctor probes it); replay beyond
+Bare-mode launch profile (switch when subscription auth works; `gg doctor --probe` probes it); replay beyond
 resume; agent-level brief files; parallel branches and fan-out inside a ticket;
 non-GitHub ticket sources; multi-machine work management; multiple approvers and git-native signed approvals;
 output parsers for quality gate metrics; Claude MCP and skill filtering (becomes exact when the CLI supports it).
