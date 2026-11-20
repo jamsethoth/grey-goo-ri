@@ -219,9 +219,9 @@ function bareCheck(ran: Said): Check {
   }
   if (failure === null)
     return failed('bare-probe', 'bare mode ran on CLAUDE_CODE_OAUTH_TOKEN, so ADR 0002 can adopt it', 'warning');
-  // A refusal follows the recorded auth-failure stream's shape; the real refusal of the token is unrecorded, so any
-  // other ending warns with its reason instead of passing.
-  if (error === 'authentication_failed')
+  // A refusal follows the recorded auth-failure stream's shape, which the parser classes auth as well; the real refusal
+  // of the token is unrecorded, so any other ending warns with its reason instead of passing.
+  if (failure.failureClass === 'auth' && error === 'authentication_failed')
     return passed('bare-probe', `bare mode still refuses the subscription token (ADR 0002)${because}`);
   return failed('bare-probe', `the --bare probe failed${because}`, 'warning');
 }

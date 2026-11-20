@@ -10,6 +10,7 @@ import * as claude from '../../lib/harnesses/claude.ts';
 import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as run from '../../lib/run.ts';
 import * as caseEnv from '../support/case-env.ts';
+import * as claudeRecordings from '../support/claude-recordings.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as fakeGh from '../support/fake-gh.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
@@ -218,7 +219,7 @@ const eachLine = (edit: (line: StreamLine) => StreamLine | null) => (stream: str
     .join('\n');
 const isInit = (line: StreamLine) => line.type === 'system' && line.subtype === 'init';
 const keySource = (source: string, line: StreamLine) => (isInit(line) ? { ...line, apiKeySource: source } : line);
-const success = () => recordedCli.recordedStream('success');
+const success = () => claudeRecordings.lines('success').join('\n');
 
 // F1: only the subscription token may answer the --bare probe, so gg's other credentials are blanked for its launch.
 test('the --bare probe blanks the other credentials bare mode takes', async (t) => {
@@ -273,9 +274,54 @@ test('a --bare probe failed on another auth error with no API key warns that it 
   assert.ok(bare.message.includes('failed'), bare.message);
 });
 
+// The recorded refusal on no API key, each line changed by `edit`.
+const onNone = (edit: (line: StreamLine) => StreamLine | null) => eachLine((line) => edit(keySource('none', line)));
+const assistantError = (error: string) => onNone((line) => (line.type === 'assistant' ? { ...line, error } : line));
+const ASSISTANT_ERRORS = [
+  'account_on_hold',
+  'oauth_org_not_allowed',
+  'cloud_credential_error',
+  'billing_error',
+  'rate_limit',
+  'overloaded',
+  'an_unmapped_error',
+];
+
+// Every ending of the --bare call: only the refusal stand-in shows bare mode still refuses the token.
+const BARE_ENDINGS: [string, (stream: string) => string][] = [
+  ['the refusal stand-in', onNone((line) => line)],
+  ['authentication_failed then no result line', onNone((line) => (line.type === 'result' ? null : line))],
+  [
+    'authentication_failed then a budget result',
+    onNone((line) => (line.type === 'result' ? { ...line, subtype: 'error_max_budget_usd' } : line)),
+  ],
+  [
+    'authentication_failed, a result not an error and init plugin errors',
+    onNone((line) => {
+      if (isInit(line)) return { ...line, plugin_errors: ['a plugin failed'] };
+      return line.type === 'result' ? { ...line, is_error: false } : line;
+    }),
+  ],
+  ...ASSISTANT_ERRORS.map((error): [string, (stream: string) => string] => [error, assistantError(error)]),
+  ['a success', () => onNone((line) => line)(success())],
+  ['the recorded refusal on ANTHROPIC_API_KEY', (stream) => stream],
+];
+
+// F3: a pass needs the parser's auth class as well as authentication_failed, so every other ending warns.
+test('a --bare probe passes only on the refusal stand-in, of every ending', async (t) => {
+  caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
+  const passing: string[] = [];
+  for (const [ending, bare] of BARE_ENDINGS) {
+    const { bare: check } = await probeChecks({ bare });
+    if (check?.ok) passing.push(ending);
+    else assert.equal(check?.severity, 'warning', `${ending}: ${check?.message}`);
+  }
+  assert.deepEqual(passing, ['the refusal stand-in']);
+});
+
 // F2: a profile probe passes only on the evidence it checks, its init's plugin list and its structured answer.
 test('the profile probe fails, naming the answer, when the call sent no structured answer', async () => {
-  const noSchema = () => recordedCli.recordedStream('no-schema');
+  const noSchema = () => claudeRecordings.lines('no-schema').join('\n');
   const wordInResult = (line: StreamLine) => (line.type === 'result' ? { ...line, result: 'marigold' } : line);
   for (const profile of [noSchema, () => eachLine(wordInResult)(noSchema())]) {
     const { profile: check } = await probeChecks({ profile });

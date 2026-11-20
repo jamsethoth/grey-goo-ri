@@ -35,7 +35,7 @@ const sameArgv = (left: readonly string[], right: readonly string[]) =>
   left.length === right.length && left.every((arg, index) => arg === right[index]);
 
 // A stream recording's lines, as the CLI printed them.
-export const recordedStream = (name: string) =>
+const recordedStream = (name: string) =>
   readFileSync(new URL(`../fixtures/claude/${name}.jsonl`, import.meta.url), 'utf8');
 
 // What the CLI prints for `args` under `state`, and its exit code. A model call replays the success recording, and a
