@@ -74,3 +74,10 @@ test('a hand-off hook whose transcript is missing says nothing', (t) => {
   const missing = { ...input, transcript_path: join(stateDirectory, 'no-such-session.jsonl') };
   assert.equal(claudeHandoffHook.respond(missing, { budget: BUDGET, stateDirectory }), null);
 });
+
+// Claude may still be writing the transcript's last line when the hook reads it (#430 D4 A).
+test('the hand-off hook skips a partly written last line to the latest complete request', (t) => {
+  const { input, stateDirectory } = hookInput(t, 151000);
+  writeFileSync(input.transcript_path, '{"type":"assistant","message":{"usa', { flag: 'a' });
+  assert.ok(addedContext(claudeHandoffHook.respond(input, { budget: BUDGET, stateDirectory })).includes('151k'));
+});

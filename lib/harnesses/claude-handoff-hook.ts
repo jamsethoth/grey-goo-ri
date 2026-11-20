@@ -23,7 +23,13 @@ export function settings(budget: number, stateDirectory: string) {
 function latestContext(transcriptPath: string): number | null {
   const lines = readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean).reverse();
   for (const line of lines) {
-    const entry: unknown = JSON.parse(line);
+    let entry: unknown;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      // A line Claude is still writing as the hook reads it.
+      continue;
+    }
     if (!referencePaths.isRecord(entry) || entry.type !== 'assistant' || !referencePaths.isRecord(entry.message))
       continue;
     const { usage } = entry.message;
