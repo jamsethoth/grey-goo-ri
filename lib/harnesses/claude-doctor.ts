@@ -23,7 +23,8 @@ const PROBE_WALL_MS = 300_000;
 const CLAUDE_MD_WORD = 'marigold';
 const PROBE_BRIEF = 'Without any tool, answer with the word ok.';
 const BARE_ARGS = ['-p', '--bare', '--output-format', 'stream-json', '--verbose', '--model', 'haiku'];
-// The other credentials the --bare help says bare mode takes, blanked so only CLAUDE_CODE_OAUTH_TOKEN can answer.
+// The other credentials the --bare help says bare mode takes, blanked so only CLAUDE_CODE_OAUTH_TOKEN can answer; the
+// bare launch also blanks every other provider switch gg's environment sets (otherCredentials).
 const OTHER_CREDENTIALS = {
   ANTHROPIC_API_KEY: '',
   CLAUDE_CODE_USE_BEDROCK: '',
@@ -110,38 +111,46 @@ function atLeastMinimum(version: string) {
   return index === -1 || found[index]! > minimum[index]!;
 }
 
-function versionCheck({ lines }: Said): Check {
-  const version = /^\d+\.\d+\.\d+/.exec(lines[0] ?? '')?.[0];
-  if (version === undefined) return failed('version', `claude --version printed ${JSON.stringify(lines.join('\n'))}`);
+// The reason a command did not finish, after what it printed.
+const becauseOf = ({ failure }: Said) => (failure ? `: ${failure}` : '');
+
+function versionCheck(ran: Said): Check {
+  const version = /^\d+\.\d+\.\d+/.exec(ran.lines[0] ?? '')?.[0];
+  if (version === undefined)
+    return failed('version', `claude --version printed ${JSON.stringify(ran.lines.join('\n'))}${becauseOf(ran)}`);
   return atLeastMinimum(version)
     ? passed('version', `claude ${version}`)
     : failed('version', `claude ${version} is older than the minimum ${MINIMUM_VERSION}: update it with claude update`);
 }
 
-function loginCheck({ lines, failure }: Said): Check {
+function loginCheck(ran: Said): Check {
   let status: unknown;
   try {
-    status = JSON.parse(lines.join('\n'));
+    status = JSON.parse(ran.lines.join('\n'));
   } catch {
     status = undefined;
   }
   if (!referencePaths.isRecord(status))
-    return failed('login', `claude auth status --json printed no JSON object${failure ? `: ${failure}` : ''}`);
+    return failed('login', `claude auth status --json printed no JSON object${becauseOf(ran)}`);
   return status.loggedIn === true
     ? passed('login', 'claude is logged in')
     : failed('login', 'claude is not logged in: log in with claude auth login');
 }
 
-// A changed line is a sign, not proof, that bare mode takes a subscription, so it warns and stops no Run (Q4 A).
-const helpCheck = ({ lines }: Said): Check =>
-  BARE_REFUSES_OAUTH.test(lines.join('\n'))
-    ? passed('bare-help', 'the --bare help says bare mode reads no OAuth login')
-    : failed(
-        'bare-help',
-        'the --bare help no longer says OAuth and keychain are never read, so bare mode may take a subscription: ' +
-          'run gg doctor --probe',
-        'warning',
-      );
+// A changed line is a sign, not proof, that bare mode takes a subscription, so it warns and stops no Run (Q4 A); a help
+// that did not finish shows no change, so it warns with its reason instead of sending the reader to a model call.
+function helpCheck({ lines, failure }: Said): Check {
+  if (BARE_REFUSES_OAUTH.test(lines.join('\n')))
+    return passed('bare-help', 'the --bare help says bare mode reads no OAuth login');
+  if (failure !== null)
+    return failed('bare-help', `claude --help did not finish, so its --bare line is unread: ${failure}`, 'warning');
+  return failed(
+    'bare-help',
+    'the --bare help no longer says OAuth and keychain are never read, so bare mode may take a subscription: ' +
+      'run gg doctor --probe',
+    'warning',
+  );
+}
 
 // On win32 the Agents' shell is PowerShell (ADR 0025), which Claude starts as pwsh, else Windows PowerShell.
 function shellCheck(path = process.env.PATH ?? ''): Check {
@@ -226,6 +235,18 @@ function bareCheck(ran: Said): Check {
   return failed('bare-probe', `the --bare probe failed${because}`, 'warning');
 }
 
+// The CLI picks its provider from CLAUDE_CODE_USE_* switches, more than the help names and more with a later CLI, so
+// each one set is blanked (a blank switch is off) under the name gg's environment holds it by, whose case on win32 may
+// differ.
+const otherCredentials = (): Record<string, string> => ({
+  ...OTHER_CREDENTIALS,
+  ...Object.fromEntries(
+    Object.keys(process.env)
+      .filter((name) => name.toUpperCase().startsWith('CLAUDE_CODE_USE_'))
+      .map((name) => [name, '']),
+  ),
+});
+
 // The --bare probe tells when bare mode takes the subscription's token, the day ADR 0002 adopts it; with no token it
 // is skipped with a warning (Q5 A).
 async function bareProbe(runner: Runner): Promise<Check> {
@@ -235,7 +256,7 @@ async function bareProbe(runner: Runner): Promise<Check> {
       'CLAUDE_CODE_OAUTH_TOKEN is not set, so the --bare probe was skipped: make one with claude setup-token',
       'warning',
     );
-  const options = { env: OTHER_CREDENTIALS, input: PROBE_BRIEF, wallMs: PROBE_WALL_MS };
+  const options = { env: otherCredentials(), input: PROBE_BRIEF, wallMs: PROBE_WALL_MS };
   return bareCheck(await inTemporary((cwd) => said(runner, BARE_ARGS, { ...options, cwd })));
 }
 

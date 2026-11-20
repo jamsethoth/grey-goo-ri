@@ -57,7 +57,10 @@ test('usage marks each unimplemented command', () => {
     .filter((line) => line.endsWith(' (not implemented)'))
     .map((line) => line.trim().split(' ')[0]);
   assert.deepEqual(marked, ['plan', 'publish', 'trace', 'stats']);
-  assert.match(gg('--help').stdout, /^ {2}doctor {4}validate the configuration and print each Resolved Flow$/m);
+  assert.match(
+    gg('--help').stdout,
+    /^ {2}doctor {4}validate the configuration and print each Resolved Flow; --probe adds the model probes$/m,
+  );
 });
 
 test('gg with an unknown command prints usage to stderr and exits 1', () => {

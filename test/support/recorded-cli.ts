@@ -20,8 +20,8 @@ export const CHEAP_ARGVS: readonly string[][] = [['--version'], ['auth', 'status
 export const OLD_VERSION = '2.1.327';
 
 // How a case changes the CLI that answers: an executable that cannot start, the version --version prints, the
-// logged-out recording for auth status, a change to --help's text, and a change to the stream a model call replays,
-// the launch profile's or the --bare one's.
+// logged-out recording for auth status, a change to --help's text, a change to the stream a model call replays,
+// the launch profile's or the --bare one's, and the first argument of a command that times out printing nothing.
 export interface CliState {
   missing?: boolean;
   version?: string;
@@ -29,6 +29,7 @@ export interface CliState {
   help?: (text: string) => string;
   profile?: (stream: string) => string;
   bare?: (stream: string) => string;
+  hangs?: string;
 }
 
 const sameArgv = (left: readonly string[], right: readonly string[]) =>
@@ -70,12 +71,14 @@ export function recordedCli(state: CliState = {}) {
   const launch = async (options: exec.LaunchOptions): Promise<exec.LaunchResult> => {
     launches.push(options);
     if (state.missing) throw Object.assign(new Error(`spawn ${options.command} ENOENT`), { code: 'ENOENT' });
-    const { stdout, exitCode } = answer(options.args, state);
     options.onStarted?.({ kind: 'none' });
+    const cleanup = { confirmed: true, survivors: [], reason: null, containment: { kind: 'none' as const } };
+    if (state.hangs === options.args[0])
+      return { code: null, signal: null, timedOut: 'wall', cancelled: false, stderrTail: '', cleanup };
+    const { stdout, exitCode } = answer(options.args, state);
     const lines = stdout.split('\n');
     if (lines.at(-1) === '') lines.pop();
     for (const line of lines) options.onLine?.(line);
-    const cleanup = { confirmed: true, survivors: [], reason: null, containment: { kind: 'none' as const } };
     return { code: exitCode, signal: null, timedOut: null, cancelled: false, stderrTail: '', cleanup };
   };
   return { launch, launches };

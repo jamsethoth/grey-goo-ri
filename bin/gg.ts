@@ -140,7 +140,7 @@ const COMMANDS: Record<string, Command> = {
     run: initCommand,
   },
   doctor: {
-    summary: 'validate the configuration and print each Resolved Flow',
+    summary: 'validate the configuration and print each Resolved Flow; --probe adds the model probes',
     flags: { bools: ['probe'], values: ['repo'] },
     run: doctorCommand,
   },

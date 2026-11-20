@@ -174,6 +174,17 @@ test('gg doctor warns, naming gg doctor --probe, when the help stops saying bare
   assert.equal(exitCode, 0);
 });
 
+// D2 A: a cheap command that times out keeps its reason, and a hung --help claims no change to its --bare line.
+test('gg doctor reports the timeout of a claude --version or --help that does not finish', async () => {
+  const checksOf = async (hangs: string) =>
+    (await claude.createCli(recordedCli.recordedCli({ hangs })).doctor({ probe: false })).checks;
+  const version = (await checksOf('--version')).find(({ name }) => name === 'version');
+  assert.ok(version?.message.endsWith('claude --version timed out'), version?.message ?? 'no version check');
+  const help = (await checksOf('--help')).find(({ name }) => name === 'bare-help');
+  assert.equal(help?.severity, 'warning');
+  assert.ok(help.message.endsWith('claude --help timed out') && !help.message.includes('no longer'), help.message);
+});
+
 // V1, ADR 0014: each state of the CLI a cheap check fails, by what fails.
 const FAILING_CLI = CLI_STATES.filter(([, state]) => Boolean(state.missing || state.loggedOut || state.version));
 
@@ -239,7 +250,20 @@ test('the --bare probe blanks the other credentials bare mode takes', async (t) 
     assert.equal(bare?.env?.[name], '', `the --bare launch blanks ${name}`);
 });
 
-test('a --bare probe that ran on an API key warns, naming it, and draws no verdict', async (t) => {
+// D3 A: a provider switch would send the call to that provider, so every one gg's environment sets is blanked, by
+// prefix, as a later CLI may add one.
+test('the --bare probe blanks every CLAUDE_CODE_USE_ switch set in its environment', async (t) => {
+  const switches = ['CLAUDE_CODE_USE_ANTHROPIC_AWS', 'CLAUDE_CODE_USE_A_LATER_PROVIDER'];
+  caseEnv.caseEnv(t, {
+    CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token',
+    ...Object.fromEntries(switches.map((name) => [name, '1'])),
+  });
+  const { launches } = await probeChecks({});
+  const [bare] = launches.filter(({ args }) => args.includes('--bare'));
+  for (const name of switches) assert.equal(bare?.env?.[name], '', `the --bare launch blanks ${name}`);
+});
+
+test('a --bare probe that ran on an API key warns, naming it, and passes nothing', async (t) => {
   caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
   const { bare } = await probeChecks({
     bare: () => eachLine((line) => keySource('ANTHROPIC_API_KEY', line))(success()),
