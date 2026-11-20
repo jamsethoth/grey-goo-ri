@@ -54,6 +54,9 @@ export interface CheckedProcedure {
   malformed: Set<TableName>;
   otherwise: unknown;
   typed: TypedProcedure;
+  // Reported when any check of the Procedure reported, a null in it among them: the whole Procedure is refused, which
+  // holds every route-map check through a Vertex naming it (#454, Q1 A).
+  refused: Reported | undefined;
 }
 // What the Resolved Flow carries of a Procedure, each part as its check typed it, or Reported where it reported. A
 // part is undefined where the check that refuses it is references.ts's, which reports it by the same rule: a tests
@@ -339,6 +342,7 @@ export function checkProcedure(
     malformed,
     otherwise: report.isName(declaration.otherwise) ? declaration.otherwise : undefined, // reported, kept out (#174)
     typed: { actions: noActions ?? typedActions, claimTokens: typedTokens, ...settings.typed, ...rows, otherwise },
+    refused: undefined,
   };
   checkPrReady(problems, procedure);
   return procedure;

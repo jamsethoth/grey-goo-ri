@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import * as util from 'node:util';
+import * as agentChecks from '../../lib/validate/agents.ts';
+import * as validate from '../../lib/validate/index.ts';
+import * as procedureChecks from '../../lib/validate/procedures.ts';
 import * as report from '../../lib/validate/report.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 
@@ -272,4 +276,274 @@ test('a null on an Agent outside a cycle holds none of its checks', () => {
     { at: 'agents.senior.model', code: 'null-value' },
     { at: 'flows.default.ticket', code: 'unbounded-cycle' },
   ]);
+});
+
+// red and green, each spent once, name each other as their exhausted target; implementer runs both, so its null holds
+// the loop (#454, Q3 A).
+test('a null Agent model holds the loop through its Vertex', () => {
+  const config = exampleLayer.config();
+  Object.assign(exampleTicket(config).vertices.red, { max: 1, exhausted: 'green' });
+  Object.assign(exampleTicket(config).vertices.green, { max: 1, exhausted: 'red' });
+  config.agents.implementer.model = null;
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'agents.implementer.model', code: 'null-value' },
+  ]);
+});
+
+// implementer-fix's testFiles, unpicked, gives fix's named tests a list of objects in its scope alone, so only
+// implementer-fix waits; senior-dev, which runs fix too, keeps the cycle through it (#454, Q2 A).
+test("a Procedure error found in one Vertex's input scope holds only that Vertex", () => {
+  const config = exampleLayer.config();
+  const { vertices } = exampleTicket(config);
+  vertices.reviewer.route.changes = 'implementer-fix';
+  vertices.reviewer.route.repeat = 'senior-dev';
+  delete vertices['senior-dev'].max;
+  delete vertices['senior-dev'].exhausted;
+  delete vertices['implementer-fix'].inputs.testFiles.pick;
+  const { errors } = exampleLayer.check(config);
+  assert.deepEqual(exampleLayer.firedAtVertices(errors), [
+    { at: 'procedures.fix.tests', code: 'not-a-list-of-strings', flow: 'default', vertex: 'implementer-fix' },
+    { at: 'flows.default.ticket', code: 'unbounded-cycle' },
+  ]);
+  assert.deepEqual(errors[1]?.params, { cycle: ['reviewer', 'senior-dev'] });
+});
+
+// A reference to no Action of fix is found with the Procedure alone, so every Vertex running fix waits.
+test('a Procedure error found in its references alone holds every Vertex naming it', () => {
+  const config = exampleLayer.config();
+  const { vertices } = exampleTicket(config);
+  vertices.reviewer.route.changes = 'implementer-fix';
+  vertices.reviewer.route.repeat = 'senior-dev';
+  delete vertices['senior-dev'].max;
+  delete vertices['senior-dev'].exhausted;
+  config.procedures.fix.actions[4].with.report = 'nowhere.response';
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'procedures.fix.actions[4]', code: 'undefined-reference' },
+  ]);
+});
+
+// The checks a key's refusal may hold, each fired by the edits below: three through green, which implementer runs
+// under Procedure implement, and two on the rest of the Flow (#454, Q4 A).
+const CANARIES = [
+  'cycle through green',
+  "green's commit",
+  'pr-ready past green',
+  'cycle elsewhere',
+  "senior-green's commit",
+] as const;
+type Canary = (typeof CANARIES)[number];
+function withCanaries(config: Layer) {
+  const { vertices } = exampleTicket(config);
+  vertices.green.route['bad-test'] = { to: 'red' };
+  // With no Check required, implement has no failed Outcome to route.
+  config.procedures.implement.claimTokens.ok.requires = [];
+  delete vertices.green.route.failed;
+  vertices.reviewer.route.ok = { end: 'ready-for-qa' };
+  vertices.reviewer.route.changes = 'publish';
+  vertices.publish.route.ok = 'reviewer';
+  return config;
+}
+function heldCanaries(errors: report.Problem[]): Canary[] {
+  const fired = (code: string, at: string, cycle?: string[]) =>
+    errors.some(
+      (problem) =>
+        problem.code === code && problem.at === at && (!cycle || util.isDeepStrictEqual(problem.params, { cycle })),
+    );
+  const firing: Record<Canary, boolean> = {
+    'cycle through green': fired('unbounded-cycle', 'flows.default.ticket', ['red', 'green']),
+    "green's commit": fired('commit-without-check', `${VERTICES}.green`),
+    'pr-ready past green': fired('pr-ready-skippable', `${VERTICES}.reviewer`),
+    'cycle elsewhere': fired('unbounded-cycle', 'flows.default.ticket', ['reviewer', 'publish']),
+    "senior-green's commit": fired('commit-without-check', `${VERTICES}.senior-green`),
+  };
+  return CANARIES.filter((canary) => !firing[canary]);
+}
+
+test('the canaries fire on the example with no key refused', () => {
+  const { errors } = exampleLayer.check(withCanaries(exampleLayer.config()));
+  assert.deepEqual(exampleLayer.firedRules(errors), [
+    { at: `${VERTICES}.green`, code: 'commit-without-check' },
+    { at: `${VERTICES}.senior-green`, code: 'commit-without-check' },
+    { at: 'flows.default.ticket', code: 'unbounded-cycle' },
+    { at: 'flows.default.ticket', code: 'unbounded-cycle' },
+    { at: `${VERTICES}.reviewer`, code: 'pr-ready-skippable' },
+    { at: `${VERTICES}.reviewer.inputs.green`, code: 'required-input-unsure' },
+    { at: `${VERTICES}.senior-dev.inputs.green`, code: 'required-input-unsure' },
+    { at: `${VERTICES}.publish.inputs.green`, code: 'required-input-unsure' },
+  ]);
+  assert.deepEqual(heldCanaries(errors), []);
+});
+
+// Each key a route-map check reads, where it sits, a value its own check refuses and the canaries that refusal holds:
+// the checks through its Vertex, and only those. A key no check judges is refused only as a null (#454, Q3 A).
+type Row = readonly [refusing: unknown, holds: readonly Canary[]];
+const THROUGH_GREEN: Canary[] = ['cycle through green', "green's commit", 'pr-ready past green'];
+// A route target is typed apart and changes no Outcome, so only the map through its Vertex waits (#436, D3 C).
+const MAP_THROUGH_GREEN: Canary[] = ['cycle through green', 'pr-ready past green'];
+// implement runs green and senior-green.
+const THROUGH_IMPLEMENT: Canary[] = [...THROUGH_GREEN, "senior-green's commit"];
+const AGENT_KEY_ROWS: Record<string, Row> = {
+  harness: [7, THROUGH_GREEN],
+  model: [7, THROUGH_GREEN],
+  effort: [7, THROUGH_GREEN],
+  persona: [7, THROUGH_GREEN],
+  skills: [null, THROUGH_GREEN],
+  mcp: [null, THROUGH_GREEN],
+  plugins: [null, THROUGH_GREEN],
+  mode: [null, THROUGH_GREEN],
+  access: [7, THROUGH_GREEN],
+  network: [7, THROUGH_GREEN],
+  resolutionPolicy: [null, THROUGH_GREEN],
+  contextBudget: [null, THROUGH_GREEN],
+  timeouts: [7, THROUGH_GREEN],
+};
+const GREEN = ['flows', 'default', 'ticket', 'vertices', 'green'];
+const ROUTE_KEY_SITES: Record<string, { path: string[]; keys: Record<string, Row> }> = {
+  ticket: {
+    path: ['flows', 'default', 'ticket'],
+    keys: {
+      // A cycle reads no entry; what a route guarantees starts from it (#449).
+      entry: [7, ['pr-ready past green']],
+      // Every Vertex's routes fall back to the Flow's, so the whole map waits; a commit reads no route.
+      routes: [7, ['cycle through green', 'pr-ready past green', 'cycle elsewhere']],
+      vertices: [7, [...CANARIES]],
+    },
+  },
+  vertex: {
+    path: GREEN,
+    keys: {
+      use: [7, THROUGH_GREEN],
+      procedure: [7, THROUGH_GREEN],
+      inputs: [7, THROUGH_GREEN],
+      route: [7, THROUGH_GREEN],
+      max: [0, THROUGH_GREEN],
+      exhausted: [7, THROUGH_GREEN],
+      ...AGENT_KEY_ROWS,
+    },
+  },
+  edge: {
+    path: [...GREEN, 'route', 'bad-test'],
+    keys: { to: [7, MAP_THROUGH_GREEN], max: [0, MAP_THROUGH_GREEN], exhausted: [7, MAP_THROUGH_GREEN] },
+  },
+  input: {
+    path: [...GREEN, 'inputs', 'redReport'],
+    keys: { from: [7, THROUGH_GREEN], optional: [7, THROUGH_GREEN], pick: [7, THROUGH_GREEN] },
+  },
+  // implementer runs red, green and implementer-fix; senior runs senior-green.
+  agent: { path: ['agents', 'implementer'], keys: AGENT_KEY_ROWS },
+  procedure: {
+    path: ['procedures', 'implement'],
+    keys: {
+      tests: [7, THROUGH_IMPLEMENT],
+      access: [7, THROUGH_IMPLEMENT],
+      claimTokens: [7, THROUGH_IMPLEMENT],
+      // With no Actions, implement leaves none of the outputs reviewer and publish read: their inputs are refused too.
+      actions: [7, [...CANARIES]],
+      recover: [7, THROUGH_IMPLEMENT],
+      passed: [7, THROUGH_IMPLEMENT],
+      failed: [7, THROUGH_IMPLEMENT],
+      stopped: [7, THROUGH_IMPLEMENT],
+      otherwise: [7, THROUGH_IMPLEMENT],
+    },
+  },
+};
+
+test('the table of keys a route check reads holds every key the code declares at each site', () => {
+  const keysOf = (site: string) => Object.keys(ROUTE_KEY_SITES[site]!.keys).sort();
+  assert.deepEqual(
+    {
+      ticket: keysOf('ticket'),
+      vertex: keysOf('vertex'),
+      edge: keysOf('edge'),
+      input: keysOf('input'),
+      agent: keysOf('agent'),
+      procedure: keysOf('procedure'),
+    },
+    {
+      ticket: [...validate.TICKET_KEYS].sort(),
+      vertex: [...validate.VERTEX_KEYS, ...validate.AGENT_KEYS].sort(),
+      edge: [...validate.EDGE_KEYS].sort(),
+      input: [...validate.INPUT_KEYS].sort(),
+      agent: [...validate.AGENT_KEYS].sort(),
+      procedure: [...validate.PROCEDURE_KEYS].sort(),
+    },
+  );
+});
+
+// Each row of the table, named for its site and key.
+const ROUTE_KEY_ROWS = Object.entries(ROUTE_KEY_SITES).flatMap(([site, { path, keys }]) =>
+  Object.entries(keys).map(([key, [refusing, holds]]) => ({
+    name: `${site} ${key}`,
+    path: [...path, key],
+    refusing,
+    holds,
+  })),
+);
+// Whether the key at `path`, set to `value`, was refused by its own check (a problem under the object holding it, from
+// no route-map check), and which canaries the refusal holds.
+function refusalAt(path: string[], value: unknown) {
+  const config = withCanaries(exampleLayer.config());
+  exampleLayer.putAt(config, path, value);
+  const { errors } = exampleLayer.check(config);
+  const parent = path.slice(0, -1).join('.');
+  const refused = errors.some(
+    ({ code, at }) => !ROUTE_MAP_CODES.includes(code) && (at === parent || at.startsWith(`${parent}.`)),
+  );
+  return { refused, holds: heldCanaries(errors) };
+}
+const expectedRefusals = Object.fromEntries(ROUTE_KEY_ROWS.map(({ name, holds }) => [name, { refused: true, holds }]));
+
+test('each key a route check reads, refused, holds the checks through its Vertex', () => {
+  assert.deepEqual(
+    Object.fromEntries(ROUTE_KEY_ROWS.map(({ name, path, refusing }) => [name, refusalAt(path, refusing)])),
+    expectedRefusals,
+  );
+});
+
+// A null is refused at its key like any value its check refuses, so it holds the same checks (#454, Q3 A).
+test('each key a route check reads, set to null, holds the checks through its Vertex', () => {
+  assert.deepEqual(
+    Object.fromEntries(ROUTE_KEY_ROWS.map(({ name, path }) => [name, refusalAt(path, null)])),
+    expectedRefusals,
+  );
+});
+
+// A check gives the value it judged refused when it reported, a null in it among them, so nothing reads the error
+// list to learn it (#391; #454, Q1 A, Q3 A).
+test('an Agent with a null at any key is refused by its own check', () => {
+  const notRefused = agentChecks.AGENT_KEYS.filter((key) => {
+    const config = exampleLayer.config();
+    config.agents.implementer[key] = null;
+    const { agents } = agentChecks.checkAgents(report.newReport(), config, { fake: {} }, new Set(['implementer']));
+    return !report.isReported(agents.get('implementer')?.typed);
+  });
+  assert.deepEqual(notRefused, []);
+});
+
+// The example's Procedure implement, changed, as its own check gives it.
+function checkedImplement(change: (implement: Record<string, unknown>) => void) {
+  const config = exampleLayer.config();
+  change(config.procedures.implement);
+  const schemas = exampleLayer.schemas();
+  const declaring = {
+    report: report.newReport(),
+    readSchema: (name: string) => schemas[name],
+    schemas: new Map(),
+    commands: config.commands,
+  };
+  return procedureChecks.checkProcedure(declaring, 'implement', config.procedures.implement);
+}
+
+test('a sound Procedure is not refused', () => {
+  assert.equal(checkedImplement(() => {})?.refused, undefined);
+});
+
+test('a Procedure with an unknown key or a null at any key is refused by its own check', () => {
+  const notRefused = ['colour', ...procedureChecks.PROCEDURE_KEYS].filter((key) => {
+    const procedure = checkedImplement((implement) => {
+      implement[key] = key === 'colour' ? 'blue' : null;
+    });
+    return !report.isReported(procedure?.refused);
+  });
+  assert.deepEqual(notRefused, []);
 });
