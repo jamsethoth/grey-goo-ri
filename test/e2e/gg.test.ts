@@ -59,7 +59,7 @@ test('usage marks each unimplemented command', () => {
   assert.deepEqual(marked, ['plan', 'publish', 'trace', 'stats']);
   assert.match(
     gg('--help').stdout,
-    /^ {2}doctor {4}validate the configuration and print each Resolved Flow; --probe adds the model probes$/m,
+    /^ {2}doctor {7}validate the configuration and print each Resolved Flow; --probe adds the model probes$/m,
   );
 });
 
@@ -113,6 +113,14 @@ test('gg work resume without --at prints usage', () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /^gg work: work resume takes --at <vertex>\n/);
   assertUsage(result.stderr);
+});
+
+// #430 Q1 A: the command a new agent asks a handed-off Session through.
+test('gg ask-session without a Session and a question prints usage naming both', () => {
+  const result = gg('ask-session', 'session-1');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /^gg ask-session: ask-session takes a handed-off Session and a question\n/);
+  assert.match(result.stderr, /^ {2}ask-session /m, 'usage lists ask-session');
 });
 
 test('gg run rejects an unknown option with a usage error', () => {

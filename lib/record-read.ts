@@ -123,10 +123,17 @@ const retries = object((field, has) => ({
   ...(has('transient') && { transient: count(field('transient')) }),
   ...(has('rateLimited') && { rateLimited: count(field('rateLimited')) }),
   ...(has('crash') && { crash: count(field('crash')) }),
+  ...(has('handoff') && { handoff: count(field('handoff')) }),
   ...(has('remote') && { remote: remoteRetry(field('remote')) }),
 }));
 
-const session = object((field) => ({
+const handedOffSession = object((field) => ({
+  sessionId: nullableText(field('sessionId')),
+  transcriptPath: nullableText(field('transcriptPath')),
+  cumulativeUsage: usage(field('cumulativeUsage')),
+  attempt: count(field('attempt')),
+}));
+const session = object((field, has) => ({
   sessionId: nullableText(field('sessionId')),
   harness: text(field('harness')),
   personaHash: text(field('personaHash')),
@@ -136,6 +143,7 @@ const session = object((field) => ({
   model: nullableText(field('model')),
   effort: nullableText(field('effort')),
   personaName: text(field('personaName')),
+  ...(has('handedOff') && { handedOff: list(handedOffSession)(field('handedOff')) }),
 }));
 
 const pendingInstance = object((field) => ({

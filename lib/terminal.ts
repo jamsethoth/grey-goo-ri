@@ -217,6 +217,11 @@ function rowText(where: string | null, vertex: string, resolution: StopResolutio
         : `Test Immutability failed at ${where}: a committed test was changed.`;
     case 'parse-exhausted':
       return `The agent gave no valid Structured Response at ${where}, even after the return-the-result nudge.`;
+    case 'handoff-exhausted':
+      return (
+        `The agent at ${where} kept handing its work off past its context budget ` +
+        'until its hand-off budget ran out.'
+      );
     case 'timeout-exhausted':
       return `The harness call at ${where} timed out or was killed, and so did its retry.`;
     case 'transient-exhausted':

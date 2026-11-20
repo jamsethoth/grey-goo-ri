@@ -233,9 +233,10 @@ const directCalls = (text: string): string[] =>
     )
     .sort();
 // Only the commands that take no dependency read or write it by commonDir: gg doctor and gg init (lib/doctor.ts) and gg
-// work abandon (lib/work.ts), the owner's decision 2.
+// work abandon (lib/work.ts), the owner's decision 2, and gg ask-session, which runs outside any Run (#430).
 const TAKES_NO_DEPENDENCY: Record<string, string[]> = {
   'lib/doctor.ts': ['stateDatabase.open'],
+  'lib/harnesses/ask-session.ts': ['stateDatabase.loadAll'],
   'lib/work.ts': ['stateDatabase.load', 'stateDatabase.open', 'stateDatabase.removeRecord'],
 };
 

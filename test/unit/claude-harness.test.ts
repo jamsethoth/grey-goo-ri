@@ -180,6 +180,44 @@ test('contextBudget sets --autocompact above it', () => {
   assert.ok(Number(autocompact) > 100000, `--autocompact ${autocompact}`);
 });
 
+// The commands of the PostToolUse hooks gg's settings file installs for a launch.
+function postToolUseHooks(launch: claude.Launch): string[] {
+  settingsOf(launch);
+  const path = flagValue(launch.argv, '--settings')!;
+  const { hooks } = JSON.parse(launch.files[path]!) as {
+    hooks?: { PostToolUse?: { hooks?: { type?: string; command?: string }[] }[] };
+  };
+  return (hooks?.PostToolUse ?? []).flatMap((matcher) =>
+    (matcher.hooks ?? []).map((hook) => (hook.type === 'command' ? (hook.command ?? '') : `${hook.type} hook`)),
+  );
+}
+
+// Every launch an Attempt makes, whatever else its call varies (a first Attempt, a retry, a recovery pass that resumes,
+// the fresh Attempt after a hand-off; a reader or a writer; either shell), carries the hand-off hook at its Agent's
+// contextBudget, and a launch of an Agent with none carries no hook (#430, rule 1 of its Clarify).
+const LAUNCH_SITES = [READER, WRITER, { ...WRITER, network: true }].flatMap((agent) =>
+  [null, 'session-7'].flatMap((resume) =>
+    (['win32', 'linux'] as const).flatMap((platform) =>
+      [undefined, 150000].map((contextBudget) => ({ agent, resume, platform, contextBudget })),
+    ),
+  ),
+);
+
+test('every launch of an Agent with a contextBudget carries the hand-off hook at its budget, and no other does', () => {
+  const wrong = LAUNCH_SITES.flatMap(({ agent, resume, platform, contextBudget }) => {
+    const budgeted = contextBudget === undefined ? agent : { ...agent, contextBudget };
+    const commands = postToolUseHooks(launched({ agent: budgeted, call: { resume }, platform }));
+    const expected = contextBudget === undefined ? 0 : 1;
+    const atBudget = commands.filter(
+      (command) => command.includes('claude-handoff-hook.ts') && command.includes(String(contextBudget)),
+    );
+    if (commands.length === expected && atBudget.length === expected) return [];
+    const site = `${agent.access} network ${agent.network} resume ${resume} on ${platform} budget ${contextBudget}`;
+    return [`${site}: ${commands.join('; ')}`];
+  });
+  assert.deepEqual(wrong, []);
+});
+
 test('a read-only call offers no Edit or Write tool', () => {
   assert.deepEqual(offered(launched({ agent: READER })), new Set(['Bash', 'Read', 'Grep', 'Glob']));
 });

@@ -379,6 +379,13 @@ _Avoid_: unsandboxed mode, Windows mode
 One agent conversation with an Agent CLI, which later Phases may resume.
 _Avoid_: thread (except for Codex's own term), conversation
 
+**Hand-off**:
+How an Agent with a `contextBudget` ends an Attempt once its context passes that budget: it returns the Claim token
+`handed-off` with a note of what remains, in its `handoff` field, and the next Attempt of the same Action starts a fresh
+Session whose Brief carries the note. The handed-off Session stays on the Execution Record for `gg ask-session`. Not
+Escalation: no other Vertex or Agent takes the work.
+_Avoid_: handover, context reset
+
 **Session Lineage**:
 Which Phase's Session a later Phase resumes.
 _Avoid_: resume chain

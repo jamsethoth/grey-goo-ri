@@ -59,7 +59,7 @@ An Agent is a named, declarative unit of work for one Agent CLI. Fields, all wit
 | `mode` | `headless` (default) or `interactive` (the planner) |
 | `access`, `network` | permission intents: `read-only` or `workspace-write`; network boolean. Harness translates per surface |
 | `resolutionPolicy` | per-class retry budgets (3.4); shipped default, overridable. Outcome order is the Procedure's (ADR 0014) |
-| `contextBudget` | optional; translated to the harness compaction threshold; compaction count logged |
+| `contextBudget` | optional; past it the agent hands off: it ends its Attempt with a note of what remains, and the next Attempt starts a fresh Session with the note, the handed-off Session kept on the record for a question (ADR 0029); the harness compaction threshold stays set above it as a backstop; compaction count logged |
 | `timeouts` | optional stall and wall-clock overrides (3.5) |
 
 Agents live in a shared `agents` library in each source's `gg.json`, and a Flow uses only its own source's. A vertex in a flow either inlines a definition or
@@ -371,6 +371,7 @@ row by row, and `gg doctor` prints a vertex's effective table next to its effect
 | timed-out or killed | ignored, even if partial | integrity only | one retry as a fresh attempt, resuming the session where the harness allows; then `harness-timeout` |
 | failed, class unknown | none | integrity only | needs-human, no retry |
 | completed | invalid: field missing, malformed, or more than one token | integrity only | parse-failure retry resuming the session with a return-the-result nudge, default 1; exhausted: `harness-unparsed` |
+| completed | valid, `handed-off`, which gg adds for an Agent with a `contextBudget` | integrity only | hand-off: retry as a fresh Session whose Brief carries the note, default 3 (ADR 0029); exhausted: `harness-handoff` |
 | completed | valid, a stop token | all run and recorded | the `stopped` table, else the token, routed like any Outcome; passing checks never override this |
 | completed | valid, a token with `requires` | a required Check fails | recovery within the Procedure's `recover`; then the `failed` table, else `otherwise`, else the engine Outcome `failed`, whose route applies, default `end: needs-human`; edge and vertex bounds apply to the traversal as usual |
 | completed | valid, a token with `requires` | every required Check passed on the current tree | the `passed` table, else `otherwise`, else the token |
@@ -389,7 +390,7 @@ A remote 401 and git's own credential failure are auth; a 403 that is not a rate
 branch protection). A Harness reports only auth, quota, budget, rate-limited, transient and unknown.
 
 Outcomes are the Procedure's own (its tokens, its tables' Outcomes and `otherwise`) plus gg's engine Outcomes
-`failed`, `harness-transient`, `harness-timeout` and `harness-unparsed`, each routable and defaulting to
+`failed`, `harness-transient`, `harness-timeout`, `harness-unparsed` and `harness-handoff`, each routable and defaulting to
 `end: needs-human`. In the example, `blocked` is the one stop token, with a `reason`; `misscoped` is the `stopped`
 table's Outcome for `reason: misscoped`, which the Flow's defaults route to `end: needs-replan`. Thrown errors go to
 needs-human with the error on the ticket end event. A stop is honoured after every agent Attempt, recovery included;

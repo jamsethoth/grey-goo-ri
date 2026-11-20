@@ -9,9 +9,9 @@ import * as paths from './paths.ts';
 import type * as visit from './visit.ts';
 
 // The frozen schema version of both records' rows (docs/interfaces/record.md); a change to it needs a new ADR (#23).
-export const RECORD_SCHEMA_VERSION = 2;
+export const RECORD_SCHEMA_VERSION = 3;
 // A row of the version before reads too: each field its version added is optional (ADR 0024).
-const PREVIOUS_RECORD_SCHEMA_VERSION = 1;
+const PREVIOUS_RECORD_SCHEMA_VERSION = 2;
 
 export class RecordCorruptError extends Error {
   declare file: string;

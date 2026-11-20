@@ -766,3 +766,16 @@ test('an untyped list of objects renders as JSON', async () => {
   const rendered = await briefs.brief('{{items}}', { items });
   assert.equal(rendered, JSON.stringify(items, null, 2));
 });
+
+// An Agent with a contextBudget may end its Attempt handed off, for every Procedure as declared (#430, Q3 A).
+test("each example schema, as a budgeted Agent's, takes the handed-off token and a required handoff note", () => {
+  for (const [name, declared] of Object.entries(SCHEMAS)) {
+    const before = structuredClone(declared);
+    const widened = briefs.handoffSchema(declared);
+    briefs.assertStrict(widened);
+    assert.deepEqual(widened.properties?.claim?.enum, [...before.properties.claim!.enum!, 'handed-off'], name);
+    assert.deepEqual(widened.properties?.handoff, { type: 'string' }, name);
+    assert.deepEqual(widened.required, [...before.required, 'handoff'], name);
+    assert.deepEqual(declared, before, `${name}: the declared schema is left as it was`);
+  }
+});

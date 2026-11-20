@@ -1,6 +1,6 @@
 {
   "execution": {
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "repository": "o/r",
     "execution": "8.a1b2c3",
     "ticket": 8,
@@ -67,6 +67,7 @@
         "transient": 2,
         "rateLimited": 1,
         "crash": 1,
+        "handoff": 1,
         "remote": { "count": 1, "failureClass": "rate-limited", "nextEligibleAt": 1700000000000, "started": true }
       }
     },
@@ -92,7 +93,27 @@
         "vertex": "green",
         "model": "opus",
         "effort": "high",
-        "personaName": "implementer"
+        "personaName": "implementer",
+        "handedOff": [
+          {
+            "sessionId": "session-0",
+            "transcriptPath": "transcripts/0.jsonl",
+            "cumulativeUsage": {
+              "inputTokens": 150000,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "outputTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "peakContextTokens": 150000,
+              "turns": 0,
+              "toolCalls": 0,
+              "compactions": 0,
+              "costBasis": "reported"
+            },
+            "attempt": 1
+          }
+        ]
       }
     },
     "attempts": 4,
@@ -627,7 +648,7 @@
     ]
   },
   "epic": {
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "epic": 1,
     "planDecision": { "approved": [1, 2] },
     "approvalRequest": {

@@ -164,6 +164,8 @@ const FIXED_ROW: Record<visit.FixedRow, true> = {
   'unknown-failure': true,
   'parse-retry': true,
   'parse-exhausted': true,
+  'handed-off': true,
+  'handoff-exhausted': true,
   claimed: true,
   recover: true,
 };
@@ -173,6 +175,7 @@ const retryKind = oneOf({
   timeout: true,
   transient: true,
   rateLimited: true,
+  handoff: true,
 });
 const decided = (field: (key: string) => recordReadNode.Node) => ({
   outcome: text(field('outcome')),

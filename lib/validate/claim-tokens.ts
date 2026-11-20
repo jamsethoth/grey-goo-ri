@@ -2,6 +2,7 @@
 // Only lib/validate/procedures.ts imports it.
 
 import * as briefs from '../briefs.ts';
+import * as outcome from '../outcome.ts';
 import type * as procedures from '../procedures.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as actionChecks from './actions.ts';
@@ -72,6 +73,13 @@ interface TokenContext {
   checkIds: string[];
 }
 
+// gg adds the handed-off token to a budgeted Agent's schema itself, so no Procedure declares it (#430).
+function checkHandoffToken(problems: report.Report, declaredTokens: Value, location: string) {
+  if (!Object.hasOwn(declaredTokens, outcome.HANDED_OFF)) return;
+  const message = `the Claim token ${outcome.HANDED_OFF} is gg's own, for an agent's hand-off past its contextBudget`;
+  report.error(problems, `${location}.claimTokens`, 'reserved-handoff-name', message, { name: outcome.HANDED_OFF });
+}
+
 // The Claim tokens as the checks read them, and as the Resolved Flow carries them, or Reported when one was.
 export function checkClaimTokens(problems: report.Report, { location, declaration, declared, checkIds }: TokenContext) {
   // No agent Action, so the implicit Claim ok requires every Check (R11f).
@@ -113,6 +121,7 @@ export function checkClaimTokens(problems: report.Report, { location, declaratio
     claimTokens.push([token, checkedToken.checked]);
     if (!report.isReported(checkedToken.typed)) typed.push([token, checkedToken.typed]);
   }
+  checkHandoffToken(problems, declaredTokens, location);
   if (declared.schema !== referencePaths.ANY) {
     try {
       briefs.assertClaimEnum(declared.schema, Object.keys(declaredTokens));

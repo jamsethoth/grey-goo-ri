@@ -20,6 +20,7 @@ export const PROBLEM_CODES = [
   // Names.
   'invalid-name',
   'reserved-name',
+  'reserved-handoff-name',
   // Flows, Vertices and routes.
   'exhausted-without-max',
   'human-only-end',
@@ -164,6 +165,7 @@ interface ProblemParams {
   'not-a-string': InSourceFile;
   'invalid-name': { name?: unknown; index?: number } & InSourceFile;
   'reserved-name': { name: string } & InSourceFile;
+  'reserved-handoff-name': { name: string };
   'unknown-vertex': { vertex: unknown };
   'unknown-end': { end: unknown };
   'unknown-outcome': { outcome: string; outcomes: string[] };

@@ -68,7 +68,13 @@ const decisionOf = (resolution: visit.TableResolution) => ({
 });
 
 test('DEFAULT_RESOLUTION_POLICY holds the retry budgets by kind', () => {
-  assert.deepEqual(outcome.DEFAULT_RESOLUTION_POLICY, { transient: 2, rateLimited: 2, timeout: 1, parse: 1 });
+  assert.deepEqual(outcome.DEFAULT_RESOLUTION_POLICY, {
+    transient: 2,
+    rateLimited: 2,
+    timeout: 1,
+    parse: 1,
+    handoff: 3,
+  });
 });
 
 test('row integrity-violation: failed integrity check on a completed ok -> integrity-violation', () => {
@@ -652,4 +658,65 @@ test('a confirmed cleanup, or none reported, leaves the row to the rest of the t
   const signals = { result: completed, claim: { valid: true, token: 'ok', reason: null }, checks: [], retries: none };
   assert.equal(outcome.resolve({ ...signals, cleanup: { confirmed: true } }).row, 'claimed');
   assert.equal(outcome.resolve(signals).row, 'claimed');
+});
+
+// An agent past its contextBudget answers handed-off with a note of what remains (#430, Q2 A, Q3 A).
+const handedOff: visit.CallSignal = {
+  status: 'completed',
+  response: { claim: 'handed-off', handoff: 'the sum is left to write' },
+  failure: null,
+};
+const handOffClaim = { valid: true, token: 'handed-off', reason: null };
+
+test('a handed-off Claim retries on its own budget of 3, then ends at the routable harness-handoff', () => {
+  for (const spent of [0, 1, 2]) {
+    const resolution = resolve({ result: handedOff, claim: handOffClaim, retries: { ...none, handoff: spent } });
+    assertRow(resolution, { row: 'handed-off', outcome: 'handed-off', direction: 'retry' });
+    assert.deepEqual(resolution.rule, { table: 'fixed', row: 'handed-off' });
+    assert.equal(resolution.retryKind, 'handoff', 'the budget the hand-off spends');
+  }
+  const exhausted = resolve({ result: handedOff, claim: handOffClaim, retries: { ...none, handoff: 3 } });
+  assertRow(exhausted, { row: 'handoff-exhausted', outcome: 'harness-handoff', direction: 'stop' });
+  assert.equal(exhausted.retryKind, null);
+  assert.ok(outcome.ENGINE_OUTCOMES.includes('harness-handoff'), 'a Flow may route it');
+});
+
+// Signals that fire each fixed row a hand-off follows, each with a handed-off answer wherever the row lets the Claim be
+// valid: a hand-off never outranks a stop, a failure, a timeout or an answer that did not validate.
+const OUTRANKING: Record<string, Partial<outcome.Signals>> = {
+  'cleanup-unconfirmed': { cleanup: { confirmed: false } },
+  'integrity-violation': { checks: [{ name: 'worktree-unchanged', passed: false, integrity: true }] },
+  'transient-retry': { result: { ...failed('transient'), response: handedOff.response } },
+  'transient-exhausted': {
+    result: { ...failed('transient'), response: handedOff.response },
+    retries: { ...none, transient: 2 },
+  },
+  'run-stop': { result: { ...failed('auth'), response: handedOff.response } },
+  'timeout-retry': { result: { ...handedOff, status: 'timed-out' } },
+  'timeout-exhausted': { result: { ...handedOff, status: 'killed' }, retries: { ...none, timeout: 1 } },
+  'unknown-failure': { result: { ...failed('unknown'), response: handedOff.response } },
+  'parse-retry': { claim: { valid: false, token: null, reason: 'handoff must be a string' } },
+  'parse-exhausted': {
+    claim: { valid: false, token: null, reason: 'handoff must be a string' },
+    retries: { ...none, parse: 1 },
+  },
+};
+
+test('every other fixed row but claimed outranks a hand-off', () => {
+  const names = outcome.FIXED_ROWS.map((row) => row.name as string);
+  assert.ok(names.includes('handed-off') && names.includes('handoff-exhausted'), names.join(', '));
+  for (const name of names.filter((each) => !['handed-off', 'handoff-exhausted', 'claimed'].includes(each))) {
+    assert.ok(Object.hasOwn(OUTRANKING, name), `no case fires row ${name}`);
+    const { retries, ...fires } = OUTRANKING[name]!;
+    for (const spent of [0, 3]) {
+      const resolution = outcome.resolve({
+        result: handedOff,
+        claim: handOffClaim,
+        checks: [],
+        ...fires,
+        retries: { ...none, ...retries, handoff: spent },
+      });
+      assert.equal(resolution.row, name, `row ${name} with ${spent} hand-offs spent`);
+    }
+  }
 });

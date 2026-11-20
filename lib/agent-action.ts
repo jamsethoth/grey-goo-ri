@@ -2,6 +2,7 @@
 // and the result the Transition Table makes of its Signals.
 import { existsSync } from 'node:fs';
 import * as agentCall from './agent-call.ts';
+import * as agentHandoff from './agent-handoff.ts';
 import * as attempt from './attempt.ts';
 import * as bounds from './bounds.ts';
 import * as briefs from './briefs.ts';
@@ -24,7 +25,7 @@ import * as writeAhead from './write-ahead.ts';
 type ActionResolution = visitScope.ActionResolution;
 type Agent = NonNullable<visit.ConfigurationSnapshot['agent']>;
 type Persona = NonNullable<visit.ConfigurationSnapshot['persona']>;
-type Attempt = agentCall.Attempt;
+type Attempt = agentCall.Attempt & { handoff?: agentHandoff.Handoff | null };
 
 // An agent Action's Session, which its recovery passes and retries resume.
 const sessionKey = (actionIdentity: { vertex: string; visit: number; action: string }) =>
@@ -40,10 +41,12 @@ export async function agent(runContext: RunContext, running: visitScope.Running)
   const harness = runContext.harnessOf()!;
   let resume = firstResume(runContext, running);
   let nudge = null;
+  let handoff = null;
   for (let attempt = runContext.record.cursor.attempt; ; attempt++) {
     if (attempt > 1) {
       const previous = previousAttempt(runContext, actionIdentity, attempt, resume);
-      if (harness.capabilities.sessionResume?.supported) resume = previous.sessionId ?? null;
+      handoff = agentHandoff.handoffOf(runContext.record, actionIdentity, previous);
+      if (harness.capabilities.sessionResume?.supported) resume = handoff ? null : (previous.sessionId ?? null);
       nudge = previous.row === 'parse-retry' ? (previous.reason ?? null) : null;
       const stopped = terminal.runStopped(runContext);
       if (stopped) return stopped;
@@ -56,6 +59,7 @@ export async function agent(runContext: RunContext, running: visitScope.Running)
       actionIdentity: { ...actionIdentity, attempt },
       resume,
       nudge,
+      handoff,
     });
     if (resolution.direction !== 'retry') return resolution;
     if (resolution.retryAfterMs) await runContext.clock.sleep(resolution.retryAfterMs);
@@ -110,16 +114,16 @@ const sectionsOf = (runContext: RunContext, state: visitScope.RunningVisit): bri
       ...state.runs.get(action.id),
     }));
 // A recovery pass gets the recovery Brief with a section for each Check that failed in the pass before it (T4b); a
-// parse retry gets gg's own nudge.
+// parse retry gets gg's own nudge; the Attempt after a hand-off gets its Brief and gg's hand-off section (#430).
 async function briefOf(runContext: RunContext, briefed: Attempt, commands: Record<string, unknown>): Promise<string> {
   const { record: executionRecord, ticket, base, git } = runContext;
-  const { actionIdentity, action, state, nudge } = briefed;
+  const { actionIdentity, action, state, nudge, handoff } = briefed;
   const recovering = actionIdentity.recovery > 0 && !nudge;
   const sections = recovering ? sectionsOf(runContext, state) : undefined;
   const name = (recovering ? state.procedure.recover!.brief : action.brief) as string;
   const renderBrief = (recovering ? briefs.recoveryBrief : briefs.brief) as typeof briefs.recoveryBrief;
   const files = executionRecord.configurationSnapshot!.files;
-  return renderBrief(nudge ? render.engineTemplate('nudge.md') : config.namedFile(files, name), {
+  const text = await renderBrief(nudge ? render.engineTemplate('nudge.md') : config.namedFile(files, name), {
     ...visitScope.scopeOf(executionRecord, actionIdentity, state),
     ticket,
     baseBranch: base,
@@ -140,6 +144,7 @@ async function briefOf(runContext: RunContext, briefed: Attempt, commands: Recor
       return changed;
     },
   });
+  return agentHandoff.withSection(text, handoff);
 }
 
 // One Attempt. A completed one is never run again: runVisit routes every saved result but a retry's, which ends here.
@@ -173,8 +178,9 @@ function callAttempt(runContext: RunContext, running: Attempt): Promise<ActionRe
       outputs: { ...(claim.valid && { response }), cleanup: result.cleanup },
     }),
     finish: (called, { call, own }) => {
-      saveSession(executionRecord, { ...running, result: called.result }, own);
-      return settleAttempt(runContext, running, { call, own, called });
+      const settled = settleAttempt(runContext, running, { call, own, called });
+      saveSession(executionRecord, { ...running, result: called.result, row: settled.resolution.row }, own);
+      return settled;
     },
   });
 }
@@ -189,9 +195,11 @@ function callOf(
   { pinned, brief, actionMarker, harness }: CallParts,
 ) {
   const agentPinned = pinned.agent as Agent;
-  const commands = pinned.commands as Record<string, string>;
-  const schema = JSON.parse(config.namedFile(pinned.files, action.schema));
-  briefs.assertStrict(schema);
+  const session = runContext.record.sessions[sessionKey(actionIdentity)];
+  const commands = agentHandoff.askable(session, pinned.commands as Record<string, string>);
+  const declared = JSON.parse(config.namedFile(pinned.files, action.schema));
+  briefs.assertStrict(declared);
+  const schema = agentHandoff.schemaOf(agentPinned, declared);
   return {
     marker: actionMarker,
     vertex: actionIdentity.vertex,
@@ -204,7 +212,7 @@ function callOf(
     schema,
     cwd: runContext.record.worktree,
     resume,
-    previousUsage: resume ? (runContext.record.sessions[sessionKey(actionIdentity)]?.cumulativeUsage ?? null) : null,
+    previousUsage: resume ? (session?.cumulativeUsage ?? null) : null,
     runDirectory: paths.runDirectory(runContext.record.commonDir, runContext.run),
     access: pinned.access,
     network: agentPinned.network,
@@ -222,11 +230,12 @@ type Own = { actionMarker: string; agent: Agent; persona: Persona };
 // Its total is saved either way, so the next resume's previous Usage is this call's.
 function saveSession(
   executionRecord: record.ExecutionRecord,
-  { actionIdentity, resume, result }: Pick<Attempt, 'actionIdentity' | 'resume'> & { result: HarnessResult },
+  { actionIdentity, resume, result, row }: Pick<Attempt, 'actionIdentity' | 'resume'> & SessionResult,
   { agent: pinned, persona }: Own,
 ) {
   const key = sessionKey(actionIdentity);
-  const stored = resume ? executionRecord.sessions[key]?.sessionId : undefined;
+  const before = executionRecord.sessions[key];
+  const stored = resume ? before?.sessionId : undefined;
   executionRecord.sessions[key] = {
     sessionId: stored ?? result.sessionId,
     harness: pinned.harness,
@@ -237,14 +246,16 @@ function saveSession(
     model: pinned.model,
     effort: pinned.effort,
     personaName: persona.name,
+    ...agentHandoff.kept(before, { row, attempt: actionIdentity.attempt! }, result),
   };
 }
+type SessionResult = { result: HarnessResult; row: visit.Resolution['row'] };
 
 // The Transition Table reads a call's three Signals as one flat result. A retry spends its budget in the Attempt's
 // completion, so a resume never spends it twice. A violation always stops (its row is first); runVisit rolls it back.
 function settleAttempt(
   runContext: RunContext,
-  { actionIdentity, action, state }: Attempt,
+  { actionIdentity, action, state, handoff }: Attempt,
   { call, own, called }: { call: SentCall; own: Own; called: agentCall.Called & { claim: visit.ClaimSignal } },
 ): attempt.Done<ActionResolution> {
   const { response, result, failure, violations, baseline, claim } = called;
@@ -261,8 +272,8 @@ function settleAttempt(
     resolution: done,
     fields: {
       ...agentFields(own, call.tools),
-      // A recovery pass's Session descends from its agent Action's.
-      ...harnessFields(result, actionIdentity.recovery ? action.id : null),
+      // A fresh Session after a hand-off descends from the handed-off one, a recovery pass's from its agent Action's.
+      ...harnessFields(result, handoff?.sessionId ?? (actionIdentity.recovery ? action.id : null)),
       ...decisionFields(resolution, { result, claim, integrityRows }),
     },
     // The evidence keeps its own copy of the Resolution, apart from the one the Visit settles on.
@@ -322,6 +333,8 @@ export async function completeHeld(
     finish: (cleanup) => {
       held.harnessResult.cleanup = cleanup;
       const decided = decideCall(runContext, { actionIdentity: identity, state }, []);
+      const session = runContext.record.sessions[sessionKey(identity)]!;
+      Object.assign(session, agentHandoff.kept(session, { row: decided.done.row, ...identity }, held.harnessResult));
       return {
         resolution: decided.done,
         fields: {

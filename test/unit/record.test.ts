@@ -52,7 +52,7 @@ test('a fresh Execution Record declares every field it can hold', async (t) => {
   assert.notEqual(knownRecord(commonDir).execution, executionRecord.execution);
   assert.equal(executionRecord.commonDir, commonDir);
   const expected = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     repository: 'o/r',
     execution: executionRecord.execution,
     ticket: 8,
@@ -235,7 +235,7 @@ test('decidedBy is exactly one of a hold, a State Label or an Action, and any of
 test('a fresh Epic Record declares every field it can hold', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const epicRecord = record.createEpicRecord({ commonDir, epic: 1 });
-  const expected = { schemaVersion: 2, epic: 1, planDecision: null, approvalRequest: null };
+  const expected = { schemaVersion: 3, epic: 1, planDecision: null, approvalRequest: null };
   assert.deepEqual(withoutCommonDir(epicRecord), expected);
   assert.deepEqual(Object.keys(withoutCommonDir(epicRecord)), Object.keys(expected));
 });
@@ -519,8 +519,8 @@ test('a record whose visits, traversals or Check runs are not objects is corrupt
 // A save writes the current version, so a record's version always says which fields it may hold (#422, Q4 A).
 test('a record read at the previous schema version saves at the current one', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
-  const execution = { ...record.toJson(knownRecord(commonDir, 8)), schemaVersion: 1 };
-  const epic = { ...withoutCommonDir(record.createEpicRecord({ commonDir, epic: 3 })), schemaVersion: 1 };
+  const execution = { ...record.toJson(knownRecord(commonDir, 8)), schemaVersion: 2 };
+  const epic = { ...withoutCommonDir(record.createEpicRecord({ commonDir, epic: 3 })), schemaVersion: 2 };
   withDb(commonDir, (db) => {
     const insert = db.prepare('INSERT INTO records (kind, n, json) VALUES (?, ?, ?)');
     insert.run('ticket', 8, JSON.stringify(execution));
@@ -538,7 +538,7 @@ test('a record read at the previous schema version saves at the current one', as
           ) as { schemaVersion: number }
         ).schemaVersion,
     );
-  assert.deepEqual([savedVersion('ticket', 8), savedVersion('epic', 3)], [2, 2]);
+  assert.deepEqual([savedVersion('ticket', 8), savedVersion('epic', 3)], [3, 3]);
 });
 
 test('a record written before Action ids is corrupt, not misread', async (t) => {

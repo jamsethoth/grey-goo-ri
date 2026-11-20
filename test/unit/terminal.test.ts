@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type * as effectErrors from '../../lib/effect-errors.ts';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
+import * as outcome from '../../lib/outcome.ts';
 import * as record from '../../lib/record.ts';
 import * as terminal from '../../lib/terminal.ts';
 import * as terminalReport from '../../lib/terminal-report.ts';
@@ -34,6 +35,70 @@ test('a run stop from a remote Action names the Action, not a harness call', () 
     'The harness call at red failed with class auth, which stops the whole run.',
     "a Harness's run stop still names the harness call",
   );
+});
+
+const green = { vertex: 'green', action: 'implement', recovery: 1 };
+const fixedStop = (row: string, more: Partial<terminal.StopResolution> = {}) => ({
+  row,
+  rule: { table: 'fixed', row },
+  ...more,
+});
+// The sentence of each stop of the Transition Table's fixed rows, and of the Action Cap's, as a stopped Ticket's
+// comment gives it (#430 D2 A); integrity-violation has one with the surfaces it broke and one without.
+const FIXED_STOPS: [terminal.StopResolution, string][] = [
+  [
+    fixedStop('integrity-violation', { surfaces: ['the index', 'HEAD'] }),
+    "The agent's Attempt at implement (recovery 1) broke an Integrity Assertion on the index and HEAD, so the " +
+      'worktree was restored to its baseline head.',
+  ],
+  [
+    fixedStop('integrity-violation'),
+    'Test Immutability failed at implement (recovery 1): a committed test was changed.',
+  ],
+  [
+    fixedStop('parse-exhausted'),
+    'The agent gave no valid Structured Response at implement (recovery 1), even after the return-the-result nudge.',
+  ],
+  [
+    fixedStop('handoff-exhausted'),
+    'The agent at implement (recovery 1) kept handing its work off past its context budget until its hand-off ' +
+      'budget ran out.',
+  ],
+  [
+    fixedStop('timeout-exhausted'),
+    'The harness call at implement (recovery 1) timed out or was killed, and so did its retry.',
+  ],
+  [
+    fixedStop('transient-exhausted', { failureClass: 'server' }),
+    'The harness call at implement (recovery 1) kept failing with class server until its retry budget ran out.',
+  ],
+  [
+    fixedStop('run-stop', { failureClass: 'auth' }),
+    'The harness call at implement (recovery 1) failed with class auth, which stops the whole run.',
+  ],
+  [
+    fixedStop('unknown-failure', { failureClass: 'unknown' }),
+    'The harness call at implement (recovery 1) failed with class unknown, which is never retried.',
+  ],
+  [
+    fixedStop('action-cap', { actionCap: 40 }),
+    'The Execution reached its Action Cap of 40 Attempts, so implement (recovery 1) at green did not run.',
+  ],
+];
+
+// An unconfirmed cleanup leaves the Ticket Pending on a cleanup hold, which ends no Execution, so it has no sentence.
+const PENDING_ROWS = ['cleanup-unconfirmed'];
+
+test('each fixed row of the Transition Table stops an Action with its own sentence', () => {
+  const stopRows = outcome.FIXED_ROWS.filter(({ direction }) => direction === 'stop').map(({ name }) => name);
+  const listed = new Set([...PENDING_ROWS, ...FIXED_STOPS.map(([resolution]) => resolution.row)]);
+  assert.deepEqual(
+    stopRows.filter((row) => !listed.has(row)),
+    [],
+    'every stop row of the fixed table has its sentence here',
+  );
+  for (const [resolution, sentence] of FIXED_STOPS)
+    assert.equal(terminal.stopText(green, 'needs-human', resolution), sentence, resolution.row ?? '');
 });
 
 // The error a remote comment at the green Vertex's push Action ends with, once the fake gh has failed it as queued.

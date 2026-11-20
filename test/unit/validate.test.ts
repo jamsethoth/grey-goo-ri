@@ -112,6 +112,7 @@ test("the Resolved Flow carries each Vertex's Agent, Procedure, access, tests an
     'harness-timeout',
     'harness-transient',
     'harness-unparsed',
+    'harness-handoff',
   ]);
   assert.deepEqual(flows.default.ticket.vertices.reviewer.outcomes, [
     'ok',
@@ -123,6 +124,7 @@ test("the Resolved Flow carries each Vertex's Agent, Procedure, access, tests an
     'harness-timeout',
     'harness-transient',
     'harness-unparsed',
+    'harness-handoff',
   ]);
   assert.deepEqual(flows.default.ticket.vertices.publish.outcomes, ['ok', 'failed']);
 });
