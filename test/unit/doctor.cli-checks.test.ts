@@ -3,7 +3,7 @@
 // gives.
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
@@ -235,10 +235,18 @@ test("gg doctor gives the error gg run's preflight refuses each failing Claude C
   }
 });
 
-// The Claude Harness's checks under --probe over the CLI as recorded, changed by `state`, and its launches.
+// The Claude Harness's checks under --probe over the CLI as recorded, changed by `state`, its launches and the
+// settings file each launch named, read as it starts: the probe removes them after.
 async function probeChecks(state: recordedCli.CliState) {
   const cli = recordedCli.recordedCli(state);
-  const { checks } = await claude.createCli(cli).doctor({ probe: true });
+  const settings: (Record<string, unknown> | undefined)[] = [];
+  const launch: typeof cli.launch = (options) => {
+    const index = options.args.indexOf('--settings');
+    const path = index < 0 ? undefined : options.args[index + 1];
+    settings.push(path === undefined ? undefined : (JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>));
+    return cli.launch(options);
+  };
+  const { checks } = await claude.createCli({ launch }).doctor({ probe: true });
   const named = (name: string) => checks.find((check) => check.name === name);
   const checked = {
     bare: named('bare-probe'),
@@ -246,7 +254,7 @@ async function probeChecks(state: recordedCli.CliState) {
     handoff: named('handoff-probe'),
     fork: named('fork-probe'),
   };
-  return { ...checked, launches: cli.launches };
+  return { ...checked, launches: cli.launches, settings };
 }
 
 type StreamLine = Record<string, unknown>;
@@ -494,11 +502,14 @@ test('gg doctor warns, naming npm install -g, when gg is not on PATH', async (t)
 
 // D6 A of #430: --probe asks the hand-off probe's Session through a read-only copy, as gg ask-session asks one.
 test("gg doctor --probe asks a read-only copy of the hand-off probe's Session", async () => {
-  const { fork, launches } = await probeChecks({});
+  const { fork, launches, settings } = await probeChecks({});
   const [profile] = launches.filter(isProfileCall);
   const forks = launches.filter(({ args }) => args.includes('--fork-session'));
   assert.equal(forks.length, 1, JSON.stringify(launches.map(({ args }) => args)));
   const [{ args, cwd }] = forks as [(typeof forks)[number]];
+  const forkSettings = settings[launches.indexOf(forks[0]!)];
+  assert.ok(forkSettings, 'the copy launches with a settings file');
+  assert.equal(forkSettings.hooks, undefined, 'the copy, like gg ask-session, has no budget and so no hand-off hook');
   const handedOff = JSON.parse(recordedCli.handoffStandIn().split('\n')[0]!) as { session_id: string };
   assert.equal(args[args.indexOf('--resume') + 1], handedOff.session_id);
   assert.ok(args.includes('--restricted'), 'the copy runs read-only');
