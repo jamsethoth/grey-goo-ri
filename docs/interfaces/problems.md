@@ -249,6 +249,7 @@ checks reports an error, a null in it among them.
    refused: what a route guarantees starts from it.
 4. `unreachable-vertex` and `optional-input-unsure`, while any Vertex of the Flow waits as in 3, or the route map or
    the entry is unknown as in 3: a route left out would make them appear falsely.
+5. `access-conflict`, while the Vertex's Agent is refused: the access it asks for is unknown.
 
 ## Their params
 
