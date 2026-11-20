@@ -1,6 +1,8 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import type * as events from '../../lib/events.ts';
+import * as claude from '../../lib/harnesses/claude.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
 import type * as referencePaths from '../../lib/reference-paths.ts';
@@ -166,4 +168,21 @@ test('every call of an Agent with a contextBudget is sent the hand-off Claim, an
     ['red/0/1', 'green/0/1', 'green/0/2', 'green/1/1'],
     "red's call, then green's first Attempt, its parse retry and its recovery pass",
   );
+});
+
+// Q1 A: the new agent asks the handed-off Session through gg ask-session, which its Brief names with the Session and
+// its permission rules allow only once there is a handed-off Session to ask; the Claude Harness resolves the rules.
+test('the Attempt after a hand-off may ask the handed-off Session through gg ask-session', async (t) => {
+  const fixture = await budgetedFixture(t, { [greenAt(1)]: handOff(NOTE), [greenAt(2)]: finishing(RIGHT_ADD) });
+  const { resolveTools } = claude.createClaude({ configDirectory: join('no-claude-home') });
+  fixture.harness.resolveTools = (agent, context) =>
+    resolveTools(agent, context ?? { commands: {}, platform: process.platform });
+  await interpreter.runExecution(fixture.options);
+
+  const [, first, next] = fixture.harness.calls;
+  const asks = (tools: unknown) =>
+    (tools as claude.ClaudeTools).allow.filter((rule) => rule.endsWith('(gg ask-session:*)'));
+  assert.deepEqual(asks(first!.tools), [], 'before a hand-off there is no Session to ask');
+  assert.equal(asks(next!.tools).length, 1, JSON.stringify(next!.tools));
+  assert.ok(next!.brief!.includes('gg ask-session fake-session-2'), 'the Brief names the command and the Session');
 });

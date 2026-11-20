@@ -41,14 +41,57 @@ const sameArgv = (left: readonly string[], right: readonly string[]) =>
 const recordedStream = (name: string) =>
   readFileSync(new URL(`../fixtures/claude/${name}.jsonl`, import.meta.url), 'utf8');
 
-// What the CLI prints for `args` under `state`, and its exit code. A model call replays the success recording, and a
-// --bare one the auth-failure recording: bare mode reads no OAuth login today (ADR 0002).
+// A stand-in, not a recording: the success recording as a call under --include-hook-events whose PostToolUse hook ran
+// after its first tool and which then handed off. No recording shows a hook (#430, Q5 A: the owner's run of gg doctor
+// --probe checks the real CLI), so its two hook lines follow the shape the CLI's SDK names for hook events.
+export function handoffStandIn(): string {
+  const lines = recordedStream('success')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const sessionId = lines[0]!.session_id;
+  const hook = { hook_id: 'hook-1', hook_name: 'PostToolUse:Read', hook_event: 'PostToolUse', session_id: sessionId };
+  const additionalContext = 'Context budget: past it, so end with the handed-off Claim and a handoff note.';
+  const hookLines = [
+    { type: 'system', subtype: 'hook_started', ...hook },
+    {
+      type: 'system',
+      subtype: 'hook_response',
+      ...hook,
+      output: JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext } }),
+      stdout: JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext } }),
+      stderr: '',
+      exit_code: 0,
+      outcome: 'success',
+    },
+  ];
+  const firstToolResult = lines.findIndex((line) => line.type === 'user');
+  const handedOff = lines.map((line) =>
+    line.type === 'result'
+      ? {
+          ...line,
+          structured_output: {
+            ...(line.structured_output as Record<string, unknown>),
+            claim: 'handed-off',
+            handoff: 'README.md is read; run slow.js and give the word.',
+          },
+        }
+      : line,
+  );
+  handedOff.splice(firstToolResult + 1, 0, ...hookLines);
+  return `${handedOff.map((line) => JSON.stringify(line)).join('\n')}\n`;
+}
+
+// What the CLI prints for `args` under `state`, and its exit code. A model call replays the success recording, or the
+// hand-off stand-in when it asks for hook events, and a --bare one the auth-failure recording: bare mode reads no OAuth
+// login today (ADR 0002).
 export function answer(args: readonly string[], state: CliState = {}): { stdout: string; exitCode: number } {
   if (args.includes('-p')) {
     const bare = args.includes('--bare');
     const name = bare ? 'auth-failure' : 'success';
     const edit = (bare ? state.bare : state.profile) ?? ((stream: string) => stream);
-    return { stdout: edit(recordedStream(name)), exitCode: recordedCommand(name).exitCode };
+    const replayed = !bare && args.includes('--include-hook-events') ? handoffStandIn() : recordedStream(name);
+    return { stdout: edit(replayed), exitCode: recordedCommand(name).exitCode };
   }
   const [version, authStatus, help] = CHEAP_ARGVS as [string[], string[], string[]];
   if (sameArgv(args, version)) {

@@ -12,9 +12,16 @@ import type * as fakeHarnessModule from '../../support/fake-harness.ts';
 const CASE = { timeout: 120_000 };
 const dirs: string[] = [];
 
-// The modules in lib/harnesses/ that are no Harness: the contract, the shipped list, and the modules a Harness splits
-// along a seam inside it.
-const NOT_HARNESSES = ['contract.ts', 'shipped.ts', 'claude-stream.ts', 'claude-doctor.ts'];
+// The modules in lib/harnesses/ that are no Harness: the contract, the shipped list, the modules a Harness splits
+// along a seam inside it, and gg ask-session, which questions a Claude Session outside any Attempt (#430).
+const NOT_HARNESSES = [
+  'contract.ts',
+  'shipped.ts',
+  'claude-stream.ts',
+  'claude-doctor.ts',
+  'claude-handoff-hook.ts',
+  'ask-session.ts',
+];
 after(() => Promise.all(dirs.map((directory) => rm(directory, { recursive: true, force: true }))));
 
 const fakeHarness = async (options: Partial<fakeHarnessModule.FakeHarnessOptions> = {}) => {
@@ -141,7 +148,8 @@ test('each shipped Harness keeps its launch profile, and Codex and the fake decl
       codex: built.codex!.launchProfile,
       fake: ((await fakeHarness()) as Record<string, unknown>).launchProfile,
     },
-    { claude: { name: 'claude-headless', version: 2 }, codex: null, fake: null },
+    // The hand-off hook joined gg's settings file at version 3 (#430).
+    { claude: { name: 'claude-headless', version: 3 }, codex: null, fake: null },
   );
 });
 

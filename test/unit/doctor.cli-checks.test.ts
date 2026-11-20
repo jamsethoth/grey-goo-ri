@@ -224,7 +224,8 @@ async function probeChecks(state: recordedCli.CliState) {
   const cli = recordedCli.recordedCli(state);
   const { checks } = await claude.createCli(cli).doctor({ probe: true });
   const named = (name: string) => checks.find((check) => check.name === name);
-  return { bare: named('bare-probe'), profile: named('profile-probe'), launches: cli.launches };
+  const checked = { bare: named('bare-probe'), profile: named('profile-probe'), handoff: named('handoff-probe') };
+  return { ...checked, launches: cli.launches };
 }
 
 type StreamLine = Record<string, unknown>;
@@ -399,4 +400,59 @@ test('the profile probe fails when its answer holds the CLAUDE.md word in any ca
   const { profile } = await probeChecks({ profile: eachLine(capitalised) });
   assert.equal(profile?.ok, false);
   assert.ok(profile.message.includes('CLAUDE.md'), profile.message);
+});
+
+// Q5 A of #430: the profile probe's own call runs with the hand-off hook at a tiny budget and asks for hook events, so
+// gg doctor --probe shows whether the hook runs under the real CLI.
+test("gg doctor --probe checks the hand-off hook on the profile probe's call", async () => {
+  const { handoff, launches } = await probeChecks({});
+  const profile = launches.filter(({ args }) => args.includes('-p') && !args.includes('--bare'));
+  assert.equal(profile.length, 1, JSON.stringify(launches.map(({ args }) => args)));
+  assert.ok(profile[0]!.args.includes('--include-hook-events'), JSON.stringify(profile[0]!.args));
+  assert.equal(handoff?.ok, true, handoff?.message ?? 'no handoff-probe check');
+});
+
+const isHookLine = (line: StreamLine) =>
+  line.type === 'system' && typeof line.subtype === 'string' && line.subtype.startsWith('hook_');
+const answered = (fields: StreamLine) =>
+  eachLine((line) =>
+    line.type === 'result'
+      ? { ...line, structured_output: { ...(line.structured_output as StreamLine), ...fields } }
+      : line,
+  );
+
+// Every ending of the profile probe's call: only a PostToolUse hook that ran and a hand-off with its note pass.
+const HANDOFF_ENDINGS: [string, (stream: string) => string][] = [
+  ['the hook stand-in', (stream) => stream],
+  ['no hook ran', eachLine((line) => (isHookLine(line) ? null : line))],
+  ['the hook started and never answered', eachLine((line) => (line.subtype === 'hook_response' ? null : line))],
+  ['the hook failed', eachLine((line) => (line.subtype === 'hook_response' ? { ...line, outcome: 'error' } : line))],
+  ['only a PreToolUse hook ran', eachLine((line) => (isHookLine(line) ? { ...line, hook_event: 'PreToolUse' } : line))],
+  ['the call ended without handing off', answered({ claim: 'ok', handoff: '' })],
+  ['a hand-off with no note', answered({ handoff: '' })],
+  ['no structured answer', () => claudeRecordings.lines('no-schema').join('\n')],
+  ['the success recording, with no hook', () => success()],
+];
+
+test('a hand-off probe passes only on the hook stand-in, of every ending', async () => {
+  const outcomes: [string, boolean, string | undefined][] = [];
+  for (const [ending, profile] of HANDOFF_ENDINGS) {
+    const { handoff } = await probeChecks({ profile });
+    outcomes.push([ending, handoff?.ok === true, handoff?.severity]);
+  }
+  assert.deepEqual(
+    outcomes.filter(([, ok]) => ok).map(([ending]) => ending),
+    ['the hook stand-in'],
+  );
+  assert.deepEqual(
+    outcomes.filter(([, ok, severity]) => !ok && severity !== 'error'),
+    [],
+    'every other ending fails the probe as an error',
+  );
+});
+
+test('the hand-off probe fails, naming the hook, when no PostToolUse hook ran', async () => {
+  const { handoff } = await probeChecks({ profile: eachLine((line) => (isHookLine(line) ? null : line)) });
+  assert.equal(handoff?.ok, false, handoff?.message ?? 'no handoff-probe check');
+  assert.ok(handoff.message.includes('PostToolUse hook'), handoff.message);
 });
