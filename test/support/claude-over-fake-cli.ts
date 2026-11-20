@@ -31,8 +31,9 @@ export interface FakeCli {
   command?: string;
 }
 
-// Every path a launch carries, the Harness's and the fake's, in its working directory, argv or environment, holds a
-// space, so no Claude case runs under a path without one (#426). The command is node, claude's stand-in.
+// Every absolute path a launch carries whole as its working directory, an argv entry or an environment value, the
+// Harness's and the fake's, holds a space (#426); a path inside a flag value, JSON or a file is not checked. The
+// spaces case names each role, which catches one turned relative. The command is node, claude's stand-in.
 function assertSpaced(launched: exec.LaunchOptions) {
   for (const carried of [launched.cwd ?? '', ...launched.args, ...Object.values(launched.env ?? {})])
     assert.ok(

@@ -160,7 +160,7 @@ test('a failed call keeps its stderr tail and the init event in its result', CAS
     {
       status: result.status,
       streamMessage: message.includes('Invalid API key'),
-      stderrTail: message.includes(STDERR),
+      stderrTail: message.endsWith(`\nstderr: ${STDERR}`),
       sessionInit: result.sessionInit != null,
     },
     { status: 'failed', streamMessage: true, stderrTail: true, sessionInit: true },
