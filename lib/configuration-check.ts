@@ -60,11 +60,15 @@ function sourceFlows(
 
 // One source through the validator, against the repository's commands and labelPrefix, its schemas and templates read
 // from its own files.
-function validateSource(source: config.Source, harnesses: unknown, repository: config.Source) {
+function validateSource(
+  source: config.Source,
+  files: config.SourceFiles,
+  { harnesses, repository }: { harnesses: unknown; repository: config.Source },
+) {
   return validator.validate(source, {
     harnesses,
-    readSchema: (name) => JSON.parse(config.namedFile(source.files, name)),
-    readTemplate: (name) => config.namedFile(source.files, name),
+    readSchema: (name) => JSON.parse(config.namedFile(files, name)),
+    readTemplate: (name) => config.namedFile(files, name),
     contract: { commands: repository.commands, labelPrefix: repository.labelPrefix },
   });
 }
@@ -76,18 +80,18 @@ const declaresFlows = (source: config.Source) =>
 // fit it, a warning in gg doctor and an error only when selected (Q21), so the validator's own undeclared-command
 // errors give way to that.
 function userFlows(configuration: config.Configuration, harnesses: unknown) {
-  const { user, repository, repositoryFile } = configuration;
+  const { user, repository, repositoryFile, files } = configuration;
   const flows = new Map<string, DeclaredFlow>();
   const misfits = new Map<string, report.Problem>();
   if (!declaresFlows(user)) return { flows, errors: [], warnings: [], misfits };
-  const validated = validateSource(user, harnesses, repository);
+  const validated = validateSource(user, files.user, { harnesses, repository });
   // A Problem's location names the user's source, as its Flows' names do.
   // eslint-disable-next-line id-denylist -- a Problem's location is at
   const located = (problem: report.Problem) => ({ ...problem, at: `${USER_PREFIX}${problem.at || 'gg.json'}` });
   const fits = (problem: report.Problem) => problem.code !== 'no-flow-declared' && !validator.isMissingCommand(problem);
   for (const [name, flow] of sourceFlows(
     validated,
-    { name: 'user', files: user.files },
+    { name: 'user', files: files.user },
     (declared) => USER_PREFIX + declared,
   )) {
     flows.set(name, flow);
@@ -112,14 +116,14 @@ function userFlows(configuration: config.Configuration, harnesses: unknown) {
 // Every declared Flow of both sources by its qualified name, the Problems of their Flows, and each user Flow that does
 // not fit the repository.
 function declaredFlows(configuration: config.Configuration, harnesses: unknown) {
-  const { repository } = configuration;
-  const validated = validateSource(repository, harnesses, repository);
+  const { repository, files } = configuration;
+  const validated = validateSource(repository, files.repository, { harnesses, repository });
   const user = userFlows(configuration, harnesses);
   // With a user Flow to run, a repository that declares none still has its contract to run it under.
   const repositoryErrors = validated.errors.filter(
     (problem) => problem.code !== 'no-flow-declared' || !user.flows.size,
   );
-  const flows = new Map(sourceFlows(validated, { name: 'repository', files: repository.files }, (name) => name));
+  const flows = new Map(sourceFlows(validated, { name: 'repository', files: files.repository }, (name) => name));
   for (const [name, flow] of user.flows) flows.set(name, flow);
   return {
     flows,

@@ -116,8 +116,8 @@ async function installed(t: TestContext, install: string, edit = (_root: string)
     userDirectory: join(root, '..', 'user'),
     commonDir: join(repo, '.git'),
   });
-  const loaded = copied.loadSources(repo, join(root, '..', 'user')).repository;
-  const input = { flow: loaded.flows.default, files: loaded.files, harnesses: {}, commands: {} };
+  const loaded = copied.loadSources(repo, join(root, '..', 'user'));
+  const input = { flow: loaded.repository.flows.default, files: loaded.files.repository, harnesses: {}, commands: {} };
   return { root: JSON.stringify(root).slice(1, -1), input: JSON.stringify(input), hash: copied.configHash(input) };
 }
 
@@ -168,8 +168,8 @@ test('loadSources reads each source whole, from its own gg.json', (t) => {
     user: JSON.stringify({ maxParallel: 3 }),
   });
   const loaded = config.loadSources(roots.repo, roots.user);
-  assert.deepEqual(loaded.repository, { baseBranch: 'trunk', files: {} });
-  assert.deepEqual(loaded.user, { maxParallel: 3, files: {} });
+  assert.deepEqual(loaded.repository, { baseBranch: 'trunk' });
+  assert.deepEqual(loaded.user, { maxParallel: 3 });
   assert.equal(loaded.repositoryFile, roots.files.repo);
   assert.equal(loaded.userFile, roots.files.user);
 });
@@ -177,8 +177,8 @@ test('loadSources reads each source whole, from its own gg.json', (t) => {
 test('a source with no gg.json loads empty, and its required settings are Problems', (t) => {
   const roots = sources(t);
   const loaded = config.loadSources(roots.repo, roots.user);
-  assert.deepEqual(loaded.repository, { files: {} });
-  assert.deepEqual(loaded.user, { files: {} });
+  assert.deepEqual(loaded.repository, {});
+  assert.deepEqual(loaded.user, {});
   assert.deepEqual(
     (settings.parse(loaded).errors ?? []).map((problem) => `${problem.at} ${problem.code}`),
     [
@@ -192,12 +192,39 @@ test('a source with no gg.json loads empty, and its required settings are Proble
   );
 });
 
+// A source is its gg.json as read: gg keeps the files it loads beside it, so no key of gg's own shadows a key the
+// person wrote (#438 Q2 A).
+test("loadSources gives each source as its gg.json reads, with no key of gg's own", (t) => {
+  const roots = sources(t);
+  doctor.init(roots.repo, { baseBranch: 'main', userDirectory: roots.user, commonDir: join(roots.repo, '.git') });
+  const loaded = config.loadSources(roots.repo, roots.user);
+  const written = (file: string) => JSON.parse(readFileSync(file, 'utf8')) as unknown;
+  assert.deepEqual(loaded.repository, written(roots.files.repo));
+  assert.deepEqual(loaded.user, written(roots.files.user));
+});
+
+test('a files key in gg.json is reported', (t) => {
+  const repository = { commands: { test: 'npm test' }, testPaths: ['test/**'], labelPrefix: 'gg', baseBranch: 'main' };
+  const roots = sources(t, {
+    repo: JSON.stringify({ ...repository, files: ['a.md'] }),
+    user: JSON.stringify({ maxParallel: 2, worktreeRoot: '~/worktrees', files: { 'a.md': 1 } }),
+  });
+  const loaded = config.loadSources(roots.repo, roots.user);
+  assert.deepEqual(
+    (settings.parse(loaded).errors ?? []).map((problem) => [problem.at, problem.code, problem.message]),
+    [
+      ['files', 'unknown-key', `${roots.files.repo}: unknown key "files"`],
+      ['user:files', 'unknown-key', `${roots.files.user}: unknown key "files"`],
+    ],
+  );
+});
+
 for (const name of ['implementer.md', 'reviewer.md']) {
   test(`loadSources reads the example Persona ${name} that gg init wrote, with its hash`, (t) => {
     const roots = sources(t);
     doctor.init(roots.repo, { baseBranch: 'main', userDirectory: roots.user, commonDir: join(roots.repo, '.git') });
     const file = readFileSync(join(config.repositoryDirectory(roots.repo), name));
-    const persona = config.loadSources(roots.repo, roots.user).repository.files[name];
+    const persona = config.loadSources(roots.repo, roots.user).files.repository[name];
     assert.ok(persona, `${name} is loaded`);
     assert.equal(String(persona.bytes), file.toString('utf8'));
     assert.equal(persona.hash, sha256(file));
@@ -213,8 +240,8 @@ test('two sources with a same-named Flow load both, each with the files its own 
   const loaded = config.loadSources(roots.repo, roots.user);
   assert.deepEqual(loaded.repository.flows, flow);
   assert.deepEqual(loaded.user.flows, flow);
-  assert.deepEqual(loaded.repository.files['red.md'], sourceFile('# the repository red\n'));
-  assert.deepEqual(loaded.user.files['red.md'], sourceFile('# my red\n'));
+  assert.deepEqual(loaded.files.repository['red.md'], sourceFile('# the repository red\n'));
+  assert.deepEqual(loaded.files.user['red.md'], sourceFile('# my red\n'));
 });
 
 test('loadSources reads each file a source names beside that source', (t) => {
@@ -241,9 +268,9 @@ test('loadSources reads each file a source names beside that source', (t) => {
     'again.md': 'again',
     'stopped.md': 'stopped',
   });
-  const { repository, user } = config.loadSources(roots.repo, roots.user);
-  assert.deepEqual(user.files, { 'my-implementer.md': sourceFile('# my implementer\n') });
-  assert.deepEqual(repository.files, {
+  const { files } = config.loadSources(roots.repo, roots.user);
+  assert.deepEqual(files.user, { 'my-implementer.md': sourceFile('# my implementer\n') });
+  assert.deepEqual(files.repository, {
     'ask.md': sourceFile('ask'),
     'ask.schema.json': sourceFile('{}'),
     'body.md': sourceFile('body'),
@@ -260,7 +287,7 @@ test('a file named __proto__ loads like any other', (t) => {
   // A computed key, which an object literal makes an own key; a literal __proto__: would set the prototype.
   repositoryFiles(roots.repo, { [name]: '# a persona named __proto__\n' });
   const loaded = config.loadSources(roots.repo, roots.user);
-  assert.equal(config.namedFile(loaded.repository.files, name), '# a persona named __proto__\n');
+  assert.equal(config.namedFile(loaded.files.repository, name), '# a persona named __proto__\n');
 });
 
 test('an inline Vertex persona loads from its own source', (t) => {
@@ -269,8 +296,8 @@ test('an inline Vertex persona loads from its own source', (t) => {
   });
   beside(roots.user, { 'red-persona.md': '# red only\n' });
   const loaded = config.loadSources(roots.repo, roots.user);
-  assert.deepEqual(loaded.user.files['red-persona.md'], sourceFile('# red only\n'));
-  assert.deepEqual(loaded.repository.files, {});
+  assert.deepEqual(loaded.files.user['red-persona.md'], sourceFile('# red only\n'));
+  assert.deepEqual(loaded.files.repository, {});
 });
 
 test('a declared file that does not exist is a load error naming the gg.json and the name', (t) => {
@@ -355,7 +382,7 @@ test('loadSources reads the file at every file-naming key, on an Agent and on a 
     const roots = sources(t, { repo: JSON.stringify(declaration) });
     repositoryFiles(roots.repo, { [names[index]!]: names[index]! });
     assert.deepEqual(
-      Object.keys(config.loadSources(roots.repo, roots.user).repository.files),
+      Object.keys(config.loadSources(roots.repo, roots.user).files.repository),
       [names[index]],
       names[index],
     );
@@ -394,13 +421,15 @@ test('approvers change the Config Hash, and none leaves it as it was', () => {
 
 // The run fixture's default Flow, every Agent on the Harness `fake`, as gg run's admission pins it over `harnesses`.
 async function pinnedDefault(t: TestContext, harnesses: Record<string, unknown>): Promise<run.PinnedFlow> {
+  const { files, ...repository } = runFixture.testConfig('');
   const { selected } = await run.admitConfiguration({
     commonDir: tempDirectory.stateDatabaseDirectory(t, 'gg-config-pin-'),
     config: {
-      repository: runFixture.testConfig(''),
-      user: { maxParallel: 2, worktreeRoot: '~/worktrees', files: {} },
+      repository,
+      user: { maxParallel: 2, worktreeRoot: '~/worktrees' },
       repositoryFile: '/repo/.agents/gg/gg.json',
       userFile: '/home/.agents/gg/gg.json',
+      files: { repository: files, user: {} },
     },
     harnesses,
   });

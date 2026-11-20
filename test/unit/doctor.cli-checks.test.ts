@@ -23,12 +23,17 @@ const FAKE_HARNESS = fakeHarness.fakeHarness();
 const DEPS = { gh: github.createGh(fakeGh.fakeGh({ branch: 'b', ticket: 1 }).gh), cwd: '/repo' };
 const file = (bytes: string) => ({ bytes, hash: config.sha256(bytes) });
 
-// `repository` as the repository's source, beside a user source that holds only the machine settings.
-const sources = (repository: config.Source): config.Configuration => ({
+// `repository` as the repository's source, beside a user source that holds only the machine settings; the files it
+// names move beside it.
+const sources = ({
+  files = {},
+  ...repository
+}: config.Source & { files?: config.SourceFiles }): config.Configuration => ({
   repository,
-  user: { maxParallel: 2, worktreeRoot: '~/worktrees', files: {} },
+  user: { maxParallel: 2, worktreeRoot: '~/worktrees' },
   repositoryFile: '/repo/.agents/gg/gg.json',
   userFile: '/home/.agents/gg/gg.json',
+  files: { repository: files, user: {} },
 });
 
 // The example Layer as loadLayers gives it, with every Agent on the Claude Harness, as gg init --harness claude writes

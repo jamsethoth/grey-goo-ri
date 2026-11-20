@@ -89,9 +89,10 @@ test('a decided hold whose Flow is no longer declared finishes its report', asyn
 // The user's directory with `flows`, beside the fixture's repository source: a copy of its Agents, Procedures and
 // files, and the machine settings.
 function withUserFlows(fixture: runFixture.RunFixture, flows: Record<string, golden.ConfiguredFlow>) {
-  const { repository, user } = fixture.options.config;
-  const { agents, procedures, files } = structuredClone(repository);
-  Object.assign(user, { flows, agents, procedures, files });
+  const { repository, user, files } = fixture.options.config;
+  const { agents, procedures } = structuredClone(repository);
+  Object.assign(user, { flows, agents, procedures });
+  files.user = structuredClone(files.repository);
   return user as typeof user & { agents: typeof agents; procedures: typeof procedures };
 }
 
@@ -155,7 +156,7 @@ test("a user Flow's Config Hash equals the same Flow's declared in the repositor
   const fixture = runFixture.fixture(t);
   const user = withUserFlows(fixture, { default: runFixture.testConfig(fixture.root).flows.default! });
   user.agents.spare = { ...user.agents.implementer, persona: 'spare.md' };
-  user.files['spare.md'] = { bytes: '# spare\n', hash: config.sha256('# spare\n') };
+  fixture.options.config.files.user['spare.md'] = { bytes: '# spare\n', hash: config.sha256('# spare\n') };
   const { flows } = await run.admitConfiguration({
     commonDir: fixture.commonDir,
     config: fixture.options.config,

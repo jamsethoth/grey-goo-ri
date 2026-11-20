@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import type * as config from '../../lib/config.ts';
 import * as settings from '../../lib/settings.ts';
 
 const REPOSITORY_FILE = '/repo/.agents/gg/gg.json';
@@ -12,16 +13,15 @@ const SETTINGS = {
 // The Problems the two sources give with `repository` and `user` set over the settings above (undefined leaves a
 // key out).
 function settingsProblems({ repository = {}, user = {} }: { repository?: object; user?: object }) {
-  const without = (value: object) => ({
-    ...Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)),
-    files: {},
-  });
+  const without = (value: object) =>
+    Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined));
   return (
     settings.parse({
       repository: without({ ...SETTINGS.repository, ...repository }),
       user: without({ ...SETTINGS.user, ...user }),
       repositoryFile: REPOSITORY_FILE,
       userFile: USER_FILE,
+      files: { repository: {}, user: {} },
     }).errors ?? []
   );
 }
@@ -390,10 +390,11 @@ test('the repository contract problems are its commands, testPaths, approvers, l
 // it has not checked (#362, decision 4).
 test('the parse gives every Setting with no error, else the errors and the Declared Commands that hold none', () => {
   const configuration = (repository: object) => ({
-    repository: { ...SETTINGS.repository, approvers: ['some-login'], ...repository, files: {} },
-    user: { ...SETTINGS.user, files: {} },
+    repository: { ...SETTINGS.repository, approvers: ['some-login'], ...repository },
+    user: SETTINGS.user,
     repositoryFile: REPOSITORY_FILE,
     userFile: USER_FILE,
+    files: { repository: {}, user: {} },
   });
   assert.deepEqual(settings.parse(configuration({})), {
     settings: {
@@ -420,4 +421,49 @@ test('the parse gives every Setting with no error, else the errors and the Decla
   );
   const commandsFailed = settings.parse(configuration({ labelPrefix: 'a:b', commands: { test: '' } }));
   assert.deepEqual(Object.keys(commandsFailed), ['errors']);
+});
+
+// Values of every JSON kind, each right for some setting and wrong for the others.
+const ANY_VALUES = [
+  undefined,
+  null,
+  true,
+  0,
+  1,
+  -1,
+  1.5,
+  '',
+  ' ',
+  'gg',
+  'a:b',
+  [],
+  ['test/**'],
+  [1],
+  {},
+  { test: 'x' },
+];
+
+// Each setting is judged once, by the check that gives it (#391, #438): whatever a key holds, the parse gives that
+// value as the setting or gives an error, never neither. The keys are those of the Settings a valid parse gives.
+test('each setting the parse gives is its value as written, else the parse gives an error', () => {
+  const valid = { repository: { ...SETTINGS.repository, approvers: ['some-login'] }, user: SETTINGS.user };
+  const parseWith = (changes: { repository?: object; user?: object }) =>
+    settings.parse({
+      repository: { ...valid.repository, ...changes.repository },
+      user: { ...valid.user, ...changes.user },
+      repositoryFile: REPOSITORY_FILE,
+      userFile: USER_FILE,
+      files: { repository: {}, user: {} },
+    });
+  const keys = Object.keys(parseWith({}).settings ?? {}) as (keyof config.Settings)[];
+  assert.deepEqual(keys.length, 7);
+  for (const key of keys) {
+    const source = Object.hasOwn(valid.repository, key) ? 'repository' : 'user';
+    for (const value of ANY_VALUES) {
+      const parsed = parseWith({ [source]: { [key]: value } });
+      const shown = `${source} ${key} of ${JSON.stringify(value)}`;
+      if (parsed.settings) assert.deepEqual(parsed.settings[key], value, shown);
+      else assert.ok(parsed.errors.length, `${shown} gives neither the setting nor an error`);
+    }
+  }
 });

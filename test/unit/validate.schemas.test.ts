@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import * as procedureChecks from '../../lib/validate/procedures.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as procedureActions from '../support/procedure-actions.ts';
 
@@ -295,6 +297,43 @@ test("a failed row on its token's only required Check passing is unreachable", (
       code: 'unreachable-row',
     },
   ]);
+});
+
+// A Check records only passed or failed, so a row on not-run could never match (#438 Q1 A). Each table puts the
+// row where the Check's state is otherwise open: an unrequired Check in passed, the failing one in failed.
+const NOT_RUN_ROWS: Record<procedureChecks.TableName, (config: exampleLayer.Layer) => string> = {
+  passed: (config) => {
+    config.procedures.review.passed.unshift({ when: { 'check.repeat': 'not-run' }, outcome: 'repeat' });
+    return 'procedures.review.passed';
+  },
+  failed: (config) => {
+    config.procedures.implement.failed = [{ when: { 'check.test': 'not-run' }, outcome: 'misscoped' }];
+    return 'procedures.implement.failed';
+  },
+  stopped: (config) => {
+    config.procedures.implement.stopped.unshift({ when: { 'check.test': 'not-run' }, outcome: 'misscoped' });
+    return 'procedures.implement.stopped';
+  },
+};
+
+for (const table of procedureChecks.TABLES) {
+  test(`a rule on a Check's not-run state is refused in the ${table} table`, () => {
+    const config = exampleLayer.config();
+    const at = NOT_RUN_ROWS[table](config);
+    assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [{ at, code: 'unreachable-row' }]);
+  });
+}
+
+// The request's list of the states a rule reads, and the states the frozen Execution Record saves, agree, so a rule
+// written from the request can match (#438).
+test('the Check states the request lets a rule name are the states the Execution Record saves', () => {
+  const text = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
+  const [, saved] = text('docs/interfaces/record.md').match(/^visitState\.checks\.\*\.state: (.+) \(/m)!;
+  const [, listed] = text('docs/requests/node-harness-dag.md').match(/`check\.<id>` \(([^)]+)\)/)!;
+  assert.deepEqual(
+    [...listed.matchAll(/`([^`]+)`/g)].map(([, state]) => state),
+    saved.split(' | ').map((state) => JSON.parse(state) as string),
+  );
 });
 
 test('a token whose every passing case a row maps away is not an Outcome', () => {

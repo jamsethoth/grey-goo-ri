@@ -69,10 +69,11 @@ test("a Persona from the repository's gg.json is pinned with its hash", async (t
   const file = config.configFile(config.repositoryDirectory(repo));
   writeFileSync(file, '{"agents":{"implementer":{"persona":"repo-implementer.md"}}}');
   writeFileSync(join(repo, '.agents', 'gg', 'repo-implementer.md'), '# repo implementer\n');
-  const layered = config.loadSources(repo, join(directory, 'user')).repository;
+  const loaded = config.loadSources(repo, join(directory, 'user'));
+  const layered = loaded.repository;
   const fixture = await golden.fixture(t);
   golden.configure(fixture, (configured) => {
-    configured.files = { ...configured.files, ...layered.files };
+    configured.files = { ...configured.files, ...loaded.files.repository };
     configured.agents.implementer!.persona = (layered.agents as GoldenConfig['agents']).implementer!.persona;
   });
   await interpreter.runExecution(fixture.options);

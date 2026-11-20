@@ -8,7 +8,7 @@ import * as conditions from './conditions.ts';
 import * as checked from './procedures.ts';
 import * as report from './report.ts';
 
-const STATES = ['passed', 'failed', 'not-run'];
+const STATES = ['passed', 'failed'];
 const RULE_KINDS = ['enum', 'boolean', 'integer'];
 
 // A reference that does not type, at `where` in the Procedure.
@@ -211,7 +211,7 @@ function boxesOf(procedure: checked.CheckedProcedure, table: checked.TableName) 
       token,
       checks: Object.fromEntries([
         ...requiredIds.slice(0, j).map((earlier) => [earlier, ['passed']]),
-        [id, ['failed', 'not-run']],
+        [id, ['failed']],
       ]),
     }));
   });

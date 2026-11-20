@@ -22,18 +22,17 @@ export const exampleHarnesses = (): string[] =>
 
 // Each file a source's gg.json names, by that name: its text and the hash the Config Hash takes of it.
 export type SourceFiles = Record<string, { bytes: string; hash: string }>;
-// One source's gg.json as read, and the files it names, read beside it.
-export interface Source {
-  files: SourceFiles;
-  [key: string]: unknown;
-}
-// The two sources gg reads, the repository's .agents/gg/ and the user's GG_HOME, and where each gg.json is. Nothing
-// merges between them (ADR 0022).
+// One source's gg.json as read.
+export type Source = Record<string, unknown>;
+// The two sources gg reads, the repository's .agents/gg/ and the user's GG_HOME, where each gg.json is, and the files
+// each names, read beside it, so no key of gg's own shadows one the person wrote (#438). Nothing merges between them
+// (ADR 0022).
 export interface Configuration {
   repository: Source;
   user: Source;
   repositoryFile: string;
   userFile: string;
+  files: { repository: SourceFiles; user: SourceFiles };
 }
 // The settings a Run reads, from the repository contract and the user's machine settings, once both are checked.
 export interface Settings {
@@ -123,8 +122,8 @@ const declaredFiles = (json: Record<string, unknown>): string[] => [
 
 // A source's gg.json and each file it names, read beside it; a source with no gg.json is empty, and its required
 // settings are Problems, not a load error.
-function readSource(file: string): Source {
-  if (!existsSync(file)) return { files: {} };
+function readSource(file: string): { json: Source; files: SourceFiles } {
+  if (!existsSync(file)) return { json: {}, files: {} };
   const json = readConfigFile(file);
   // Built from entries, so a file such as __proto__ loads like any other (#174).
   const files = declaredFiles(json).map((name) => {
@@ -137,14 +136,22 @@ function readSource(file: string): Source {
     }
     return [name, { bytes, hash: sha256(bytes) }];
   });
-  return { ...json, files: Object.fromEntries(files) };
+  return { json, files: Object.fromEntries(files) };
 }
 
 // The repository's .agents/gg/ and the user's directory, each whole: nothing merges (ADR 0022).
 export function loadSources(repoRoot: string, directory = userDirectory()): Configuration {
   const repositoryFile = configFile(repositoryDirectory(repoRoot));
   const userFile = configFile(directory);
-  return { repository: readSource(repositoryFile), user: readSource(userFile), repositoryFile, userFile };
+  const repository = readSource(repositoryFile);
+  const user = readSource(userFile);
+  return {
+    repository: repository.json,
+    user: user.json,
+    repositoryFile,
+    userFile,
+    files: { repository: repository.files, user: user.files },
+  };
 }
 
 // A file a source named, by that name (loadSources's `files`).
