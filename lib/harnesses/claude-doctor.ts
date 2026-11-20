@@ -23,6 +23,13 @@ const PROBE_WALL_MS = 300_000;
 const CLAUDE_MD_WORD = 'marigold';
 const PROBE_BRIEF = 'Without any tool, answer with the word ok.';
 const BARE_ARGS = ['-p', '--bare', '--output-format', 'stream-json', '--verbose', '--model', 'haiku'];
+// The other credentials the --bare help says bare mode takes, blanked so only CLAUDE_CODE_OAUTH_TOKEN can answer.
+const OTHER_CREDENTIALS = {
+  ANTHROPIC_API_KEY: '',
+  CLAUDE_CODE_USE_BEDROCK: '',
+  CLAUDE_CODE_USE_VERTEX: '',
+  CLAUDE_CODE_USE_FOUNDRY: '',
+};
 
 // The call the profile probe launches, as an Attempt of a read-only Agent would: what launchArgs reads of it.
 const PROBE_ACCESS = 'read-only';
@@ -166,12 +173,17 @@ function profileCheck(ran: Said): Check {
   const problem = ran.failure ?? stream.failure?.message ?? stream.failure?.failureClass;
   if (problem !== undefined) return failed('profile-probe', `the launch profile's call failed: ${problem}`);
   const plugins = stream.sessionInit?.plugins;
-  const loaded = (Array.isArray(plugins) ? plugins : [])
+  if (!Array.isArray(plugins))
+    return failed('profile-probe', "the launch profile's call sent no init plugin list, so isolation is unchecked");
+  const loaded = plugins
     .filter((plugin) => !(referencePaths.isRecord(plugin) && plugin.path === 'builtin'))
     .map((plugin) => JSON.stringify(plugin));
   if (loaded.length)
     return failed('profile-probe', `the launch profile loaded plugins beyond the built-in ones: ${loaded.join(', ')}`);
-  if (JSON.stringify(stream.response).includes(CLAUDE_MD_WORD))
+  const answer = referencePaths.isRecord(stream.response) ? stream.response.answer : undefined;
+  if (typeof answer !== 'string')
+    return failed('profile-probe', "the launch profile's call sent no answer, so CLAUDE.md's reach is unchecked");
+  if (answer.toLowerCase().includes(CLAUDE_MD_WORD))
     return failed('profile-probe', "the launch profile let the repository's CLAUDE.md reach the call");
   return passed('profile-probe', 'the launch profile loads only the built-in plugins and no CLAUDE.md');
 }
@@ -187,6 +199,33 @@ const profileProbe = (runner: Runner, profile: ProfileLaunch) =>
     return profileCheck(await said(runner, launched.argv, options));
   });
 
+// What the --bare probe's call shows: only a call the subscription's token answered tells anything.
+function bareCheck(ran: Said): Check {
+  if (ran.failure !== null) return failed('bare-probe', `the --bare probe failed: ${ran.failure}`, 'warning');
+  const { failure } = claudeStream.read(ran.lines);
+  const sent = objectLines(ran.lines);
+  // The init line names the credential that answered: none is the OAuth token, the only one this probe asks about.
+  const keySource = sent.find((line) => line.type === 'system' && line.subtype === 'init')?.apiKeySource;
+  const error = sent.findLast((line) => line.type === 'assistant' && typeof line.error === 'string')?.error;
+  const reason = failure?.message ?? failure?.failureClass;
+  const because = reason === undefined ? '' : `: ${reason}`;
+  if (keySource !== 'none') {
+    const source = typeof keySource === 'string' ? keySource : 'a credential its init line did not name';
+    return failed(
+      'bare-probe',
+      `the --bare probe ran on ${source}, not the token, so it shows nothing${because}`,
+      'warning',
+    );
+  }
+  if (failure === null)
+    return failed('bare-probe', 'bare mode ran on CLAUDE_CODE_OAUTH_TOKEN, so ADR 0002 can adopt it', 'warning');
+  // A refusal follows the recorded auth-failure stream's shape; the real refusal of the token is unrecorded, so any
+  // other ending warns with its reason instead of passing.
+  if (error === 'authentication_failed')
+    return passed('bare-probe', `bare mode still refuses the subscription token (ADR 0002)${because}`);
+  return failed('bare-probe', `the --bare probe failed${because}`, 'warning');
+}
+
 // The --bare probe tells when bare mode takes the subscription's token, the day ADR 0002 adopts it; with no token it
 // is skipped with a warning (Q5 A).
 async function bareProbe(runner: Runner): Promise<Check> {
@@ -196,18 +235,20 @@ async function bareProbe(runner: Runner): Promise<Check> {
       'CLAUDE_CODE_OAUTH_TOKEN is not set, so the --bare probe was skipped: make one with claude setup-token',
       'warning',
     );
-  const ran = await inTemporary((cwd) => said(runner, BARE_ARGS, { cwd, input: PROBE_BRIEF, wallMs: PROBE_WALL_MS }));
-  const { failure } = claudeStream.read(ran.lines);
-  if (ran.failure === null && failure === null)
-    return failed('bare-probe', 'bare mode ran on CLAUDE_CODE_OAUTH_TOKEN, so ADR 0002 can adopt it', 'warning');
-  if (ran.failure === null && failure?.failureClass === 'auth')
-    return passed('bare-probe', 'bare mode still refuses the subscription token (ADR 0002)');
-  return failed(
-    'bare-probe',
-    `the --bare probe failed: ${ran.failure ?? failure?.message ?? failure?.failureClass}`,
-    'warning',
-  );
+  const options = { env: OTHER_CREDENTIALS, input: PROBE_BRIEF, wallMs: PROBE_WALL_MS };
+  return bareCheck(await inTemporary((cwd) => said(runner, BARE_ARGS, { ...options, cwd })));
 }
+
+// The lines of a stream that are JSON objects, as the CLI sent them.
+const objectLines = (lines: string[]) =>
+  lines.flatMap((line) => {
+    try {
+      const value: unknown = JSON.parse(line);
+      return referencePaths.isRecord(value) ? [value] : [];
+    } catch {
+      return [];
+    }
+  });
 
 // The cheap checks, then under probe the model probes. A CLI that cannot start is the one failure: the checks that
 // read what it prints do not run.

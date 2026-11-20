@@ -20,26 +20,32 @@ export const CHEAP_ARGVS: readonly string[][] = [['--version'], ['auth', 'status
 export const OLD_VERSION = '2.1.327';
 
 // How a case changes the CLI that answers: an executable that cannot start, the version --version prints, the
-// logged-out recording for auth status, and a change to --help's text.
+// logged-out recording for auth status, a change to --help's text, and a change to the stream a model call replays,
+// the launch profile's or the --bare one's.
 export interface CliState {
   missing?: boolean;
   version?: string;
   loggedOut?: boolean;
   help?: (text: string) => string;
+  profile?: (stream: string) => string;
+  bare?: (stream: string) => string;
 }
 
 const sameArgv = (left: readonly string[], right: readonly string[]) =>
   left.length === right.length && left.every((arg, index) => arg === right[index]);
 
 // A stream recording's lines, as the CLI printed them.
-const streamOf = (name: string) => readFileSync(new URL(`../fixtures/claude/${name}.jsonl`, import.meta.url), 'utf8');
+export const recordedStream = (name: string) =>
+  readFileSync(new URL(`../fixtures/claude/${name}.jsonl`, import.meta.url), 'utf8');
 
 // What the CLI prints for `args` under `state`, and its exit code. A model call replays the success recording, and a
 // --bare one the auth-failure recording: bare mode reads no OAuth login today (ADR 0002).
 export function answer(args: readonly string[], state: CliState = {}): { stdout: string; exitCode: number } {
   if (args.includes('-p')) {
-    const name = args.includes('--bare') ? 'auth-failure' : 'success';
-    return { stdout: streamOf(name), exitCode: recordedCommand(name).exitCode };
+    const bare = args.includes('--bare');
+    const name = bare ? 'auth-failure' : 'success';
+    const edit = (bare ? state.bare : state.profile) ?? ((stream: string) => stream);
+    return { stdout: edit(recordedStream(name)), exitCode: recordedCommand(name).exitCode };
   }
   const [version, authStatus, help] = CHEAP_ARGVS as [string[], string[], string[]];
   if (sameArgv(args, version)) {

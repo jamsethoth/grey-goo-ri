@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
+import * as claude from '../../lib/harnesses/claude.ts';
 import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as run from '../../lib/run.ts';
 import * as caseEnv from '../support/case-env.ts';
@@ -193,4 +194,112 @@ test("gg doctor gives the error gg run's preflight refuses each failing Claude C
     const { text } = await doctor.doctor({ config: configuration, ...DEPS, harnesses, commonDir });
     assert.deepEqual(linesOf(text, 'error'), refused, fails);
   }
+});
+
+// The Claude Harness's checks under --probe over the CLI as recorded, changed by `state`, and its launches.
+async function probeChecks(state: recordedCli.CliState) {
+  const cli = recordedCli.recordedCli(state);
+  const { checks } = await claude.createCli(cli).doctor({ probe: true });
+  const named = (name: string) => checks.find((check) => check.name === name);
+  return { bare: named('bare-probe'), profile: named('profile-probe'), launches: cli.launches };
+}
+
+type StreamLine = Record<string, unknown>;
+
+// A stream recording with each line changed by `edit`, which drops a line by giving null.
+const eachLine = (edit: (line: StreamLine) => StreamLine | null) => (stream: string) =>
+  stream
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((text) => {
+      const line = edit(JSON.parse(text) as StreamLine);
+      return line ? [JSON.stringify(line)] : [];
+    })
+    .join('\n');
+const isInit = (line: StreamLine) => line.type === 'system' && line.subtype === 'init';
+const keySource = (source: string, line: StreamLine) => (isInit(line) ? { ...line, apiKeySource: source } : line);
+const success = () => recordedCli.recordedStream('success');
+
+// F1: only the subscription token may answer the --bare probe, so gg's other credentials are blanked for its launch.
+test('the --bare probe blanks the other credentials bare mode takes', async (t) => {
+  caseEnv.caseEnv(t, {
+    CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token',
+    ANTHROPIC_API_KEY: 'sk-ant-case-key',
+    CLAUDE_CODE_USE_BEDROCK: '1',
+  });
+  const { launches } = await probeChecks({});
+  const [bare] = launches.filter(({ args }) => args.includes('--bare'));
+  for (const name of [
+    'ANTHROPIC_API_KEY',
+    'CLAUDE_CODE_USE_BEDROCK',
+    'CLAUDE_CODE_USE_VERTEX',
+    'CLAUDE_CODE_USE_FOUNDRY',
+  ])
+    assert.equal(bare?.env?.[name], '', `the --bare launch blanks ${name}`);
+});
+
+test('a --bare probe that ran on an API key warns, naming it, and draws no verdict', async (t) => {
+  caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
+  const { bare } = await probeChecks({
+    bare: () => eachLine((line) => keySource('ANTHROPIC_API_KEY', line))(success()),
+  });
+  assert.equal(bare?.ok, false);
+  assert.equal(bare.severity, 'warning');
+  assert.ok(bare.message.includes('ANTHROPIC_API_KEY') && !bare.message.includes('adopt'), bare.message);
+});
+
+test("a --bare probe refused on an invalid API key warns with the CLI's reason, not a pass", async (t) => {
+  caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
+  const { bare } = await probeChecks({});
+  assert.equal(bare?.ok, false);
+  assert.equal(bare.severity, 'warning');
+  assert.ok(bare.message.includes('Invalid API key'), bare.message);
+});
+
+test("a --bare probe refused with authentication_failed and no API key passes, keeping the CLI's reason", async (t) => {
+  caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
+  const { bare } = await probeChecks({ bare: eachLine((line) => keySource('none', line)) });
+  assert.equal(bare?.ok, true, bare?.message ?? 'no bare-probe check');
+  assert.ok(bare.message.includes('Invalid API key'), bare.message);
+});
+
+test('a --bare probe failed on another auth error with no API key warns that it failed', async (t) => {
+  caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
+  const onHold = (line: StreamLine) =>
+    keySource('none', line.type === 'assistant' ? { ...line, error: 'account_on_hold' } : line);
+  const { bare } = await probeChecks({ bare: eachLine(onHold) });
+  assert.equal(bare?.ok, false);
+  assert.equal(bare.severity, 'warning');
+  assert.ok(bare.message.includes('failed'), bare.message);
+});
+
+// F2: a profile probe passes only on the evidence it checks, its init's plugin list and its structured answer.
+test('the profile probe fails, naming the answer, when the call sent no structured answer', async () => {
+  const noSchema = () => recordedCli.recordedStream('no-schema');
+  const wordInResult = (line: StreamLine) => (line.type === 'result' ? { ...line, result: 'marigold' } : line);
+  for (const profile of [noSchema, () => eachLine(wordInResult)(noSchema())]) {
+    const { profile: check } = await probeChecks({ profile });
+    assert.equal(check?.ok, false);
+    assert.equal(check.severity, 'error');
+    assert.ok(check.message.includes('no answer'), check.message);
+  }
+});
+
+test('the profile probe fails, naming the plugin list, when the init sent none', async () => {
+  const noInit = eachLine((line) => (isInit(line) ? null : line));
+  const notAList = eachLine((line) => (isInit(line) ? { ...line, plugins: 'builtin' } : line));
+  for (const edit of [noInit, notAList]) {
+    const { profile } = await probeChecks({ profile: edit });
+    assert.equal(profile?.ok, false);
+    assert.equal(profile.severity, 'error');
+    assert.ok(profile.message.includes('plugin list'), profile.message);
+  }
+});
+
+test('the profile probe fails when its answer holds the CLAUDE.md word in any case', async () => {
+  const capitalised = (line: StreamLine) =>
+    line.type === 'result' ? { ...line, structured_output: { answer: 'Marigold' } } : line;
+  const { profile } = await probeChecks({ profile: eachLine(capitalised) });
+  assert.equal(profile?.ok, false);
+  assert.ok(profile.message.includes('CLAUDE.md'), profile.message);
 });
