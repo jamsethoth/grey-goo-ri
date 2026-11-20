@@ -193,6 +193,11 @@ function checkAgentAction(declaring: ProcedureContext, declared: DeclaredSoFar, 
   if (report.isName(action.schema)) {
     declared.schemaName = action.schema;
     declared.schema = loadSchema(declaring, action.schema, location);
+    // gg adds the note to the schema of an Agent with a contextBudget itself (#430).
+    if (Object.hasOwn(declared.schema.properties ?? {}, briefs.HANDOFF_NOTE)) {
+      const message = `${action.schema}: the property ${briefs.HANDOFF_NOTE} is gg's own, for an agent's hand-off note`;
+      report.error(problems, location, 'reserved-handoff-name', message, { name: briefs.HANDOFF_NOTE });
+    }
   } else requireFile(problems, action, 'schema', location);
 }
 

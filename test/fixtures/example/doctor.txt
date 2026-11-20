@@ -32,7 +32,7 @@ vertex red
   stopped:
     1. response.reason = misscoped -> misscoped
     2. response.reason = no-test-needed -> no-test
-  outcomes: ok, failed, misscoped, no-test, blocked, harness-timeout, harness-transient, harness-unparsed
+  outcomes: ok, failed, misscoped, no-test, blocked, harness-timeout, harness-transient, harness-unparsed, harness-handoff
   routes:
     ok -> green
     failed -> end needs-human (Flow "*"); work left in place
@@ -42,6 +42,7 @@ vertex red
     harness-timeout -> end needs-human (Flow "*"); work left in place
     harness-transient -> end needs-human (Flow "*"); work left in place
     harness-unparsed -> end needs-human (Flow "*"); work left in place
+    harness-handoff -> end needs-human (Flow "*"); work left in place
   inputs:
     findings <- reviewer.review.response.findings (optional)
     previous <- green.green.response | senior-green.green.response (optional)
@@ -58,7 +59,7 @@ vertex green
   stopped:
     1. response.reason = misscoped -> misscoped
     2. response.reason = bad-test -> bad-test
-  outcomes: ok, failed, misscoped, bad-test, blocked, harness-timeout, harness-transient, harness-unparsed
+  outcomes: ok, failed, misscoped, bad-test, blocked, harness-timeout, harness-transient, harness-unparsed, harness-handoff
   routes:
     ok -> reviewer
     failed -> senior-green; work rescued, or left in place once exhausted
@@ -68,6 +69,7 @@ vertex green
     harness-timeout -> end needs-human (Flow "*"); work left in place
     harness-transient -> end needs-human (Flow "*"); work left in place
     harness-unparsed -> end needs-human (Flow "*"); work left in place
+    harness-handoff -> end needs-human (Flow "*"); work left in place
   inputs:
     testFiles <- red.commit.files | senior-red.commit.files (optional)
     red <- red.red-check.evidence | senior-red.red-check.evidence (optional)
@@ -87,7 +89,7 @@ vertex senior-green
   stopped:
     1. response.reason = misscoped -> misscoped
     2. response.reason = bad-test -> bad-test
-  outcomes: ok, failed, misscoped, bad-test, blocked, harness-timeout, harness-transient, harness-unparsed
+  outcomes: ok, failed, misscoped, bad-test, blocked, harness-timeout, harness-transient, harness-unparsed, harness-handoff
   max: 1, exhausted end needs-human
   routes:
     ok -> reviewer
@@ -98,6 +100,7 @@ vertex senior-green
     harness-timeout -> end needs-human (Flow "*"); work left in place
     harness-transient -> end needs-human (Flow "*"); work left in place
     harness-unparsed -> end needs-human (Flow "*"); work left in place
+    harness-handoff -> end needs-human (Flow "*"); work left in place
   inputs:
     testFiles <- red.commit.files | senior-red.commit.files (optional)
     red <- red.red-check.evidence | senior-red.red-check.evidence (optional)
@@ -120,7 +123,7 @@ vertex reviewer
   stopped:
     1. response.reason = misscoped -> misscoped
   otherwise: changes
-  outcomes: ok, repeat, retest, changes, misscoped, blocked, harness-timeout, harness-transient, harness-unparsed
+  outcomes: ok, repeat, retest, changes, misscoped, blocked, harness-timeout, harness-transient, harness-unparsed, harness-handoff
   routes:
     ok -> publish
     repeat -> senior-dev (max 1, exhausted end needs-human)
@@ -131,6 +134,7 @@ vertex reviewer
     harness-timeout -> end needs-human (Flow "*")
     harness-transient -> end needs-human (Flow "*")
     harness-unparsed -> end needs-human (Flow "*")
+    harness-handoff -> end needs-human (Flow "*")
   inputs:
     report <- green.green.response | senior-green.green.response | implementer-fix.fix.response | senior-dev.fix.response
     red <- red.red-check.evidence | senior-red.red-check.evidence (optional)
@@ -149,7 +153,7 @@ vertex senior-red
   stopped:
     1. response.reason = misscoped -> misscoped
     2. response.reason = no-test-needed -> no-test
-  outcomes: ok, failed, misscoped, no-test, blocked, harness-timeout, harness-transient, harness-unparsed
+  outcomes: ok, failed, misscoped, no-test, blocked, harness-timeout, harness-transient, harness-unparsed, harness-handoff
   max: 1, exhausted end needs-human
   routes:
     ok -> green
@@ -160,6 +164,7 @@ vertex senior-red
     harness-timeout -> end needs-human (Flow "*"); work left in place
     harness-transient -> end needs-human (Flow "*"); work left in place
     harness-unparsed -> end needs-human (Flow "*"); work left in place
+    harness-handoff -> end needs-human (Flow "*"); work left in place
   inputs:
     findings <- reviewer.review.response.findings
     previous <- green.green.response | senior-green.green.response (optional)
@@ -175,7 +180,7 @@ vertex implementer-fix
   failed: none
   stopped:
     1. response.reason = misscoped -> misscoped
-  outcomes: ok, failed, misscoped, blocked, harness-timeout, harness-transient, harness-unparsed
+  outcomes: ok, failed, misscoped, blocked, harness-timeout, harness-transient, harness-unparsed, harness-handoff
   routes:
     ok -> reviewer
     failed -> senior-dev; work rescued, or left in place once exhausted
@@ -184,6 +189,7 @@ vertex implementer-fix
     harness-timeout -> end needs-human (Flow "*"); work left in place
     harness-transient -> end needs-human (Flow "*"); work left in place
     harness-unparsed -> end needs-human (Flow "*"); work left in place
+    harness-handoff -> end needs-human (Flow "*"); work left in place
   inputs:
     report <- green.green.response | senior-green.green.response | implementer-fix.fix.response | senior-dev.fix.response
     red <- red.red-check.evidence | senior-red.red-check.evidence (optional)
@@ -204,7 +210,7 @@ vertex senior-dev
   failed: none
   stopped:
     1. response.reason = misscoped -> misscoped
-  outcomes: ok, failed, misscoped, blocked, harness-timeout, harness-transient, harness-unparsed
+  outcomes: ok, failed, misscoped, blocked, harness-timeout, harness-transient, harness-unparsed, harness-handoff
   max: 1, exhausted end needs-human
   routes:
     ok -> reviewer
@@ -214,6 +220,7 @@ vertex senior-dev
     harness-timeout -> end needs-human (Flow "*"); work left in place
     harness-transient -> end needs-human (Flow "*"); work left in place
     harness-unparsed -> end needs-human (Flow "*"); work left in place
+    harness-handoff -> end needs-human (Flow "*"); work left in place
   inputs:
     report <- green.green.response | senior-green.green.response | implementer-fix.fix.response | senior-dev.fix.response
     red <- red.red-check.evidence | senior-red.red-check.evidence (optional)

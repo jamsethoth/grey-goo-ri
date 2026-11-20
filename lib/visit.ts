@@ -29,6 +29,8 @@ export type FixedRow =
   | 'unknown-failure'
   | 'parse-retry'
   | 'parse-exhausted'
+  | 'handed-off'
+  | 'handoff-exhausted'
   | 'claimed'
   | 'recover';
 

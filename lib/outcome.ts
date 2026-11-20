@@ -12,8 +12,11 @@ export const DEFAULT_RESOLUTION_POLICY: ResolutionPolicy = {
   rateLimited: 2,
   timeout: 1,
   parse: 1,
-  handoff: 0,
+  handoff: 3,
 };
+
+// The Claim token gg adds for an agent that hands off past its contextBudget (#430).
+export const HANDED_OFF = 'handed-off';
 
 export type FailureClass =
   'transient' | 'rate-limited' | 'auth' | 'quota' | 'budget' | 'permission' | 'rejected' | 'invalid' | 'unknown';
@@ -68,10 +71,12 @@ const timedOut = (signals: Resolving) => signals.result.status === 'timed-out' |
 const completed = (signals: Resolving) => signals.result.status === 'completed';
 const unparsed = (signals: Resolving) =>
   completed(signals) && (signals.result.response == null || !signals.claim?.valid);
+// The rows before it leave only a completed call with a valid Claim.
+const handedOff = (signals: Resolving) => signals.claim?.token === HANDED_OFF;
 const violated = (signals: Resolving) => signals.checks.find((check) => !check.passed && check.integrity);
 // Harness exhaustion, which a Vertex may route; unrouted, each ends at needs-human (Q3f, R12c). A run stop, an
 // Integrity Violation and any other failure are never routable.
-export const HARNESS_OUTCOMES = ['harness-timeout', 'harness-transient', 'harness-unparsed'];
+export const HARNESS_OUTCOMES = ['harness-timeout', 'harness-transient', 'harness-unparsed', 'harness-handoff'];
 // The engine's own routable Outcomes: a required Check's final failure is `failed` (T7, U14).
 export const ENGINE_OUTCOMES = ['failed', ...HARNESS_OUTCOMES];
 
@@ -130,6 +135,14 @@ export const FIXED_ROWS: TableRow[] = [
     direction: 'retry',
   },
   { name: 'parse-exhausted', matches: unparsed, outcome: 'harness-unparsed', direction: 'stop' },
+  // An agent past its contextBudget hands its work on to a fresh Session (#430).
+  {
+    name: 'handed-off',
+    matches: (signals) => handedOff(signals) && within(signals, 'handoff'),
+    outcome: 'handed-off',
+    direction: 'retry',
+  },
+  { name: 'handoff-exhausted', matches: handedOff, outcome: 'harness-handoff', direction: 'stop' },
   { name: 'claimed', matches: () => true, outcome: null, direction: 'advance' },
 ];
 
@@ -147,6 +160,7 @@ export function resolve({
   const check = row.name === 'integrity-violation' ? (violated(input) as TableCheck).name : null;
   const retryKinds: Partial<Record<visit.FixedRow, RetryKind | null | undefined>> = {
     'parse-retry': 'parse',
+    'handed-off': 'handoff',
     'timeout-retry': 'timeout',
     'transient-retry': transientKind(input),
   };

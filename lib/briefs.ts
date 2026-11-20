@@ -2,6 +2,7 @@
 // inside the strict subset below, which every Harness accepts (docs/interfaces/harness.md, `run(call)`).
 
 import * as jsonValue from './json-value.ts';
+import * as outcome from './outcome.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as publicText from './public-text.ts';
 import * as render from './render.ts';
@@ -126,10 +127,17 @@ export function validateResponse(schema: referencePaths.SchemaNode, response: un
     : { valid: true, token: (response as { claim?: string | null }).claim ?? null, reason: null };
 }
 
+// The root field of a hand-off's note of what remains, which only gg may add to a schema (#430).
+export const HANDOFF_NOTE = 'handoff';
 // The schema gg sends an Agent with a contextBudget: the Procedure's, its Claim enum widened with `handed-off` and a
-// required root `handoff` note, empty unless the agent hands off (#430, Q3 A). Stub until #430's Green.
+// required root `handoff` note, empty unless the agent hands off (#430, Q3 A).
 export function handoffSchema(schema: referencePaths.SchemaNode): referencePaths.SchemaNode {
-  return schema;
+  const widened = structuredClone(schema);
+  const claim = widened.properties!.claim!;
+  claim.enum = [...claim.enum!, outcome.HANDED_OFF];
+  widened.properties![HANDOFF_NOTE] = { type: 'string' };
+  widened.required = [...(widened.required ?? []), HANDOFF_NOTE];
+  return widened;
 }
 
 const quoted = (list: unknown[]) => (list.length ? list.map((value) => JSON.stringify(value)).join(' | ') : '(none)');

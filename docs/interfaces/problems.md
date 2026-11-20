@@ -33,6 +33,7 @@ required-key-missing
 unknown-key
 invalid-name
 reserved-name
+reserved-handoff-name
 exhausted-without-max
 human-only-end
 malformed-route-target
@@ -139,6 +140,7 @@ The rule each code names:
 | `unknown-key` | a key that is not declared where it is |
 | `invalid-name` | a name breaks its form |
 | `reserved-name` | a name gg reserves is taken |
+| `reserved-handoff-name` | a Procedure declares the hand-off note (`handoff`) or Claim token (`handed-off`), which gg adds itself |
 | `exhausted-without-max` | a route names `exhausted` without `max` |
 | `human-only-end` | a route names the human-only end `done` |
 | `malformed-route-target` | a route target is not a Vertex id, `{ end }` or `{ to, max?, exhausted? }` |
@@ -282,6 +284,8 @@ invalid-name.file?: string
 reserved-name: object (report.ProblemParams)
 reserved-name.name: string
 reserved-name.file?: string
+reserved-handoff-name: object (report.ProblemParams)
+reserved-handoff-name.name: string
 unknown-vertex: object (report.ProblemParams)
 unknown-vertex.vertex: unknown
 unknown-end: object (report.ProblemParams)
