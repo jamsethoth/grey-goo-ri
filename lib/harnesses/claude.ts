@@ -305,7 +305,14 @@ function resultOf(ended: exec.LaunchResult | Error, stream: claudeStream.ClaudeS
     const result = { status: 'failed' as const, sessionId: null, transcriptPath: null, usage };
     return { response: null, result: { ...result, cleanup: commandCleanup.NO_COMMAND }, failure };
   }
-  const failure = ended.cancelled || ended.timedOut ? null : stream.failure;
+  const streamFailure = ended.cancelled || ended.timedOut ? null : stream.failure;
+  // A failed call keeps what the CLI printed to stderr in the message the Execution Record saves (#426 Q1 A), without
+  // its last newline; trimEnd, not trim, since a tail cut short may start with the CLI's indentation.
+  const stderrTail = ended.stderrTail.trimEnd();
+  const failure =
+    streamFailure && stderrTail
+      ? { ...streamFailure, message: `${streamFailure.message}\nstderr: ${stderrTail}` }
+      : streamFailure;
   const stopped = ended.cancelled ? 'killed' : ended.timedOut && 'timed-out';
   return {
     response: stream.response,
