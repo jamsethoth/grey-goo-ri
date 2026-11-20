@@ -3,7 +3,8 @@
 // lib/exec.ts's own launch cases (test/contract/exec/launch.test.ts) stay, and do not count for this.
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { isAbsolute } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import * as claudeOverFakeCli from '../../support/claude-over-fake-cli.ts';
 import * as processProbe from '../../support/process-probe.ts';
 
@@ -12,7 +13,8 @@ const fakeCli = claudeOverFakeCli.claudeOverFakeCli;
 const CASE = { timeout: 120_000 };
 
 // A stop's clock: long enough that the fake has started its descendant before the stop, so the case can see the
-// descendant go.
+// descendant go. The CLI, a middle process and the descendant start in series, which took up to 1.36 s with 16 calls
+// at once (docs/testing.md rule 1).
 const STOP_MS = 3_000;
 
 // What the Harness's stderr text is, written by the fake to its stderr.
@@ -85,18 +87,43 @@ test('the Claude Harness sends the prompt on stdin, never argv', CASE, async (t)
   );
 });
 
-// Every path the launch carries, read from what launch was given: the repository, the Run directory and the files
-// launchArgs names in it, the Claude configuration directory, and the fake's own script and recording.
+// Every path the call carries, by its role: the repository, the settings and persona files launchArgs names in the
+// Run directory, a listed plugin's directory and the Claude configuration directory, each as the Harness gave launch;
+// the fake's own script, recording, received and pid files, each shown reached by what the fake did with it.
 test('every path a Claude call carries holds a space', CASE, async (t) => {
-  const fake = fakeCli(t, { scenario: 'success' });
-  await fake.harness.run(claudeCall(fake), hooksOf());
-  const [options] = fake.launches;
-  const values = [options?.cwd, ...(options?.args ?? []), ...Object.values(options?.env ?? {})];
-  const paths = values.filter((value): value is string => typeof value === 'string' && isAbsolute(value));
-  assert.ok(paths.length >= 5, `the paths: ${JSON.stringify(paths)}`);
+  const fake = fakeCli(t, { scenario: 'success', orphan: true });
+  const plugin = join(fake.configDirectory, 'plugins', 'a plugin');
+  mkdirSync(plugin, { recursive: true });
+  const installed = { plugins: { 'alpha@mkt': [{ installPath: plugin }] } };
+  writeFileSync(join(fake.configDirectory, 'plugins', 'installed_plugins.json'), JSON.stringify(installed));
+  const agent = { harness: 'claude', persona: 'implementer.md', access: 'workspace-write', plugins: ['alpha'] };
+  const tools = fake.harness.resolveTools(agent, { commands: {}, platform: process.platform });
+  const { result } = await fake.harness.run(claudeCall(fake, { agent, tools }), hooksOf());
+  const { cwd = '', args = [] } = fake.launches[0] ?? {};
+  const after = (flag: string) => args[args.indexOf(flag) + 1] ?? '';
   assert.deepEqual(
-    paths.filter((path) => !path.includes(' ')),
-    [],
+    {
+      repository: cwd.includes(' '),
+      settings: after('--settings').includes(' '),
+      persona: after('--append-system-prompt-file').includes(' '),
+      plugin: after('--plugin-dir') === plugin && plugin.includes(' '),
+      configDirectory: fake.configDirectory.includes(' '),
+      scriptAndRecording: result.status,
+      received: fake.received().stdin !== null,
+      cliPid: processProbe.pidIn(fake.cliPidFile) > 0,
+      orphanPid: processProbe.pidIn(fake.orphanPidFile) > 0,
+    },
+    {
+      repository: true,
+      settings: true,
+      persona: true,
+      plugin: true,
+      configDirectory: true,
+      scriptAndRecording: 'completed',
+      received: true,
+      cliPid: true,
+      orphanPid: true,
+    },
   );
 });
 

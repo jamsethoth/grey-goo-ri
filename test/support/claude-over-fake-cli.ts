@@ -54,10 +54,11 @@ export function claudeOverFakeCli(t: TestContext, cli: FakeCli) {
   const recording = join(directory, 'the recording');
   for (const extension of ['.json', '.jsonl'])
     copyFileSync(`${RECORDINGS}/${scenario}${extension}`, recording + extension);
-  // What launch was asked for, each call's options as the fake was started with them.
+  // What the Harness asked launch for, each call's options as it passed them.
   const launches: exec.LaunchOptions[] = [];
   const overFake = (options: exec.LaunchOptions) => {
-    const started = {
+    launches.push(options);
+    return launch({
       ...options,
       command,
       args: [fakeScript, ...options.args],
@@ -71,9 +72,7 @@ export function claudeOverFakeCli(t: TestContext, cli: FakeCli) {
         ...(orphan && { FAKE_CLAUDE_ORPHAN: orphanPidFile }),
         ...(stderr !== undefined && { FAKE_CLAUDE_STDERR: stderr }),
       },
-    };
-    launches.push(started);
-    return launch(started);
+    });
   };
   const harness = {
     ...claude.createClaude({ configDirectory }),

@@ -20,7 +20,7 @@ entry point since #199 (ADR 0019).
    waits on the event it
    asserts on (a PID file written, a lock taken, a run settled), never on a fixed duration; a wait may be bounded
    only by the case's own timeout (#143). Time-dependent logic takes the injected clock (`{ now, sleep }`), not the
-   wall clock. Eight cases measure real time, recorded as exceptions because their subject is real time across
+   wall clock. Eleven cases measure real time, recorded as exceptions because their subject is real time across
    processes, which no injected clock reaches. None compares one process's clock with another's: two processes'
    `Date.now()` can disagree by a millisecond on Windows, so an order between processes is shown causally, by what one
    saw of the other's writes (#260):
@@ -44,6 +44,10 @@ entry point since #199 (ADR 0019).
    - `test/contract/exec/launch.test.ts`, `output that arrives while onIdle is pending re-arms the stall clock`: a 2 s
      stall must not fire within 0.3 s of output that arrived while onIdle was pending; onIdle answers only after it saw
      the output.
+   - `test/contract/harness/claude-launcher.test.ts`, `a call silent past its stall timeout is timed-out and its tree
+     is gone`, `a call past its wall clock is timed-out and its tree is gone` and `descendants the CLI orphaned are
+     killed`: no hook holds launch's stall and wall clocks, so the 3 s stop must outlast three node starts in series,
+     the CLI, a middle process and the descendant, which took up to 1.36 s with 16 calls at once.
 2. **Test behaviour through the public interface.** Call a module's exports (the namespace import of AGENTS.md
    Tests), not its private helpers or internal shapes. A refactor that keeps behaviour must not break a test.
 3. **Assert state, not interactions.** Check the result (the record, the events, the worktree, the labels), not
