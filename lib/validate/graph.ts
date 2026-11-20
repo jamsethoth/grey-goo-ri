@@ -23,6 +23,7 @@ export type Bounds = Map<string, { max: number | null; exhausted: model.Target |
 export interface WholeVertex {
   vertex: model.DeclaredVertexJson;
   procedure: checked.HeldProcedure;
+  actions: procedures.Action[];
   outcomes: string[];
 }
 // The Flow the graph checks read; a value its check refused is absent.
@@ -137,15 +138,11 @@ function workOf(write: boolean, cases: OutcomeCase[], landings: Landing[] | null
   return rescued ? 'rescued' : 'left in place';
 }
 
-// A writing Vertex commits on every passing path, under a Claim token that requires a Check. Only a whole Vertex is
-// checked, whose Procedure nothing refused, so its Actions are typed.
-function checkWrites(
-  fail: (where: string, finding: report.Finding) => void,
-  id: string,
-  procedure: checked.HeldProcedure,
-) {
+// A writing Vertex commits on every passing path, under a Claim token that requires a Check.
+function checkWrites(fail: (where: string, finding: report.Finding) => void, id: string, whole: WholeVertex) {
+  const { procedure, actions } = whole;
   if (!procedure.tokens.passed.length) return;
-  if (!(procedure.typed.actions as procedures.Action[]).some((action) => action.do === 'commit')) {
+  if (!actions.some((action) => action.do === 'commit')) {
     fail(id, {
       code: 'write-without-commit',
       message:
@@ -168,8 +165,9 @@ function checkWrites(
 function checkWhole(problems: report.Report, graph: Graph) {
   const fail = (id: string, finding: report.Finding) =>
     report.errorOf(problems, `${graph.location}.ticket.vertices.${id}`, finding);
-  for (const [id, { vertex, procedure, outcomes }] of graph.whole) {
-    if (vertex.access !== 'read-only') checkWrites(fail, id, procedure);
+  for (const [id, whole] of graph.whole) {
+    const { vertex, outcomes } = whole;
+    if (vertex.access !== 'read-only') checkWrites(fail, id, whole);
     for (const name of outcomes)
       if (!flow.route(vertex.route, graph.ticket.routes, name))
         fail(id, {

@@ -59,8 +59,9 @@ export interface CheckedProcedure {
   // Procedure is refused, which holds every route-map check through a Vertex naming it (#454, Q1 A).
   refused: Reported | undefined;
 }
-// A checked Procedure as the checks of what it produces read it: whether it was refused is their caller's (#459).
-export type HeldProcedure = Omit<CheckedProcedure, 'refused'>;
+// A checked Procedure as the checks of what it produces read it, with no part that can hold a refusal: whether it was
+// refused is their caller's, and a held Vertex carries its typed Actions (#459, D1 B).
+export type HeldProcedure = Omit<CheckedProcedure, 'refused' | 'typed' | 'malformed'>;
 // What the Resolved Flow carries of a Procedure, each part as its check typed it, or Reported where it reported. A
 // part is undefined where the check that refuses it is references.ts's, which reports it by the same rule: a tests
 // path that is not a string (malformed-reference), and a row condition rules.isCondition refuses

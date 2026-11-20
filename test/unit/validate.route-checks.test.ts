@@ -15,24 +15,40 @@ import * as typeShape from '../support/type-shape.ts';
 // A flag, a set of ids, or a refusal.
 type Banned = boolean | Set<unknown> | report.Reported;
 type Admits<Value> = [Extract<Value, Banned>] extends [never] ? false : true;
-// The fields of each value of a Map that can hold a refusal, at `at.*`.
-type MapFlags<Value, At extends string> = {
-  [Key in keyof Value & string]-?: [Extract<Value[Key], report.Reported>] extends [never] ? never : `${At}.*.${Key}`;
-}[keyof Value & string];
-// The fields of a parameter that can hold a flag or a refusal, or a field of each value of a Map field that can.
-type FieldFlags<Value, At extends string> = {
-  [Key in keyof Value & string]-?: Admits<Value[Key]> extends true
-    ? `${At}.${Key}`
-    : Value[Key] extends Map<unknown, infer Item>
-      ? MapFlags<NonNullable<Item>, `${At}.${Key}`>
-      : never;
-}[keyof Value & string];
-// Each parameter, by its position, that is or holds a flag or a refusal.
-type ParameterFlags<Parameters extends unknown[]> = {
-  [Index in keyof Parameters & `${number}`]: Admits<Parameters[Index]> extends true
-    ? `[${Index}]`
-    : FieldFlags<Parameters[Index], `[${Index}]`>;
-}[keyof Parameters & `${number}`];
+// Depth less one, so the walk below stops.
+type Less = [never, 0, 1, 2, 3, 4, 5, 6];
+// Each path in a value, to six levels, that can hold a flag or a refusal: the value, a field, a Map's value, a list's
+// item. A function is behaviour, not a value given.
+type Flags<Value, At extends string, Depth extends number> = [Depth] extends [never]
+  ? never
+  : Admits<Value> extends true
+    ? At
+    : Value extends ReadonlyMap<unknown, infer Item>
+      ? Flags<NonNullable<Item>, `${At}.*`, Less[Depth]>
+      : Value extends readonly (infer Item)[]
+        ? Flags<Item, `${At}[]`, Less[Depth]>
+        : Value extends (...args: never[]) => unknown
+          ? never
+          : Value extends object
+            ? { [Key in keyof Value & string]-?: Flags<Value[Key], `${At}.${Key}`, Less[Depth]> }[keyof Value & string]
+            : never;
+// The paths whose boolean is data, not a flag: a Vertex as declared (JSON), a Procedure's JSON Schema, a Claim token's
+// declared `stop`, an Action's keys as declared, and the two route facts the graph computes for each edge.
+type Data =
+  | `[1].${'resolved' | 'warned'}.*.${string}`
+  | `[1].whole.*.vertex.${string}`
+  | `${string}.schema.${string}`
+  | `${string}.claimTokens.${string}`
+  | `${string}.actions[].${string}`
+  | '[2][].write'
+  | '[2][].landings[].exhausted';
+// Each parameter's paths, by its position, that can hold a flag or a refusal.
+type ParameterFlags<Parameters extends unknown[]> = Exclude<
+  {
+    [Index in keyof Parameters & `${number}`]: Flags<Parameters[Index], `[${Index}]`, 6>;
+  }[keyof Parameters & `${number}`],
+  Data
+>;
 // tsc fails at the line of each check below that receives a flag or a refusal.
 const held = <Flagged extends string>(flagged: [Flagged] extends [never] ? 'held' : Flagged) => flagged;
 
@@ -89,8 +105,11 @@ test('no route check receives a value that can hold a flag or a refusal', () => 
   const visit = (node: ts.Node) => {
     if (ts.isPropertyAssignment(node) && ts.isCallExpression(node.initializer) && node.initializer.typeArguments) {
       const type = checker.getTypeFromTypeNode(node.initializer.typeArguments[0]!);
+      // Every member, a template path such as a Record key's among them; none when the type is never.
       const members = type.isUnion() ? type.types : [type];
-      flagged[node.name.getText()] = members.filter((member) => member.isStringLiteral()).map(({ value }) => value);
+      flagged[node.name.getText()] = members
+        .filter((member) => !(member.flags & ts.TypeFlags.Never))
+        .map((member) => checker.typeToString(member));
     }
     ts.forEachChild(node, visit);
   };

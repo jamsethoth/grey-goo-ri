@@ -2,7 +2,6 @@
 // its Vertex (R11e, Q7, H1-H5); unreachable Vertices are warned. Only lib/validate/graph.ts imports it.
 
 import type * as model from '../model.ts';
-import type * as procedures from '../procedures.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as graph from './graph.ts';
 import * as checked from './procedures.ts';
@@ -11,13 +10,14 @@ import * as report from './report.ts';
 const PR_READY = 'pr-ready';
 
 type OutcomeCase = checked.OutcomeCase;
-// The map the facts are read over: the Vertices it reads, each with its Procedure, the entry, and the Vertices the
-// warnings read, none unless the map reads every Vertex (#449, Q2 A).
+type Held = Pick<graph.WholeVertex, 'procedure' | 'actions'>;
+// The map the facts are read over: the Vertices it reads, each whole with its Procedure and typed Actions, the entry,
+// and the Vertices the warnings read, none unless the map reads every Vertex (#449, Q2 A).
 export interface Facts {
   location: string;
   entry: string;
   resolved: Map<string, model.DeclaredVertexJson>;
-  vertexProcedures: Map<string, checked.HeldProcedure | undefined>;
+  whole: Map<string, Held>;
   warned: Map<string, model.DeclaredVertexJson>;
 }
 
@@ -31,11 +31,10 @@ const PASSED_OUTPUTS = new Map<unknown, string>([
 // The outputs a Visit of Vertex `id` leaves when it ends in `ending` (H3): the agent's response on any Claim (N10);
 // effects, and the evidence of each Check the token requires (N9), only from the passed table (S4); and, when `rescued`
 // asks, the rescue when failing work moves on to a Vertex (R5a, W3).
-function leaves(id: string, procedure: checked.HeldProcedure, ending: OutcomeCase, rescued: boolean) {
+function leaves(id: string, { procedure, actions }: Held, ending: OutcomeCase, rescued: boolean) {
   const passed = ending.table === 'passed';
   const keys = [];
-  // Only a mapped Vertex is read, whose Procedure nothing refused, so its Actions are typed.
-  for (const action of ending.table === null ? [] : (procedure.typed.actions as procedures.Action[])) {
+  for (const action of ending.table === null ? [] : actions) {
     if (action.do === 'agent') keys.push(`${id}.${action.id}.response`);
     else if (
       passed &&
@@ -67,8 +66,8 @@ function groupsOf(resolved: Map<string, model.DeclaredVertexJson>) {
 // leaves none (N4), so it never guarantees one.
 function gained(facts: Facts, groups: Map<string, string[]>, edge: graph.Edge, every: boolean) {
   const ways = edge.cases.map((ending) => {
-    const procedure = facts.vertexProcedures.get(edge.from) as checked.HeldProcedure;
-    const keys = leaves(edge.from, procedure, ending, edge.write && !every);
+    // Only a mapped Vertex is the start of an edge, and every mapped Vertex is whole.
+    const keys = leaves(edge.from, facts.whole.get(edge.from) as Held, ending, edge.write && !every);
     const found = [...groups]
       .filter(([, sources]) => sources.some((key) => keys.includes(key)))
       .map(([group]) => group);

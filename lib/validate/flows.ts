@@ -72,7 +72,10 @@ interface FlowState {
   vertexProcedures: Map<string, checked.CheckedProcedure | undefined>;
   fallsOf: Map<string, FallThroughs>;
   // The Vertices whose Outcome lists are whole, which every check that reads a Vertex waits on (#436, D3 C; #449).
-  whole: Map<string, { vertex: model.DeclaredVertexJson; procedure: checked.CheckedProcedure }>;
+  whole: Map<
+    string,
+    { vertex: model.DeclaredVertexJson; procedure: checked.CheckedProcedure; actions: procedures.Action[] }
+  >;
 }
 
 // The Flow's own keys, its ticket section and its routes; the ticket and its Vertices, whatever their shape.
@@ -187,8 +190,9 @@ function markWhole(checking: FlowContext, state: FlowState, id: string, refused:
   const use = state.typed.get(id)?.use;
   const vertex = state.resolved.get(id) as model.DeclaredVertexJson;
   const agentRefused = typeof use === 'string' && report.isReported(checking.agents.get(use)?.typed);
+  // A Procedure nothing refused has its Actions typed, which the route checks read.
   if (procedure && !report.isReported(procedure.refused) && !agentRefused && !refused)
-    state.whole.set(id, { vertex, procedure });
+    state.whole.set(id, { vertex, procedure, actions: procedure.typed.actions as procedures.Action[] });
 }
 
 function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex: unknown) {
