@@ -21,7 +21,8 @@ export const OLD_VERSION = '2.1.327';
 
 // How a case changes the CLI that answers: an executable that cannot start, the version --version prints, the
 // logged-out recording for auth status, a change to --help's text, a change to the stream a model call replays,
-// the launch profile's or the --bare one's, and the first argument of a command that times out printing nothing.
+// the launch profile's or the --bare one's, and the first argument of a command that times out printing nothing, or
+// that exits 1 printing nothing.
 export interface CliState {
   missing?: boolean;
   version?: string;
@@ -30,6 +31,7 @@ export interface CliState {
   profile?: (stream: string) => string;
   bare?: (stream: string) => string;
   hangs?: string;
+  fails?: string;
 }
 
 const sameArgv = (left: readonly string[], right: readonly string[]) =>
@@ -73,8 +75,10 @@ export function recordedCli(state: CliState = {}) {
     if (state.missing) throw Object.assign(new Error(`spawn ${options.command} ENOENT`), { code: 'ENOENT' });
     options.onStarted?.({ kind: 'none' });
     const cleanup = { confirmed: true, survivors: [], reason: null, containment: { kind: 'none' as const } };
-    if (state.hangs === options.args[0])
+    if (state.hangs !== undefined && state.hangs === options.args[0])
       return { code: null, signal: null, timedOut: 'wall', cancelled: false, stderrTail: '', cleanup };
+    if (state.fails !== undefined && state.fails === options.args[0])
+      return { code: 1, signal: null, timedOut: null, cancelled: false, stderrTail: '', cleanup };
     const { stdout, exitCode } = answer(options.args, state);
     const lines = stdout.split('\n');
     if (lines.at(-1) === '') lines.pop();

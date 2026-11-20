@@ -22,9 +22,20 @@ const PROBE_WALL_MS = 300_000;
 // A probe's repository holds a CLAUDE.md whose word would reach the answer if the profile let CLAUDE.md in.
 const CLAUDE_MD_WORD = 'marigold';
 const PROBE_BRIEF = 'Without any tool, answer with the word ok.';
-const BARE_ARGS = ['-p', '--bare', '--output-format', 'stream-json', '--verbose', '--model', 'haiku'];
+// No settings source loads, as in the launch profile: a settings file's env block would undo the launch's blanks.
+const BARE_ARGS = [
+  '-p',
+  '--bare',
+  '--setting-sources',
+  '',
+  '--output-format',
+  'stream-json',
+  '--verbose',
+  '--model',
+  'haiku',
+];
 // The other credentials the --bare help says bare mode takes, blanked so only CLAUDE_CODE_OAUTH_TOKEN can answer; the
-// bare launch also blanks every other provider switch gg's environment sets (otherCredentials).
+// bare launch also blanks every other ANTHROPIC_ variable and provider switch gg's environment sets (otherCredentials).
 const OTHER_CREDENTIALS = {
   ANTHROPIC_API_KEY: '',
   CLAUDE_CODE_USE_BEDROCK: '',
@@ -70,11 +81,13 @@ export type ProfileLaunch = (runDirectory: string) => {
 type Runner = Pick<exec.Exec, 'launch'>;
 type Check = runContext.DoctorCheck;
 
-// What one command printed: whether it started at all, its lines, and why it did not finish when it did not.
+// What one command printed: whether it started at all, its lines, why it did not finish when it did not, and its
+// error exit, which only the cheap checks read: the --bare refusal exits 1 as well.
 interface Said {
   started: boolean;
   lines: string[];
   failure: string | null;
+  exited: string | null;
 }
 
 async function said(runner: Runner, args: string[], more: Partial<exec.LaunchOptions> = {}): Promise<Said> {
@@ -87,9 +100,11 @@ async function said(runner: Runner, args: string[], more: Partial<exec.LaunchOpt
       ...more,
       onLine: (line) => lines.push(line),
     });
-    return { started: true, lines, failure: ended.timedOut ? `claude ${args[0]} timed out` : null };
+    const failure = ended.timedOut ? `claude ${args[0]} timed out` : null;
+    const exited = ended.code ? `claude ${args[0]} exited ${ended.code}` : null;
+    return { started: true, lines, failure, exited };
   } catch (err) {
-    return { started: false, lines, failure: (err as Error).message };
+    return { started: false, lines, failure: (err as Error).message, exited: null };
   }
 }
 
@@ -111,8 +126,9 @@ function atLeastMinimum(version: string) {
   return index === -1 || found[index]! > minimum[index]!;
 }
 
-// The reason a command did not finish, after what it printed.
-const becauseOf = ({ failure }: Said) => (failure ? `: ${failure}` : '');
+// Why a cheap command failed: it did not finish, else its error exit.
+const reasonOf = ({ failure, exited }: Said) => failure ?? exited;
+const becauseOf = (ran: Said) => (reasonOf(ran) === null ? '' : `: ${reasonOf(ran)}`);
 
 function versionCheck(ran: Said): Check {
   const version = /^\d+\.\d+\.\d+/.exec(ran.lines[0] ?? '')?.[0];
@@ -138,12 +154,13 @@ function loginCheck(ran: Said): Check {
 }
 
 // A changed line is a sign, not proof, that bare mode takes a subscription, so it warns and stops no Run (Q4 A); a help
-// that did not finish shows no change, so it warns with its reason instead of sending the reader to a model call.
-function helpCheck({ lines, failure }: Said): Check {
-  if (BARE_REFUSES_OAUTH.test(lines.join('\n')))
+// that failed shows no change, so it warns with its reason instead of sending the reader to a model call.
+function helpCheck(ran: Said): Check {
+  if (BARE_REFUSES_OAUTH.test(ran.lines.join('\n')))
     return passed('bare-help', 'the --bare help says bare mode reads no OAuth login');
-  if (failure !== null)
-    return failed('bare-help', `claude --help did not finish, so its --bare line is unread: ${failure}`, 'warning');
+  const reason = reasonOf(ran);
+  if (reason !== null)
+    return failed('bare-help', `claude --help failed, so its --bare line is unread: ${reason}`, 'warning');
   return failed(
     'bare-help',
     'the --bare help no longer says OAuth and keychain are never read, so bare mode may take a subscription: ' +
@@ -235,14 +252,14 @@ function bareCheck(ran: Said): Check {
   return failed('bare-probe', `the --bare probe failed${because}`, 'warning');
 }
 
-// The CLI picks its provider from CLAUDE_CODE_USE_* switches, more than the help names and more with a later CLI, so
-// each one set is blanked (a blank switch is off) under the name gg's environment holds it by, whose case on win32 may
-// differ.
+// The CLI picks its provider from CLAUDE_CODE_USE_* switches, and its token, endpoint and headers from ANTHROPIC_*
+// variables, more than the help names and more with a later CLI, so each one set is blanked (a blank one is off) under
+// the name gg's environment holds it by, whose case on win32 may differ.
 const otherCredentials = (): Record<string, string> => ({
   ...OTHER_CREDENTIALS,
   ...Object.fromEntries(
     Object.keys(process.env)
-      .filter((name) => name.toUpperCase().startsWith('CLAUDE_CODE_USE_'))
+      .filter((name) => /^(?:ANTHROPIC_|CLAUDE_CODE_USE_)/i.test(name))
       .map((name) => [name, '']),
   ),
 });
