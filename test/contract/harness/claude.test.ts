@@ -104,10 +104,13 @@ test('the persona file is written into the run directory and kept', CASE, async 
   assert.equal(readFileSync(persona, 'utf8'), 'You are the implementer.\n');
 });
 
+// The Session's total with earlier compactions and a peak above the resumed call's, so the sum and the maximum show.
+const EARLIER = { ...AFTER_SUCCESS, toolCalls: 5, compactions: 2, peakContextTokens: 20_000 };
+
 test("a resumed call's delta is its cumulative less the earlier total", CASE, async (t) => {
   const fake = fakeCli(t, { scenario: 'resume' });
   const { result } = await fake.harness.run(
-    claudeCall(fake, { resume: SUCCESS_SESSION, previousUsage: AFTER_SUCCESS }),
+    claudeCall(fake, { resume: SUCCESS_SESSION, previousUsage: EARLIER }),
     hooksOf(),
   );
   assert.deepEqual(result.usage, {
@@ -118,10 +121,10 @@ test("a resumed call's delta is its cumulative less the earlier total", CASE, as
       outputTokens: 362,
       reasoningTokens: null,
       costUsd: 0.0025307700000000003,
-      peakContextTokens: 10226,
+      peakContextTokens: 20_000,
       turns: 7,
-      toolCalls: 2,
-      compactions: 0,
+      toolCalls: 5,
+      compactions: 2,
       costBasis: 'reported',
     },
     delta: {
@@ -147,6 +150,21 @@ test('input tokens exclude cache reads and writes', CASE, async (t) => {
   assert.deepEqual(
     { inputTokens, cacheReadTokens, cacheWriteTokens, outputTokens },
     { inputTokens: 4, cacheReadTokens: 9753, cacheWriteTokens: 10033, outputTokens: 241 },
+  );
+});
+
+// The resume recording makes no tool call and no compaction, so a call that makes both shows they add, not take a max.
+test("a resumed call adds its tool calls and compactions to the earlier total's", CASE, async (t) => {
+  const fake = fakeCli(t, { scenario: 'compaction' });
+  const { result } = await fake.harness.run(claudeCall(fake, { previousUsage: EARLIER }), hooksOf());
+  const countsOf = ({ turns, toolCalls, compactions }: typeof result.usage.delta) => ({
+    turns,
+    toolCalls,
+    compactions,
+  });
+  assert.deepEqual(
+    { cumulative: countsOf(result.usage.cumulative), delta: countsOf(result.usage.delta) },
+    { cumulative: { turns: 14, toolCalls: 11, compactions: 3 }, delta: { turns: 10, toolCalls: 6, compactions: 1 } },
   );
 });
 
@@ -318,6 +336,13 @@ const FAILURE_PATHS: [string, claudeOverFakeCli.FakeCli, Record<string, unknown>
   ['retries before a failure', { scenario: 'api-retry' }, {}, false],
   ['an init error', { scenario: 'init-error' }, {}, false],
   ['a stream with no result line', { scenario: 'success', mode: 'no-result' }, {}, false],
+  ['a nonzero exit with no result line', { scenario: 'auth-failure', mode: 'no-result' }, {}, false],
+  [
+    'a stall with no transcript to read',
+    { scenario: 'success', mode: 'hang-no-transcript' },
+    { timeouts: { stallMs: 500 } },
+    false,
+  ],
   ['a line that is not JSON', { scenario: 'success', mode: 'garbage' }, {}, false],
   ['an executable that cannot start', { scenario: 'success', command: 'gg-no-such-claude' }, {}, false],
   ['a stall', { scenario: 'success', mode: 'hang' }, { timeouts: { stallMs: 500 } }, false],
@@ -343,6 +368,8 @@ test('every failure path resolves a typed result, never a rejection', { timeout:
     'retries before a failure': { status: 'failed', failureClass: 'rate-limited' },
     'an init error': { status: 'failed', failureClass: 'unknown' },
     'a stream with no result line': { status: 'failed', failureClass: 'unknown' },
+    'a nonzero exit with no result line': { status: 'failed', failureClass: 'unknown' },
+    'a stall with no transcript to read': { status: 'timed-out', failureClass: null },
     'a line that is not JSON': { status: 'completed', failureClass: null },
     'an executable that cannot start': { status: 'failed', failureClass: 'unknown' },
     'a stall': { status: 'timed-out', failureClass: null },

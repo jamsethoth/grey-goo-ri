@@ -97,6 +97,38 @@ test("the init line's MCP server errors fail the stream as unknown and are repor
   );
 });
 
+test("the init line's plugin errors alone fail the stream as unknown", () => {
+  const entry = { plugin: 'x', message: 'boom' };
+  const init = withField(lineOf(SUCCESS, 'system/init'), 'plugin_errors', [entry]);
+  const read = claudeStream.read([init, ...SUCCESS.slice(1)]);
+  assert.deepEqual(
+    { failure: failureOf(read), pluginErrors: read.sessionInit?.pluginErrors },
+    { failure: { failureClass: 'unknown', retryAfterMs: null }, pluginErrors: [entry] },
+  );
+});
+
+// The api-retry recording with its three retry lines' errors and delays replaced, its synthetic rate_limit line kept.
+const withRetries = (retries: [string, number][]) => {
+  const recorded = lines('api-retry');
+  const retryLines = only(recorded, 'system/api_retry');
+  return recorded.map((line) => {
+    const index = retryLines.indexOf(line);
+    const [error, delay] = retries[index] ?? [];
+    return index < 0 ? line : withField(withField(line, 'error', error), 'retry_delay_ms', delay);
+  });
+};
+
+test("the synthetic assistant line's error classifies the failure over the last api_retry line's", () => {
+  const read = claudeStream.read(
+    withRetries([
+      ['rate_limit', 1096],
+      ['rate_limit', 1248],
+      ['overloaded', 42],
+    ]),
+  );
+  assert.equal(read.failure?.failureClass, 'rate-limited');
+});
+
 test('the last api_retry line before a failing result gives its class and delay', () => {
   const read = claudeStream.read(without(lines('api-retry'), 'assistant'));
   assert.deepEqual(failureOf(read), { failureClass: 'rate-limited', retryAfterMs: 2014 });

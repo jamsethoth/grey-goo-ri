@@ -3,7 +3,8 @@
 // stdin) to FAKE_CLAUDE_RECEIVED, and writes the transcript where Claude Code does: under CLAUDE_CONFIG_DIR, in
 // projects/<cwd, each non-alphanumeric character as "-">/<session id>.jsonl. FAKE_CLAUDE_MODE changes the replay:
 // `no-result` leaves out the result line, `garbage` sends a line that is not JSON after the init line, and `hang`
-// leaves out the result line and then outlives any case, so only a kill ends it.
+// leaves out the result line and then outlives any case, so only a kill ends it; `hang-no-transcript` hangs as `hang`
+// does and writes no transcript.
 // The test runner also loads this file with no FAKE_CLAUDE_SCENARIO, where it does nothing.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,7 +25,7 @@ async function replay(name: string, mode: string) {
   const { exitCode } = JSON.parse(readFileSync(new URL(`${recording.href}.json`), 'utf8')) as { exitCode: number };
   const { session_id: sessionId } = JSON.parse(lines[0] ?? '{}') as { session_id: string };
   const configDirectory = process.env.CLAUDE_CONFIG_DIR;
-  if (configDirectory) {
+  if (configDirectory && mode !== 'hang-no-transcript') {
     const project = join(configDirectory, 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-'));
     mkdirSync(project, { recursive: true });
     writeFileSync(join(project, `${sessionId}.jsonl`), lines.join('\n') + '\n');
@@ -35,9 +36,10 @@ async function replay(name: string, mode: string) {
     'no-result': noResult,
     garbage: [lines[0], 'not a JSON line', ...lines.slice(1)],
     hang: noResult,
+    'hang-no-transcript': noResult,
   }[mode];
   if (!sent) throw new Error(`fake claude has no mode ${mode}`);
   process.stdout.write(sent.map((line) => `${line}\n`).join(''));
-  if (mode === 'hang') setTimeout(() => {}, childScripts.LIVES_MS);
+  if (mode.startsWith('hang')) setTimeout(() => {}, childScripts.LIVES_MS);
   else process.exitCode = exitCode;
 }
