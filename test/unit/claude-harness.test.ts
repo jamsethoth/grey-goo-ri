@@ -233,9 +233,10 @@ function resolved(agent: model.Agent, platform: NodeJS.Platform) {
   return { tools, allow, deny };
 }
 
-// Each rule turns on one input (the shell and gg's read-only commands on platform, Edit and Write on access, the web
-// tools on network), and these five cases give each input each value, win32 as both reader and writer.
-test("on win32 a read-only Agent gets PowerShell, gg's read-only commands and no file-writing tool", () => {
+// Each rule turns on one input (the shell on platform, Edit and Write on access, the web tools on network), and these
+// five cases give each input each value, win32 as both reader and writer. Claude allows read-only PowerShell commands
+// itself, as it does on Bash, so gg lists only its read-only git commands on either shell (#425 Q5 A).
+test("on win32 a read-only Agent gets PowerShell, gg's read-only git commands and no file-writing tool", () => {
   assert.deepEqual(resolved({ ...READER, network: false }, 'win32'), {
     tools: ['PowerShell', 'Read', 'Grep', 'Glob'],
     allow: [
@@ -247,9 +248,6 @@ test("on win32 a read-only Agent gets PowerShell, gg's read-only commands and no
       'PowerShell(git log:*)',
       'PowerShell(git show:*)',
       'PowerShell(git status:*)',
-      'PowerShell(Get-ChildItem:*)',
-      'PowerShell(Get-Content:*)',
-      'PowerShell(Select-String:*)',
     ],
     deny: [
       'PowerShell(git add:*)',
@@ -274,9 +272,6 @@ test('on win32 a writer with network gets Edit, Write and the web tools, and sti
       'PowerShell(git log:*)',
       'PowerShell(git show:*)',
       'PowerShell(git status:*)',
-      'PowerShell(Get-ChildItem:*)',
-      'PowerShell(Get-Content:*)',
-      'PowerShell(Select-String:*)',
     ],
     deny: ['PowerShell(git add:*)', 'PowerShell(git commit:*)', 'PowerShell(git push:*)', 'PowerShell(gh:*)'],
   });
@@ -420,6 +415,23 @@ test('the capabilities are the decided ones, with trusted-commands confinement o
       backgroundWork: 'none',
       confinement: 'trusted-commands',
       sandbox: 'none',
+    },
+  );
+});
+
+// The stream reports peak context, cost, turns and tool calls (#425, recorded from Claude Code 2.1.328); its thinking
+// tokens arrive only as estimates, so reasoning tokens stay unreported.
+test('Claude reports peak context, cost, turns and tool calls, and no reasoning tokens', () => {
+  const { peakContextReporting, costReporting, turnCountReporting, toolCallReporting, reasoningTokenReporting } =
+    claude.capabilities;
+  assert.deepEqual(
+    { peakContextReporting, costReporting, turnCountReporting, toolCallReporting, reasoningTokenReporting },
+    {
+      peakContextReporting: true,
+      costReporting: true,
+      turnCountReporting: true,
+      toolCallReporting: true,
+      reasoningTokenReporting: false,
     },
   );
 });

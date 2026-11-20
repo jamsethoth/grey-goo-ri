@@ -155,7 +155,7 @@ async function harnessProblems(
     const harness = harnesses[harnessName] as PreflightHarness;
     try {
       // shortcut: a shipped Harness module declares only what its slice has built, so preflight runs what it has
-      // and then stops it, until slices 2 and 3 end; drop this when each implements the contract.
+      // and then stops it; the last that does not implement the contract does so in slice 3; drop this then.
       if (harness.run) contract.assertHarness(harness);
       if (!harness.validate) throw new Error('not implemented');
       const { ok, errors } = await harness.validate(agent);

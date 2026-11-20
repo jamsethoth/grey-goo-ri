@@ -154,7 +154,8 @@ leverage and a change lands in one place (locality).
 | `lib/locks.ts` | ticket, epic and repo locks as `node:sqlite` exclusive transactions |
 | `lib/harnesses/contract.ts` | the Harness contract check and shared Usage shape |
 | `lib/harnesses/shipped.ts` | the shipped Harnesses by name, as declared (`HARNESSES`), and each built from the `exec` `bin/gg.ts` passes (`shipped(exec)`), holding only the contract's members of each declaration; the only module outside a Harness that names one |
-| `lib/harnesses/claude.ts` | the Claude Code Harness as a declaration, with no spawn yet: its Capabilities, `validate`, `resolveTools` (the tools, the permission rules for the platform's shell, each listed plugin's directory) and `launchArgs` (the launch profile's argv, environment and files), the launch profile's name and version, and an empty `createCli(exec)`; `gg run` preflight runs `validate` and `resolveTools`, then still fails "not implemented" until #425 |
+| `lib/harnesses/claude.ts` | the Claude Code Harness: its declaration (Capabilities, `validate`, `resolveTools` with the tools, the permission rules for the platform's shell and each listed plugin's directory, `launchArgs` with the launch profile's argv, environment and files, and the launch profile's name and version), and `createCli(exec)`, whose `run` launches the CLI over `exec.launch` and gives the contract's result from its stream, Usage, transcript and repository digest; `interactiveArgs`, `metrics` and `doctor` throw "not implemented" until their slices |
+| `lib/harnesses/claude-stream.ts` | what a Claude call's `stream-json` lines say, read for `lib/harnesses/claude.ts` alone: its session, failure and Failure Class, response, counts and the Session's token totals (#425) |
 | `lib/harnesses/codex.ts` | **stub**: the Codex Harness; exports only `protectedPaths`, a null `launchProfile` and an empty `createCli(exec)`, so `gg run` preflight fails "not implemented" |
 | `lib/exec.ts` | process spawn (a nonzero exit rejects with a `CommandError`), the shell runner, with its timeout and cleanup (ported), and `launch`, an argv run contained with no shell under its stall and wall clocks and the cancel signal, its tree taken down (#423) |
 | `lib/command-shim.ts` | what an argv starts as with no shell, for `run` and `launch`: on Windows an npm `.cmd` shim for a node bin read for the script it names, any other `.cmd` refused |
@@ -179,6 +180,7 @@ leverage and a change lands in one place (locality).
 | `lib/plan.ts` | **stub** (`export {}`): `gg plan` |
 | `lib/publish.ts` | **stub** (`export {}`): `gg publish` (to be ported) |
 | `scripts/run-suite.ts` | the suite launcher Codex may run outside its sandbox (ADR 0010); the full and fast stages' census of what they leave running (`docs/testing.md`) |
+| `scripts/record-claude.ts` | the one command that calls the real `claude` (#425): each call `scripts/record-claude-scenarios.ts` lists, run once with the Claude Harness's launch profile in a temporary repository, redacted into `test/fixtures/claude/` with its command, line times and what it left behind; run by hand to re-record a new Claude version, never by a test |
 | `examples/` | each Harness's harness, model and effort for the Agents of the example, which `gg init --harness <name>` writes |
 
 ## Misleading areas

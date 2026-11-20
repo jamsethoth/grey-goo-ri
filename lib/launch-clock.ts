@@ -4,9 +4,15 @@ import type * as exec from './exec.ts';
 // What stopped a launch.
 export type Stop = 'stall' | 'wall' | 'cancel';
 
+// setTimeout fires after 1 ms for a delay past 2147483647 ms (24.8 days), so each limit is capped there (#429 D3 A).
+const TIMER_CAP_MS = 2_147_483_647;
+const capped = (ms: number | undefined) => ms && Math.min(ms, TIMER_CAP_MS);
+
 // A launch's clocks: the stall clock, which output re-arms, and which re-arms for what is left of stallMs from the last
 // activity onIdle saw (Q2 A); the wall clock; and the cancel signal. A failed onIdle saw none.
-export function startClocks({ stallMs, wallMs, signal, onIdle }: exec.LaunchOptions, stop: (why: Stop) => void) {
+export function startClocks(options: exec.LaunchOptions, stop: (why: Stop) => void) {
+  const { signal, onIdle } = options;
+  const [stallMs, wallMs] = [capped(options.stallMs), capped(options.wallMs)];
   let lastOutput = Date.now();
   let running = true;
   let stallTimer: ReturnType<typeof setTimeout> | undefined;

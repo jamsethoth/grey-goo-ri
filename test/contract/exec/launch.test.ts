@@ -80,6 +80,23 @@ test('launch stops a process silent past stallMs and says stall', UNSANDBOXED_CA
   assert.deepEqual(stopOf(result, pidFile), { timedOut: 'stall', cancelled: false, alive: false, confirmed: true });
 });
 
+// A transcript whose stat fails makes the Claude Harness's onIdle throw: that is no activity, a typed stall, never an
+// unhandled rejection that ends gg (#425 D11 A).
+test('an onIdle that throws counts as no activity, and the stall stops the process', UNSANDBOXED_CASE, async (t) => {
+  const pidFile = join(scratch, 'idle-throws.pid');
+  t.after(() => processProbe.endProcessIn(pidFile));
+  const result = await launch({
+    command: process.execPath,
+    args: [childScripts.LONG_LIVED, pidFile],
+    stallMs: 500,
+    onIdle: async () => {
+      await processProbe.waitFor(() => processProbe.pidIn(pidFile) > 0, t.signal);
+      throw Object.assign(new Error('EPERM: operation not permitted, stat'), { code: 'EPERM' });
+    },
+  });
+  assert.deepEqual(stopOf(result, pidFile), { timedOut: 'stall', cancelled: false, alive: false, confirmed: true });
+});
+
 // 60 lines 100 ms apart take at least 5.9 s, past stallMs, while no gap between them, nor the start of node behind the
 // Windows gate, comes near it.
 test('output resets the stall clock', CASE, async () => {
@@ -179,6 +196,40 @@ test('launch stops a process past wallMs and says wall', UNSANDBOXED_CASE, async
     wallMs: 3000,
   });
   assert.deepEqual(stopOf(result, pidFile), { timedOut: 'wall', cancelled: false, alive: false, confirmed: true });
+});
+
+// setTimeout fires after 1 ms past 2147483647 ms (24.8 days), so the launch clock caps both limits there (#429 D3 A).
+const PAST_TIMER_CAP = 2_147_483_648;
+const SHORT_RUN = ['-e', "setTimeout(() => console.log('done'), 500)"];
+
+test('a wallMs past the timer cap does not stop the process at once', CASE, async () => {
+  const lines: string[] = [];
+  const result = await launch({
+    command: process.execPath,
+    args: SHORT_RUN,
+    wallMs: PAST_TIMER_CAP,
+    onLine: (line) => lines.push(line),
+  });
+  assert.deepEqual(
+    { code: result.code, timedOut: result.timedOut, lines },
+    { code: 0, timedOut: null, lines: ['done'] },
+  );
+});
+
+test('a stallMs past the timer cap arms its clock with no overflow warning', CASE, async (t) => {
+  const warnings: string[] = [];
+  const onWarning = (warning: Error) => warnings.push(warning.name);
+  process.on('warning', onWarning);
+  t.after(() => process.off('warning', onWarning));
+  const result = await launch({ command: process.execPath, args: SHORT_RUN, stallMs: PAST_TIMER_CAP });
+  assert.deepEqual(
+    {
+      code: result.code,
+      timedOut: result.timedOut,
+      overflows: warnings.filter((name) => name === 'TimeoutOverflowWarning'),
+    },
+    { code: 0, timedOut: null, overflows: [] },
+  );
 });
 
 test('an aborted signal stops the process and says cancelled', UNSANDBOXED_CASE, async (t) => {
