@@ -514,3 +514,30 @@ test("an input may read a repeat Check's Findings Hash", () => {
   };
   assert.deepEqual(exampleLayer.check(config).errors, []);
 });
+
+// gg widens a budgeted Agent's schema with the hand-off note and token itself, so no Procedure may declare either
+// (#430, Q3 A).
+test('a Procedure that declares the hand-off note or the handed-off token itself is an error', () => {
+  const noted = exampleLayer.schemas();
+  exampleLayer.putAt(noted['review.schema.json'], ['properties', 'handoff'], { type: 'string' });
+  noted['review.schema.json']!.required!.push('handoff');
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(exampleLayer.config(), noted).errors), [
+    { at: 'procedures.review.actions[0]', code: 'reserved-handoff-name' },
+  ]);
+  const tokened = exampleLayer.schemas();
+  const config = exampleLayer.config();
+  exampleLayer.putAt(tokened['red.schema.json'], ['properties', 'claim', 'enum'], ['ok', 'blocked', 'handed-off']);
+  config.procedures['tests-fail'].claimTokens['handed-off'] = { requires: ['red-check'] };
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config, tokened).errors), [
+    { at: 'procedures.tests-fail.claimTokens', code: 'reserved-handoff-name' },
+  ]);
+});
+
+test('a Vertex whose Agent has a contextBudget may route harness-handoff', () => {
+  const config = exampleLayer.config();
+  config.agents.implementer.contextBudget = 150000;
+  config.flows.default.ticket.vertices.green.route['harness-handoff'] = { end: 'needs-replan' };
+  const { errors, flows } = exampleLayer.check(config);
+  assert.deepEqual(exampleLayer.firedRules(errors), []);
+  assert.ok(flows.default.ticket.vertices.green.outcomes.includes('harness-handoff'));
+});

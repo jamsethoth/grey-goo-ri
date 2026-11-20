@@ -52,7 +52,7 @@ export interface TableResolution extends ResolutionBase {
   row: FixedRow | null;
   check: string | null;
   retryAfterMs: number | null;
-  retryKind: 'parse' | 'timeout' | 'transient' | 'rateLimited' | null;
+  retryKind: 'parse' | 'timeout' | 'transient' | 'rateLimited' | 'handoff' | null;
   failureClass: string | null;
   sessionId?: string | null;
   reason?: string | null;

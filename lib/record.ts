@@ -101,6 +101,16 @@ export interface SessionEntry {
   model: string | null;
   effort: string | null;
   personaName: string;
+  // Each Session the Action handed off past its contextBudget, oldest first, kept resumable for a question (#430).
+  handedOff?: HandedOffSession[];
+}
+
+// A Session an agent handed off: its id and transcript, its total Usage, and the Attempt that ran it.
+export interface HandedOffSession {
+  sessionId: string | null;
+  transcriptPath: string | null;
+  cumulativeUsage: events.Usage;
+  attempt: number;
 }
 
 // Who an Execution belongs to (X3): a Ticket today, or an Epic for request slice 7's planning Executions. The

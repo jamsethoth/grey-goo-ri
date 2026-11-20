@@ -169,17 +169,17 @@ test('every row of the full fixture loads, and saves back as the row it was read
     }
 });
 
-// The full fixture as version 1 wrote it, every row and variant, so none holds a field version 2 added: a reader
+// The full fixture as version 2 wrote it, every row and variant, so none holds a field version 3 added: a reader
 // accepts the version before its own, and a field new in its version is optional when absent (#422, decision 8).
-const VERSION_1 = JSON.parse(
-  readFileSync(new URL('../fixtures/record-rows-version-1.json', import.meta.url), 'utf8'),
+const VERSION_2 = JSON.parse(
+  readFileSync(new URL('../fixtures/record-rows-version-2.json', import.meta.url), 'utf8'),
 ) as Fixture;
 
 test('a record saved at the previous schema version still reads', () => {
-  assert.equal(recordJson.RECORD_SCHEMA_VERSION, 2, 'version 1 is the one before');
-  for (const { row, under } of executionRows(VERSION_1))
-    loads('ticket', row, `the version 1 row with ${under || 'no variant'}`);
-  loads('epic', VERSION_1.epic, 'the version 1 Epic Record');
+  assert.equal(recordJson.RECORD_SCHEMA_VERSION, 3, 'version 2 is the one before');
+  for (const { row, under } of executionRows(VERSION_2))
+    loads('ticket', row, `the version 2 row with ${under || 'no variant'}`);
+  loads('epic', VERSION_2.epic, 'the version 2 Epic Record');
 });
 
 test('the full fixture holds an intent of every Effect and of an agent call', () => {

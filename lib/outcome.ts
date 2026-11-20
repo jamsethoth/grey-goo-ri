@@ -5,9 +5,15 @@ import * as rules from './rules.ts';
 import type * as visit from './visit.ts';
 
 // The Resolution Policy's retry budgets, by the kind of retry each spends.
-export type RetryKind = 'transient' | 'rateLimited' | 'timeout' | 'parse';
+export type RetryKind = 'transient' | 'rateLimited' | 'timeout' | 'parse' | 'handoff';
 export type ResolutionPolicy = Record<RetryKind, number>;
-export const DEFAULT_RESOLUTION_POLICY: ResolutionPolicy = { transient: 2, rateLimited: 2, timeout: 1, parse: 1 };
+export const DEFAULT_RESOLUTION_POLICY: ResolutionPolicy = {
+  transient: 2,
+  rateLimited: 2,
+  timeout: 1,
+  parse: 1,
+  handoff: 0,
+};
 
 export type FailureClass =
   'transient' | 'rate-limited' | 'auth' | 'quota' | 'budget' | 'permission' | 'rejected' | 'invalid' | 'unknown';

@@ -92,7 +92,27 @@
         "vertex": "green",
         "model": "opus",
         "effort": "high",
-        "personaName": "implementer"
+        "personaName": "implementer",
+        "handedOff": [
+          {
+            "sessionId": "session-0",
+            "transcriptPath": "transcripts/0.jsonl",
+            "cumulativeUsage": {
+              "inputTokens": 150000,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "outputTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "peakContextTokens": 150000,
+              "turns": 0,
+              "toolCalls": 0,
+              "compactions": 0,
+              "costBasis": "reported"
+            },
+            "attempt": 1
+          }
+        ]
       }
     },
     "attempts": 4,

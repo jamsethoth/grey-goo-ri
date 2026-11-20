@@ -126,6 +126,12 @@ export function validateResponse(schema: referencePaths.SchemaNode, response: un
     : { valid: true, token: (response as { claim?: string | null }).claim ?? null, reason: null };
 }
 
+// The schema gg sends an Agent with a contextBudget: the Procedure's, its Claim enum widened with `handed-off` and a
+// required root `handoff` note, empty unless the agent hands off (#430, Q3 A). Stub until #430's Green.
+export function handoffSchema(schema: referencePaths.SchemaNode): referencePaths.SchemaNode {
+  return schema;
+}
+
 const quoted = (list: unknown[]) => (list.length ? list.map((value) => JSON.stringify(value)).join(' | ') : '(none)');
 
 // Tokens are matched exactly, so values that differ only in case would be a Claim nobody can route (V1).
