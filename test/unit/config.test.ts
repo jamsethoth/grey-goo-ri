@@ -168,8 +168,8 @@ test('loadSources reads each source whole, from its own gg.json', (t) => {
     user: JSON.stringify({ maxParallel: 3 }),
   });
   const loaded = config.loadSources(roots.repo, roots.user);
-  assert.deepEqual(loaded.repository, { baseBranch: 'trunk', files: {} });
-  assert.deepEqual(loaded.user, { maxParallel: 3, files: {} });
+  assert.deepEqual(loaded.repository, { baseBranch: 'trunk' });
+  assert.deepEqual(loaded.user, { maxParallel: 3 });
   assert.equal(loaded.repositoryFile, roots.files.repo);
   assert.equal(loaded.userFile, roots.files.user);
 });
@@ -177,8 +177,8 @@ test('loadSources reads each source whole, from its own gg.json', (t) => {
 test('a source with no gg.json loads empty, and its required settings are Problems', (t) => {
   const roots = sources(t);
   const loaded = config.loadSources(roots.repo, roots.user);
-  assert.deepEqual(loaded.repository, { files: {} });
-  assert.deepEqual(loaded.user, { files: {} });
+  assert.deepEqual(loaded.repository, {});
+  assert.deepEqual(loaded.user, {});
   assert.deepEqual(
     (settings.parse(loaded).errors ?? []).map((problem) => `${problem.at} ${problem.code}`),
     [
@@ -188,6 +188,33 @@ test('a source with no gg.json loads empty, and its required settings are Proble
       'baseBranch required-key-missing',
       'user:maxParallel required-key-missing',
       'user:worktreeRoot required-key-missing',
+    ],
+  );
+});
+
+// A source is its gg.json as read: gg keeps the files it loads beside it, so no key of gg's own shadows a key the
+// person wrote (#438 Q2 A).
+test("loadSources gives each source as its gg.json reads, with no key of gg's own", (t) => {
+  const roots = sources(t);
+  doctor.init(roots.repo, { baseBranch: 'main', userDirectory: roots.user, commonDir: join(roots.repo, '.git') });
+  const loaded = config.loadSources(roots.repo, roots.user);
+  const written = (file: string) => JSON.parse(readFileSync(file, 'utf8')) as unknown;
+  assert.deepEqual(loaded.repository, written(roots.files.repo));
+  assert.deepEqual(loaded.user, written(roots.files.user));
+});
+
+test('a files key in gg.json is reported', (t) => {
+  const repository = { commands: { test: 'npm test' }, testPaths: ['test/**'], labelPrefix: 'gg', baseBranch: 'main' };
+  const roots = sources(t, {
+    repo: JSON.stringify({ ...repository, files: ['a.md'] }),
+    user: JSON.stringify({ maxParallel: 2, worktreeRoot: '~/worktrees', files: { 'a.md': 1 } }),
+  });
+  const loaded = config.loadSources(roots.repo, roots.user);
+  assert.deepEqual(
+    (settings.parse(loaded).errors ?? []).map((problem) => [problem.at, problem.code, problem.message]),
+    [
+      ['files', 'unknown-key', `${roots.files.repo}: unknown key "files"`],
+      ['user:files', 'unknown-key', `${roots.files.user}: unknown key "files"`],
     ],
   );
 });
