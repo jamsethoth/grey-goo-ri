@@ -66,8 +66,9 @@ function assertOneDoctorError(text: string, check: string) {
   assert.ok(line!.includes('claude') && line!.includes(check), line);
 }
 
-// What the --bare line says today, which the cheap mode reads in place of a model probe (decision 2).
-const BARE_AUTH = 'OAuth and keychain are never read';
+// What the --bare line says today, which the cheap mode reads in place of a model probe (decision 2). The CLI wraps its
+// help to a width, so the words may break across lines.
+const BARE_AUTH = /OAuth\s+and\s+keychain\s+are\s+never\s+read/;
 const changedHelp = (text: string) => text.replace(BARE_AUTH, 'OAuth is read from CLAUDE_CODE_OAUTH_TOKEN');
 const sameArgv = (left: readonly string[], right: readonly string[]) =>
   left.length === right.length && left.every((arg, index) => arg === right[index]);
@@ -162,7 +163,7 @@ test('gg doctor --probe without CLAUDE_CODE_OAUTH_TOKEN skips the bare probe wit
 
 // Q4 A: a changed --bare line is a sign, not proof, that bare mode takes a subscription, so it warns and stops no Run.
 test('gg doctor warns, naming gg doctor --probe, when the help stops saying bare mode never reads OAuth', async () => {
-  assert.ok(recordedCli.recordedHelp().includes(BARE_AUTH), `the recorded --bare line says ${BARE_AUTH}`);
+  assert.match(recordedCli.recordedHelp(), BARE_AUTH, 'the recorded --bare line says OAuth is never read');
   const { text, exitCode } = await doctorOverCli({ help: changedHelp });
   assert.deepEqual(linesOf(text, 'error'), [], text);
   const warnings = doctorLines(text, 'warning');
