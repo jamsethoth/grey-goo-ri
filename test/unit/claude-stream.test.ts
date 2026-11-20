@@ -129,6 +129,40 @@ test("the synthetic assistant line's error classifies the failure over the last 
   assert.equal(read.failure?.failureClass, 'rate-limited');
 });
 
+// Issue decision 4: a rate-limited failure waits the rate_limit retry's delay; a retry for another error sent none.
+test('a rate-limited failure waits the last rate_limit retry delay, or none when no rate_limit retry was sent', () => {
+  const orders: [string, [string, number][]][] = [
+    [
+      'rate_limit then overloaded',
+      [
+        ['overloaded', 1096],
+        ['rate_limit', 2014],
+        ['overloaded', 42],
+      ],
+    ],
+    [
+      'overloaded only',
+      [
+        ['overloaded', 1096],
+        ['overloaded', 1248],
+        ['overloaded', 42],
+      ],
+    ],
+    [
+      'rate_limit last',
+      [
+        ['overloaded', 1096],
+        ['rate_limit', 1248],
+        ['rate_limit', 2014],
+      ],
+    ],
+  ];
+  const waits = Object.fromEntries(
+    orders.map(([name, retries]) => [name, failureOf(claudeStream.read(withRetries(retries)))?.retryAfterMs]),
+  );
+  assert.deepEqual(waits, { 'rate_limit then overloaded': 2014, 'overloaded only': null, 'rate_limit last': 2014 });
+});
+
 test('the last api_retry line before a failing result gives its class and delay', () => {
   const read = claudeStream.read(without(lines('api-retry'), 'assistant'));
   assert.deepEqual(failureOf(read), { failureClass: 'rate-limited', retryAfterMs: 2014 });

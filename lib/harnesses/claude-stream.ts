@@ -107,7 +107,8 @@ function totalsOf(modelUsage: unknown): Totals | null {
 }
 
 // The status comes from the result's is_error, never its subtype, which says success on an API failure. The class
-// comes from the synthetic assistant line's error, else the last api_retry line's; only rate_limit waits.
+// comes from the synthetic assistant line's error, else the last api_retry line's; only rate_limit waits, and only
+// the delay a rate_limit retry sent, none when no such retry was sent.
 function failureOf(stream: Line[], result: Line | null, sessionInit: SessionInit | null): visit.HarnessFailure | null {
   if (!result) return { failureClass: 'unknown', message: 'the stream ended with no result line' };
   if (result.is_error !== true)
@@ -120,9 +121,12 @@ function failureOf(stream: Line[], result: Line | null, sessionInit: SessionInit
   const error = stream.findLast((line) => line.type === 'assistant' && typeof line.error === 'string')?.error;
   const failureClass = FAILURE_CLASSES[String(error ?? retry?.error)] ?? 'unknown';
   if (failureClass !== 'rate-limited') return { failureClass, message };
+  const rateLimitRetry = stream.findLast(
+    (line) => line.type === 'system' && line.subtype === 'api_retry' && line.error === 'rate_limit',
+  );
   return {
     failureClass,
-    retryAfterMs: typeof retry?.retry_delay_ms === 'number' ? retry.retry_delay_ms : null,
+    retryAfterMs: typeof rateLimitRetry?.retry_delay_ms === 'number' ? rateLimitRetry.retry_delay_ms : null,
     message,
   };
 }

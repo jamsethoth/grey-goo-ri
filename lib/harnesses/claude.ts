@@ -176,7 +176,7 @@ function resolveToolsIn(configDirectory: string, agent: unknown, context: runCon
 }
 
 // Files under the Run directory, which the Run's parallel Tickets share, are named by their content's hash.
-const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
+const sha256 = (content: string | Buffer) => createHash('sha256').update(content).digest('hex');
 
 // The margin above contextBudget at which Claude compacts, a backstop behind gg's own hand-off (#430).
 const AUTOCOMPACT_PERCENT = 125;
@@ -270,7 +270,7 @@ function repositoryDigestOf(cwd: string): string | null {
   const listed = readdirSync(directory, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => join(entry.parentPath, entry.name))
-    .map((file) => `${relative(directory, file).split(sep).join('/')}\0${sha256(readFileSync(file, 'utf8'))}`);
+    .map((file) => `${relative(directory, file).split(sep).join('/')}\0${sha256(readFileSync(file))}`);
   return sha256(listed.sort().join('\n'));
 }
 

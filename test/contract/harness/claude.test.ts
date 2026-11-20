@@ -260,6 +260,18 @@ test('the repository digest changes when .claude/skills changes', CASE, async (t
   assert.notEqual(after, before);
 });
 
+// Clarify round 1: the digest is over the files' bytes, so two assets that decode to the same text still differ.
+test('the repository digest tells apart binary assets that are not UTF-8', CASE, async (t) => {
+  const fake = fakeCli(t, { scenario: 'success' });
+  const asset = join(fake.cwd, '.claude', 'skills', 'probe', 'asset.bin');
+  mkdirSync(join(asset, '..'), { recursive: true });
+  writeFileSync(asset, Buffer.from([0x80]));
+  const before = (await fake.harness.run(claudeCall(fake), hooksOf())).result.repositoryDigest;
+  writeFileSync(asset, Buffer.from([0x81]));
+  const after = (await fake.harness.run(claudeCall(fake), hooksOf())).result.repositoryDigest;
+  assert.notEqual(after, before);
+});
+
 // A Harness returns only once its processes are gone, or reports that it could not confirm it (L6, L11).
 test("a Claude call's result reports its Command Cleanup", CASE, async (t) => {
   const fake = fakeCli(t, { scenario: 'success' });
