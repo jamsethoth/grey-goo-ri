@@ -7,7 +7,7 @@
 import * as flow from '../flow.ts';
 import type * as labels from '../labels.ts';
 import type * as model from '../model.ts';
-import * as referencePaths from '../reference-paths.ts';
+import type * as procedures from '../procedures.ts';
 import * as declaredFlows from './declared.ts';
 import * as checked from './procedures.ts';
 import * as report from './report.ts';
@@ -138,14 +138,15 @@ function workOf(write: boolean, cases: OutcomeCase[], landings: Landing[]) {
   return rescued ? 'rescued' : 'left in place';
 }
 
-// A writing Vertex commits on every passing path, under a Claim token that requires a Check.
+// A writing Vertex commits on every passing path, under a Claim token that requires a Check. Only a whole Vertex is
+// checked, whose Procedure nothing refused, so its Actions are typed.
 function checkWrites(
   fail: (where: string, finding: report.Finding) => void,
   id: string,
   procedure: checked.CheckedProcedure,
 ) {
   if (!procedure.tokens.passed.length) return;
-  if (!procedure.actions.some((action) => referencePaths.isRecord(action) && action.do === 'commit')) {
+  if (!(procedure.typed.actions as procedures.Action[]).some((action) => action.do === 'commit')) {
     fail(id, {
       code: 'write-without-commit',
       message:
@@ -176,7 +177,7 @@ function routeEdges(problems: report.Report, graph: Graph) {
     const procedure = graph.vertexProcedures.get(id);
     if (!procedure) continue;
     const write = vertex.access !== 'read-only';
-    if (write) checkWrites(fail, id, procedure);
+    if (write && graph.whole.has(id)) checkWrites(fail, id, procedure);
     const cases = checked.casesOf(procedure, graph.fallsOf.get(id) as FallThroughs);
     for (const name of vertex.outcomes) {
       const route = flow.route(vertex.route, ticket.routes, name);

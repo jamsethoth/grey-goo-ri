@@ -2,6 +2,7 @@
 // its Vertex (R11e, Q7, H1-H5); unreachable Vertices are warned. Only lib/validate/graph.ts imports it.
 
 import type * as model from '../model.ts';
+import type * as procedures from '../procedures.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as graph from './graph.ts';
 import * as checked from './procedures.ts';
@@ -31,8 +32,8 @@ const PASSED_OUTPUTS = new Map<unknown, string>([
 function leaves(id: string, procedure: checked.CheckedProcedure, ending: OutcomeCase, rescued: boolean) {
   const passed = ending.table === 'passed';
   const keys = [];
-  for (const action of ending.table === null ? [] : procedure.actions) {
-    if (!referencePaths.isRecord(action) || typeof action.id !== 'string') continue;
+  // Only a mapped Vertex is read, whose Procedure nothing refused, so its Actions are typed.
+  for (const action of ending.table === null ? [] : (procedure.typed.actions as procedures.Action[])) {
     if (action.do === 'agent') keys.push(`${id}.${action.id}.response`);
     else if (
       passed &&
