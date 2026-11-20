@@ -46,9 +46,9 @@ interface Configuration extends config.Configuration {
 
 // The repository source gg shipped until #120 with every Agent on `harness`, its test command and, unless `fullFlow`,
 // a red, green and publish Flow to ready-for-qa, whose publish reads green's report and evidence.
-export function testConfig(_root: string, { harness = 'fake', fullFlow = false } = {}): Repository & shippedFlow.Layer {
+export function testConfig(_root: string, { harness = 'fake', fullFlow = false } = {}) {
   const { maxParallel: _maxParallel, worktreeRoot: _worktreeRoot, ...configured } = shippedFlow.shippedLayer();
-  const repository = configured as unknown as Repository & shippedFlow.Layer;
+  const repository = configured as unknown as Repository & shippedFlow.SourceWithFiles;
   repository.commands = { test: 'npm test' };
   repository.testPaths = [...exampleLayer.TEST_GLOBS];
   for (const agent of Object.values(repository.agents))
