@@ -3,6 +3,8 @@
 // gives.
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
@@ -74,6 +76,18 @@ const BARE_AUTH = /OAuth\s+and\s+keychain\s+are\s+never\s+read/;
 const changedHelp = (text: string) => text.replace(BARE_AUTH, 'OAuth is read from CLAUDE_CODE_OAUTH_TOKEN');
 const sameArgv = (left: readonly string[], right: readonly string[]) =>
   left.length === right.length && left.every((arg, index) => arg === right[index]);
+// The profile probe's call: a model call that is neither the --bare probe nor the copy of its Session.
+const isProfileCall = ({ args }: { args: string[] }) =>
+  args.includes('-p') && !args.includes('--bare') && !args.includes('--fork-session');
+
+// PATH as a directory holding only `files`, until the case ends: on win32 the shell check finds PowerShell there.
+function onlyOnPath(t: TestContext, ...files: string[]) {
+  const directory = tempDirectory.tempDirectory(t, 'gg-doctor-path-');
+  for (const name of [...(process.platform === 'win32' ? ['pwsh.exe'] : []), ...files])
+    writeFileSync(join(directory, name), '');
+  caseEnv.caseEnv(t, { PATH: directory });
+}
+const GG_FILE = process.platform === 'win32' ? 'gg.cmd' : 'gg';
 
 test('gg doctor reports a Claude CLI older than the minimum', async () => {
   const { text, exitCode } = await doctorOverCli({ version: recordedCli.OLD_VERSION });
@@ -123,7 +137,7 @@ test('gg doctor without --probe runs no model call', async () => {
 // Decision 3: the profile probe runs a model call with the launch profile's argv and environment.
 test('gg doctor --probe runs the profile probe', async () => {
   const { launches } = await doctorOverCli({}, { probe: true });
-  const profile = launches.filter(({ args }) => args.includes('-p') && !args.includes('--bare'));
+  const profile = launches.filter(isProfileCall);
   assert.equal(profile.length, 1, JSON.stringify(launches.map(({ args }) => args)));
   const [{ args, env }] = profile as [(typeof profile)[number]];
   for (const flag of ['--setting-sources', '--strict-mcp-config', '--append-system-prompt-file'])
@@ -151,12 +165,13 @@ test('gg doctor --probe runs the bare probe when CLAUDE_CODE_OAUTH_TOKEN is set'
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
 test('gg doctor --probe without CLAUDE_CODE_OAUTH_TOKEN skips the bare probe with a warning naming claude setup-token', async (t) => {
   withoutToken(t);
+  onlyOnPath(t, GG_FILE);
   const { text, launches, exitCode } = await doctorOverCli({}, { probe: true });
   assert.deepEqual(
     launches.filter(({ args }) => args.includes('--bare')),
     [],
   );
-  assert.equal(launches.filter(({ args }) => args.includes('-p')).length, 1, 'the profile probe runs');
+  assert.equal(launches.filter(isProfileCall).length, 1, 'the profile probe runs');
   const warnings = doctorLines(text, 'warning');
   assert.equal(warnings.length, 1, text);
   assert.ok(warnings[0]!.includes('claude setup-token'), warnings[0]);
@@ -164,7 +179,8 @@ test('gg doctor --probe without CLAUDE_CODE_OAUTH_TOKEN skips the bare probe wit
 });
 
 // Q4 A: a changed --bare line is a sign, not proof, that bare mode takes a subscription, so it warns and stops no Run.
-test('gg doctor warns, naming gg doctor --probe, when the help stops saying bare mode never reads OAuth', async () => {
+test('gg doctor warns, naming gg doctor --probe, when the help stops saying bare mode never reads OAuth', async (t) => {
+  onlyOnPath(t, GG_FILE);
   assert.match(recordedCli.recordedHelp(), BARE_AUTH, 'the recorded --bare line says OAuth is never read');
   const { text, exitCode } = await doctorOverCli({ help: changedHelp });
   assert.deepEqual(linesOf(text, 'error'), [], text);
@@ -224,7 +240,12 @@ async function probeChecks(state: recordedCli.CliState) {
   const cli = recordedCli.recordedCli(state);
   const { checks } = await claude.createCli(cli).doctor({ probe: true });
   const named = (name: string) => checks.find((check) => check.name === name);
-  const checked = { bare: named('bare-probe'), profile: named('profile-probe'), handoff: named('handoff-probe') };
+  const checked = {
+    bare: named('bare-probe'),
+    profile: named('profile-probe'),
+    handoff: named('handoff-probe'),
+    fork: named('fork-probe'),
+  };
   return { ...checked, launches: cli.launches };
 }
 
@@ -406,7 +427,7 @@ test('the profile probe fails when its answer holds the CLAUDE.md word in any ca
 // gg doctor --probe shows whether the hook runs under the real CLI.
 test("gg doctor --probe checks the hand-off hook on the profile probe's call", async () => {
   const { handoff, launches } = await probeChecks({});
-  const profile = launches.filter(({ args }) => args.includes('-p') && !args.includes('--bare'));
+  const profile = launches.filter(isProfileCall);
   assert.equal(profile.length, 1, JSON.stringify(launches.map(({ args }) => args)));
   assert.ok(profile[0]!.args.includes('--include-hook-events'), JSON.stringify(profile[0]!.args));
   assert.equal(handoff?.ok, true, handoff?.message ?? 'no handoff-probe check');
@@ -456,4 +477,66 @@ test('the hand-off probe fails, naming the hook, when no PostToolUse hook ran', 
   const { handoff } = await probeChecks({ profile: eachLine((line) => (isHookLine(line) ? null : line)) });
   assert.equal(handoff?.ok, false, handoff?.message ?? 'no handoff-probe check');
   assert.ok(handoff.message.includes('PostToolUse hook'), handoff.message);
+});
+
+// D6 A of #430: an agent past a hand-off asks its handed-off Session with gg ask-session, which its shell finds on
+// PATH.
+test('gg doctor warns, naming npm install -g, when gg is not on PATH', async (t) => {
+  onlyOnPath(t);
+  const { text, exitCode } = await doctorOverCli();
+  const warnings = doctorLines(text, 'warning');
+  assert.equal(warnings.length, 1, text);
+  assert.ok(warnings[0]!.includes('gg-on-path') && warnings[0]!.includes('npm install -g'), warnings[0]);
+  assert.equal(exitCode, 0, text);
+  onlyOnPath(t, GG_FILE);
+  assert.deepEqual(doctorLines((await doctorOverCli()).text, 'warning'), [], 'gg on PATH passes');
+});
+
+// D6 A of #430: --probe asks the hand-off probe's Session through a read-only copy, as gg ask-session asks one.
+test("gg doctor --probe asks a read-only copy of the hand-off probe's Session", async () => {
+  const { fork, launches } = await probeChecks({});
+  const [profile] = launches.filter(isProfileCall);
+  const forks = launches.filter(({ args }) => args.includes('--fork-session'));
+  assert.equal(forks.length, 1, JSON.stringify(launches.map(({ args }) => args)));
+  const [{ args, cwd }] = forks as [(typeof forks)[number]];
+  const handedOff = JSON.parse(recordedCli.handoffStandIn().split('\n')[0]!) as { session_id: string };
+  assert.equal(args[args.indexOf('--resume') + 1], handedOff.session_id);
+  assert.ok(args.includes('--restricted'), 'the copy runs read-only');
+  assert.equal(cwd, profile?.cwd, 'the copy runs where the CLI keeps the Session');
+  assert.equal(fork?.ok, true, fork?.message ?? 'no fork-probe check');
+});
+
+// Every ending of the copy's call: only a copy with a Session of its own that answers passes.
+const FORK_ENDINGS: [string, (stream: string) => string][] = [
+  ['the fork stand-in', (stream) => stream],
+  ['the handed-off Session resumed in place', () => success()],
+  ['no structured answer', () => claudeRecordings.lines('no-schema').join('\n')],
+  ['an empty answer', answered({ answer: ' ' })],
+  ['a failed call', () => claudeRecordings.lines('auth-failure').join('\n')],
+];
+
+test('a fork probe passes only on the fork stand-in, of every ending, and fails as an error', async () => {
+  const outcomes: [string, boolean, string | undefined][] = [];
+  for (const [ending, fork] of FORK_ENDINGS) {
+    const { fork: check } = await probeChecks({ fork });
+    outcomes.push([ending, check?.ok === true, check?.severity]);
+  }
+  assert.deepEqual(
+    outcomes.filter(([, ok]) => ok).map(([ending]) => ending),
+    ['the fork stand-in'],
+  );
+  assert.deepEqual(
+    outcomes.filter(([, ok, severity]) => !ok && severity !== 'error'),
+    [],
+    'every other ending fails the probe as an error',
+  );
+});
+
+test('gg doctor --probe asks no copy when the hand-off probe failed', async () => {
+  const { fork, launches } = await probeChecks({ profile: () => success() });
+  assert.equal(fork, undefined);
+  assert.deepEqual(
+    launches.filter(({ args }) => args.includes('--fork-session')),
+    [],
+  );
 });

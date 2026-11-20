@@ -47,10 +47,10 @@ function handedOffRecord(t: TestContext) {
   return { commonDir, worktree: executionRecord.worktree };
 }
 
-// The recorded CLI, its answer the structured one a question gets.
+// The recorded CLI, its copy of a Session answering with the structured answer a question gets.
 const answering = () =>
   recordedCli.recordedCli({
-    profile: (stream) =>
+    fork: (stream) =>
       stream
         .split('\n')
         .filter(Boolean)

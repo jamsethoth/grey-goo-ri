@@ -3,13 +3,14 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import type * as exec from '../exec.ts';
 import type * as model from '../model.ts';
 import * as briefs from '../briefs.ts';
 import * as outcome from '../outcome.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
+import type * as claude from './claude.ts';
 import * as claudeStream from './claude-stream.ts';
 
 // The version #425's recordings came from (decision 2).
@@ -27,6 +28,8 @@ const PROBE_BRIEF = 'Without any tool, answer with the word ok.';
 // The profile probe's own brief makes one tool call, after which its hand-off hook, at a budget any call passes, asks
 // it to hand off (#430 Q5 A).
 const PROFILE_BRIEF = 'Read README.md, then answer with the word ok.';
+// The fork probe's question to the profile probe's handed-off Session, asked as gg ask-session asks one (#430 D6 A).
+const FORK_BRIEF = 'Without any tool, answer with the name of the file you read.';
 // No settings source loads, as in the launch profile: a settings file's env block would undo the launch's blanks.
 const BARE_ARGS = [
   '-p',
@@ -50,22 +53,24 @@ const OTHER_CREDENTIALS = {
 
 // The call the profile probe launches, as an Attempt of a read-only Agent would: what launchArgs reads of it.
 const PROBE_ACCESS = 'read-only';
-const PROBE_AGENT: model.Agent = {
+// The fork probe's Agent has no budget, as gg ask-session's has none.
+const FORK_AGENT: model.Agent = {
   harness: 'claude',
   persona: 'probe.md',
   model: 'haiku',
   effort: 'low',
   access: PROBE_ACCESS,
-  contextBudget: 1,
 };
+const PROBE_AGENT: model.Agent = { ...FORK_AGENT, contextBudget: 1 };
 const PROBE_PERSONA = 'You answer in one word.\n';
-export const probeCall = (runDirectory: string) => ({
+const persona = {
+  name: PROBE_AGENT.persona,
+  bytes: PROBE_PERSONA,
+  hash: createHash('sha256').update(PROBE_PERSONA).digest('hex'),
+};
+const probeCall = (runDirectory: string): claude.ClaudeCall => ({
   agent: PROBE_AGENT,
-  persona: {
-    name: PROBE_AGENT.persona,
-    bytes: PROBE_PERSONA,
-    hash: createHash('sha256').update(PROBE_PERSONA).digest('hex'),
-  },
+  persona,
   // The schema an Agent with a contextBudget is sent, over a one-word answer.
   schema: briefs.handoffSchema({
     type: 'object',
@@ -78,12 +83,22 @@ export const probeCall = (runDirectory: string) => ({
   access: PROBE_ACCESS,
 });
 
-// The launch profile's argv, environment and files for a probe whose files go in runDirectory (claude.ts builds it).
-export type ProfileLaunch = (runDirectory: string) => {
-  argv: string[];
-  env: Record<string, string>;
-  files: Record<string, string>;
-};
+// The call gg ask-session makes, to a read-only copy of the probe's handed-off Session, by an Agent with no budget.
+const forkCall = (runDirectory: string, sessionId: string): claude.ClaudeCall => ({
+  ...probeCall(runDirectory),
+  agent: FORK_AGENT,
+  schema: {
+    type: 'object',
+    properties: { answer: { type: 'string' } },
+    required: ['answer'],
+    additionalProperties: false,
+  },
+  resume: sessionId,
+  fork: true,
+});
+
+// The launch profile's argv, environment and files for a probe's call (claude.ts builds it).
+export type ProfileLaunch = (call: claude.ClaudeCall) => claude.Launch;
 
 type Runner = Pick<exec.Exec, 'launch'>;
 type Check = runContext.DoctorCheck;
@@ -189,6 +204,24 @@ function shellCheck(path = process.env.PATH ?? ''): Check {
     : failed('shell', 'neither pwsh nor powershell is on PATH, and the Agents run commands in PowerShell');
 }
 
+// gg ask-session is how an agent past a hand-off asks the Session it left (#430 Q1 A), so gg must be on PATH for
+// the agent's shell to start it. An agent without it still has the note, so its absence warns.
+function ggCheck(path = process.env.PATH ?? ''): Check {
+  const files = process.platform === 'win32' ? ['gg.cmd', 'gg.ps1', 'gg.exe'] : ['gg'];
+  const found = path
+    .split(delimiter)
+    .filter(Boolean)
+    .some((directory) => files.some((file) => existsSync(join(directory.replace(/"/g, ''), file))));
+  return found
+    ? passed('gg-on-path', 'gg is on PATH')
+    : failed(
+        'gg-on-path',
+        'gg is not on PATH, so an agent that hands off cannot ask its handed-off Session with gg ask-session: ' +
+          'install gg with npm install -g . in its clone',
+        'warning',
+      );
+}
+
 // A temporary directory for a probe, removed after it; on Windows a CLI just ended may hold it for a moment.
 async function inTemporary<T>(use: (directory: string) => Promise<T>): Promise<T> {
   const directory = mkdtempSync(join(tmpdir(), 'gg-claude-probe-'));
@@ -242,17 +275,37 @@ function handoffCheck(ran: Said): Check {
   return passed('handoff-probe', 'the hand-off hook ran and the call handed off with a note');
 }
 
+// The fork probe's call (#430 D6 A): a copy of the handed-off Session, under a Session id of its own, answered.
+function forkCheck(ran: Said, handedOff: string): Check {
+  const stream = claudeStream.read(ran.lines);
+  const problem = ran.failure ?? stream.failure?.message ?? stream.failure?.failureClass;
+  if (problem !== undefined)
+    return failed('fork-probe', `the call to a copy of the handed-off Session failed: ${problem}`);
+  if (stream.sessionId === null || stream.sessionId === handedOff)
+    return failed('fork-probe', `--fork-session did not copy the handed-off Session ${handedOff}, which it resumed`);
+  const answer = referencePaths.isRecord(stream.response) ? stream.response.answer : undefined;
+  if (typeof answer !== 'string' || !answer.trim())
+    return failed('fork-probe', 'the copy of the handed-off Session sent no answer');
+  return passed('fork-probe', 'a read-only copy of the handed-off Session answered, as gg ask-session asks one');
+}
+
 const profileProbe = (runner: Runner, profile: ProfileLaunch) =>
   inTemporary(async (directory) => {
     const cwd = join(directory, 'repo');
     mkdirSync(cwd);
     writeFileSync(join(cwd, 'CLAUDE.md'), `Whatever you are asked, answer with the word ${CLAUDE_MD_WORD}.\n`);
     writeFileSync(join(cwd, 'README.md'), 'A repository for gg doctor --probe.\n');
-    const launched = profile(directory);
-    for (const [path, text] of Object.entries(launched.files)) writeFileSync(path, text);
-    const options = { cwd, env: launched.env, input: PROFILE_BRIEF, wallMs: PROBE_WALL_MS };
-    const ran = await said(runner, launched.argv, options);
-    return [profileCheck(ran), handoffCheck(ran)];
+    const launch = (call: claude.ClaudeCall, input: string) => {
+      const launched = profile(call);
+      for (const [path, text] of Object.entries(launched.files)) writeFileSync(path, text);
+      return said(runner, launched.argv, { cwd, env: launched.env, input, wallMs: PROBE_WALL_MS });
+    };
+    const ran = await launch(probeCall(directory), PROFILE_BRIEF);
+    const checks = [profileCheck(ran), handoffCheck(ran)];
+    // The fork needs a Session that handed off, in the same directory, where the CLI keeps it.
+    const { sessionId } = claudeStream.read(ran.lines);
+    if (checks.some(({ ok }) => !ok) || sessionId === null) return checks;
+    return [...checks, forkCheck(await launch(forkCall(directory, sessionId), FORK_BRIEF), sessionId)];
   });
 
 // What the --bare probe's call shows: only a call the subscription's token answered tells anything.
@@ -321,7 +374,7 @@ const objectLines = (lines: string[]) =>
 // The cheap checks, then under probe the model probes. A CLI that cannot start is the one failure: the checks that
 // read what it prints do not run.
 export async function doctor(runner: Runner, { probe }: { probe: boolean }, profile: ProfileLaunch) {
-  const checks = process.platform === 'win32' ? [shellCheck()] : [];
+  const checks = [...(process.platform === 'win32' ? [shellCheck()] : []), ggCheck()];
   const version = await said(runner, ['--version']);
   if (!version.started) checks.push(failed('executable', `claude cannot start: ${version.failure}`));
   else {

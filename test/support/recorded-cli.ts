@@ -21,8 +21,8 @@ export const OLD_VERSION = '2.1.327';
 
 // How a case changes the CLI that answers: an executable that cannot start, the version --version prints, the
 // logged-out recording for auth status, a change to --help's text, a change to the stream a model call replays,
-// the launch profile's or the --bare one's, and the first argument of a command that times out printing nothing, or
-// that exits 1 printing nothing.
+// the launch profile's, the --bare one's or the --fork-session one's, and the first argument of a command that times
+// out printing nothing, or that exits 1 printing nothing.
 export interface CliState {
   missing?: boolean;
   version?: string;
@@ -30,6 +30,7 @@ export interface CliState {
   help?: (text: string) => string;
   profile?: (stream: string) => string;
   bare?: (stream: string) => string;
+  fork?: (stream: string) => string;
   hangs?: string;
   fails?: string;
 }
@@ -82,17 +83,30 @@ export function handoffStandIn(): string {
   return `${handedOff.map((line) => JSON.stringify(line)).join('\n')}\n`;
 }
 
+// A stand-in, not a recording: the success recording as a copy of its Session under --fork-session, which the CLI
+// gives a Session id of its own (#430 D6 A).
+export const FORK_SESSION_ID = '00000000-0000-4000-8000-00000000f0c5';
+export const forkStandIn = () => {
+  const stream = recordedStream('success');
+  const sessionId = (JSON.parse(stream.split('\n')[0]!) as { session_id: string }).session_id;
+  return stream.replaceAll(sessionId, FORK_SESSION_ID);
+};
+
 // What the CLI prints for `args` under `state`, and its exit code. A model call replays the success recording, or the
-// hand-off stand-in when it asks for hook events, and a --bare one the auth-failure recording: bare mode reads no OAuth
-// login today (ADR 0002).
+// hand-off stand-in when it asks for hook events, or the fork stand-in when it forks, and a --bare one the auth-failure
+// recording: bare mode reads no OAuth login today (ADR 0002).
+function modelCall(args: readonly string[], state: CliState) {
+  const same = (stream: string) => stream;
+  if (args.includes('--fork-session')) return { stdout: (state.fork ?? same)(forkStandIn()), exitCode: 0 };
+  const bare = args.includes('--bare');
+  const name = bare ? 'auth-failure' : 'success';
+  const edit = (bare ? state.bare : state.profile) ?? same;
+  const replayed = !bare && args.includes('--include-hook-events') ? handoffStandIn() : recordedStream(name);
+  return { stdout: edit(replayed), exitCode: recordedCommand(name).exitCode };
+}
+
 export function answer(args: readonly string[], state: CliState = {}): { stdout: string; exitCode: number } {
-  if (args.includes('-p')) {
-    const bare = args.includes('--bare');
-    const name = bare ? 'auth-failure' : 'success';
-    const edit = (bare ? state.bare : state.profile) ?? ((stream: string) => stream);
-    const replayed = !bare && args.includes('--include-hook-events') ? handoffStandIn() : recordedStream(name);
-    return { stdout: edit(replayed), exitCode: recordedCommand(name).exitCode };
-  }
+  if (args.includes('-p')) return modelCall(args, state);
   const [version, authStatus, help] = CHEAP_ARGVS as [string[], string[], string[]];
   if (sameArgv(args, version)) {
     const { stdout, exitCode } = recordedCommand('cli-version');

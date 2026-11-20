@@ -348,12 +348,11 @@ const notImplemented = (): never => {
   throw new Error('not implemented');
 };
 
-// gg doctor --probe's launch-profile call, its files in runDirectory, as an Attempt of its Agent would launch, with the
-// hook events in its stream, which show whether the hand-off hook ran (#430 Q5 A).
+// A gg doctor --probe call, its files in its runDirectory, as an Attempt of its Agent would launch, with the hook
+// events in its stream, which show whether the hand-off hook ran (#430 Q5 A).
 const probeLaunch =
   (configDirectory: string): claudeDoctor.ProfileLaunch =>
-  (runDirectory) => {
-    const call = claudeDoctor.probeCall(runDirectory);
+  (call) => {
     const tools = resolveToolsIn(configDirectory, call.agent, { commands: {}, platform: process.platform });
     const launched = launchArgs(call, tools);
     return { ...launched, argv: [...launched.argv, '--include-hook-events'] };
