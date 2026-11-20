@@ -156,7 +156,7 @@ test('input tokens exclude cache reads and writes', CASE, async (t) => {
 // The resume recording makes no tool call and no compaction, so a call that makes both shows they add, not take a max.
 test("a resumed call adds its tool calls and compactions to the earlier total's", CASE, async (t) => {
   const fake = fakeCli(t, { scenario: 'compaction' });
-  const { result } = await fake.harness.run(claudeCall(fake, { previousUsage: EARLIER }), hooksOf());
+  const { result } = await fake.harness.run(claudeCall(fake, { resume: SUCCESS_SESSION, previousUsage: EARLIER }), hooksOf());
   const countsOf = ({ turns, toolCalls, compactions }: typeof result.usage.delta) => ({
     turns,
     toolCalls,

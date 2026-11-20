@@ -80,6 +80,23 @@ test('launch stops a process silent past stallMs and says stall', UNSANDBOXED_CA
   assert.deepEqual(stopOf(result, pidFile), { timedOut: 'stall', cancelled: false, alive: false, confirmed: true });
 });
 
+// A transcript whose stat fails makes the Claude Harness's onIdle throw: that is no activity, a typed stall, never an
+// unhandled rejection that ends gg (#425 D11 A).
+test('an onIdle that throws counts as no activity, and the stall stops the process', UNSANDBOXED_CASE, async (t) => {
+  const pidFile = join(scratch, 'idle-throws.pid');
+  t.after(() => processProbe.endProcessIn(pidFile));
+  const result = await launch({
+    command: process.execPath,
+    args: [childScripts.LONG_LIVED, pidFile],
+    stallMs: 500,
+    onIdle: async () => {
+      await processProbe.waitFor(() => processProbe.pidIn(pidFile) > 0, t.signal);
+      throw Object.assign(new Error('EPERM: operation not permitted, stat'), { code: 'EPERM' });
+    },
+  });
+  assert.deepEqual(stopOf(result, pidFile), { timedOut: 'stall', cancelled: false, alive: false, confirmed: true });
+});
+
 // 60 lines 100 ms apart take at least 5.9 s, past stallMs, while no gap between them, nor the start of node behind the
 // Windows gate, comes near it.
 test('output resets the stall clock', CASE, async () => {
