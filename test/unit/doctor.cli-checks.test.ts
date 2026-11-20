@@ -430,6 +430,7 @@ const HANDOFF_ENDINGS: [string, (stream: string) => string][] = [
   ['only a PreToolUse hook ran', eachLine((line) => (isHookLine(line) ? { ...line, hook_event: 'PreToolUse' } : line))],
   ['the call ended without handing off', answered({ claim: 'ok', handoff: '' })],
   ['a hand-off with no note', answered({ handoff: '' })],
+  ['a note without the handed-off claim', answered({ claim: 'ok' })],
   ['no structured answer', () => claudeRecordings.lines('no-schema').join('\n')],
   ['the success recording, with no hook', () => success()],
 ];
