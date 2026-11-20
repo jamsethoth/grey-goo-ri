@@ -195,7 +195,7 @@ function checkedAgent(problems: report.Report, checking: Pick<AgentContext, 'har
   return report.reportedSince(problems, before) ?? { harness, keys };
 }
 
-// Every declared Agent is checked once, used or not; its errors hold only the Flows that use it (H6).
+// Every declared Agent is checked once, used or not; its errors hold only the Vertices that use it (H6 (d)).
 export function checkAgents(problems: report.Report, config: Value, harnesses: unknown, usedAgents: Set<unknown>) {
   const failedAgents = new Set<unknown>();
   const agents = new Map<string, CheckedAgent>();

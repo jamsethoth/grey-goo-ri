@@ -435,8 +435,9 @@ test('a user Flow that uses a misfit is held from its own graph checks', async (
   }
 });
 
-// A Check whose command is not a name is an error in any repository, so it still holds every Flow of the user's source.
-test('a user Check whose command is not a name holds the graph checks of every user Flow', async () => {
+// A Check whose command is not a name is an error in any repository, but a Procedure's error holds only the Vertices
+// that name it, so a user Flow none of whose Vertices does is graph-checked beside it (#449, Q3 A).
+test('a user Check whose command is not a name holds no graph check of a user Flow that does not use it', async () => {
   const user = userSource(['loop'], (source, flows) => {
     flows.loop!.ticket.vertices.green!.route = { ok: 'red' };
     addMisfit(source, 'command', ['lint']);
@@ -445,13 +446,14 @@ test('a user Check whose command is not a name holds the graph checks of every u
     (await checkOf(sources(repositorySource(), user))).configurationErrors.map(
       (problem) => `${problem.at} ${problem.code}`,
     ),
-    ['user:procedures.misfit.actions[1] undeclared-command'],
+    ['user:procedures.misfit.actions[1] undeclared-command', 'user:flows.loop.ticket unbounded-cycle'],
   );
 });
 
-// The repository's own error refuses every Run, so its missing command still holds the graph checks of every one of
-// its Flows (#433's Definition of done).
-test("a repository Procedure's missing command holds the graph checks of every repository Flow", async () => {
+// The repository's own missing command refuses every Run, and holds only the Vertices that name its Procedure, so a
+// repository Flow that does not use it is graph-checked beside it (#449, Q3 A, reversing #433's rule).
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test("a repository Procedure's missing command holds no graph check of a repository Flow that does not use it", async () => {
   const repository = repositorySource();
   repository.flows.loop = structuredClone(repository.flows.default!);
   repository.flows.loop.ticket.vertices.green!.route = { ok: 'red' };
@@ -459,6 +461,7 @@ test("a repository Procedure's missing command holds the graph checks of every r
   assert.deepEqual(errorLines(await checkOf(sources(repository))), [
     'error: procedures.misfit.actions[1]: Check test names command "lint", which the repository does not declare ' +
       '[undeclared-command]',
+    `error: flows.loop.ticket: ${loopCycle} [unbounded-cycle]`,
   ]);
 });
 
