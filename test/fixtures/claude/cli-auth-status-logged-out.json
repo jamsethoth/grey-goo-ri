@@ -1,11 +1,17 @@
 {
-  "placeholder": "hand-written from third-party reports until the owner runs: node scripts/record-claude.ts cli-version cli-auth-status cli-auth-status-logged-out cli-help",
-  "cliVersion": "2.1.328 (Claude Code)",
+  "cliVersion": "2.1.329 (Claude Code)",
   "command": "cli-auth-status-logged-out",
   "purpose": "the login doctor reads, in an empty configuration directory, logged out",
-  "argv": ["auth", "status", "--json"],
-  "env": { "CLAUDE_CONFIG_DIR": "<recording>/config" },
+  "argv": [
+    "auth",
+    "status",
+    "--json"
+  ],
+  "env": {
+    "CLAUDE_CONFIG_DIR": "<recording>/config",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  },
   "exitCode": 1,
-  "stdout": "{\n  \"loggedIn\": false,\n  \"authMethod\": \"none\",\n  \"apiProvider\": \"firstParty\"\n}\n",
+  "stdout": "{\n  \"loggedIn\": false,\n  \"authMethod\": \"none\",\n  \"apiProvider\": \"firstParty\",\n  \"analyticsDisabled\": true,\n  \"projectsDirectory\": \"<redacted>\",\n  \"configDirectory\": \"<redacted>\",\n  \"loginExpiresAt\": null,\n  \"consoleProfileSignInOffered\": true\n}\n",
   "stderr": ""
 }
