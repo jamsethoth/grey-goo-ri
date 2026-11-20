@@ -191,7 +191,7 @@ async function doctorProblems(
 ) {
   for (const harnessName of harnessNames) {
     const harness = harnesses[harnessName] as PreflightHarness;
-    // shortcut: Codex builds no doctor until slice 3, so it has no checks to run; drop this then.
+    // shortcut: a shipped Harness builds no doctor until its slice, so it has no checks to run; drop this in slice 3.
     if (!harness.doctor) continue;
     let checks: runContext.DoctorCheck[];
     try {
