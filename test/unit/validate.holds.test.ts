@@ -670,6 +670,8 @@ const OWN_KEY = "an error at a Vertex's own key holds the cycle through it";
 const NO_VERTICES = 'malformed configuration is an error, never a throw: vertices that are a list';
 const SAME_REFUSAL = 'equivalent: reportedSince returns the same refusal';
 const DECLARATION = 'equivalent: declares the read below';
+const BOUND_WORK = (key: string) => `a route through a Vertex whose ${key} is refused shows no work`;
+const WARNINGS = 'a Vertex that is not an object holds the warnings';
 const WAIT_READS: WaitRead[] = [
   ['flows.ts', 'let verticesRefused: Reported | undefined;', null, DECLARATION],
   [
@@ -689,7 +691,7 @@ const WAIT_READS: WaitRead[] = [
     'a Vertex whose Procedure has an error holds the checks that read it, and only those',
   ],
   ['flows.ts', '!agentRefused && ', '', AGENT_HOLD],
-  ['flows.ts', ' && !refused) state', ') state', OWN_KEY],
+  ['flows.ts', ' && !refused)', ')', OWN_KEY],
   ['flows.ts', 'const ownRefused = report.reportedSince(problems, before);', 'const ownRefused = undefined;', OWN_KEY],
   ['flows.ts', 'bound.refused, ', '', KEY_TABLE],
   [
@@ -705,13 +707,25 @@ const WAIT_READS: WaitRead[] = [
     ';',
     'a Vertex whose Procedure has an error holds only its own route keys, and the Flow defaults',
   ],
-  ['flows.ts', ' && !report.isReported(typed.routes);', ';', KEY_TABLE],
-  ['flows.ts', 'mapSound && !report.isReported(state.typed.get(id)?.route)', 'mapSound', KEY_TABLE],
+  ['flows.ts', 'if (!report.isReported(route)) ', '', VERTEX_WORK],
+  ['flows.ts', '!report.isReported(max) && ', '', BOUND_WORK('max')],
+  ['flows.ts', ' && !report.isReported(exhausted))', ')', BOUND_WORK('exhausted')],
   [
     'flows.ts',
-    ' && Object.keys(vertices).every((id) => mapped.has(id));',
-    ';',
-    'a Vertex that is not an object holds the warnings',
+    'report.isReported(flow.typed.routes) ? undefined : ',
+    '',
+    'a Flow whose route target is refused shows no work for the Outcomes its routes carry',
+  ],
+  ['flows.ts', 'flowRoutes !== undefined && ', '', KEY_TABLE],
+  ['flows.ts', 'state.whole.has(id) && ', '', KEY_TABLE],
+  ['flows.ts', ' && vertexRoutes.has(id)', '', KEY_TABLE],
+  ['flows.ts', 'Object.keys(state.vertices).every((id) => mapped.has(id))', 'true', WARNINGS],
+  ['flows.ts', 'flow.routesSound ? held.vertex.outcomes : []', 'held.vertex.outcomes', KEY_TABLE],
+  [
+    'flows.ts',
+    '...(!report.isReported(flow.typed.entry) && { entry: flow.typed.entry })',
+    'entry: flow.typed.entry',
+    'an entry naming no Vertex holds only the checks that read the entry',
   ],
   [
     'flows.ts',

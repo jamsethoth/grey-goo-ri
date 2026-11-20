@@ -11,12 +11,14 @@ import * as report from './report.ts';
 const PR_READY = 'pr-ready';
 
 type OutcomeCase = checked.OutcomeCase;
-// The map the facts are read over: the Vertices it reads, each with its Procedure, and the entry.
+// The map the facts are read over: the Vertices it reads, each with its Procedure, the entry, and the Vertices the
+// warnings read, none unless the map reads every Vertex (#449, Q2 A).
 export interface Facts {
   location: string;
   entry: string;
   resolved: Map<string, model.DeclaredVertexJson>;
-  vertexProcedures: Map<string, checked.CheckedProcedure | undefined>;
+  vertexProcedures: Map<string, checked.HeldProcedure | undefined>;
+  warned: Map<string, model.DeclaredVertexJson>;
 }
 
 // The output an Action kind leaves only on a passed ending: a commit's files, and a Decision, which takes the passed
@@ -29,7 +31,7 @@ const PASSED_OUTPUTS = new Map<unknown, string>([
 // The outputs a Visit of Vertex `id` leaves when it ends in `ending` (H3): the agent's response on any Claim (N10);
 // effects, and the evidence of each Check the token requires (N9), only from the passed table (S4); and, when `rescued`
 // asks, the rescue when failing work moves on to a Vertex (R5a, W3).
-function leaves(id: string, procedure: checked.CheckedProcedure, ending: OutcomeCase, rescued: boolean) {
+function leaves(id: string, procedure: checked.HeldProcedure, ending: OutcomeCase, rescued: boolean) {
   const passed = ending.table === 'passed';
   const keys = [];
   // Only a mapped Vertex is read, whose Procedure nothing refused, so its Actions are typed.
@@ -65,7 +67,7 @@ function groupsOf(resolved: Map<string, model.DeclaredVertexJson>) {
 // leaves none (N4), so it never guarantees one.
 function gained(facts: Facts, groups: Map<string, string[]>, edge: graph.Edge, every: boolean) {
   const ways = edge.cases.map((ending) => {
-    const procedure = facts.vertexProcedures.get(edge.from) as checked.CheckedProcedure;
+    const procedure = facts.vertexProcedures.get(edge.from) as checked.HeldProcedure;
     const keys = leaves(edge.from, procedure, ending, edge.write && !every);
     const found = [...groups]
       .filter(([, sources]) => sources.some((key) => keys.includes(key)))
@@ -104,13 +106,13 @@ function factsAt(facts: Facts, edges: graph.Edge[], groups: Map<string, string[]
 
 // The two errors that may be guesses on the map say so, and name the workaround (H4); an optional input no route is
 // sure to produce is a warning (H5, T9).
-export function checkFacts(problems: report.Report, facts: Facts, edges: graph.Edge[], warn: boolean) {
+export function checkFacts(problems: report.Report, facts: Facts, edges: graph.Edge[]) {
   const vertexAt = (id: string) => `${facts.location}.ticket.vertices.${id}`;
   const groups = groupsOf(facts.resolved);
   const every = factsAt(facts, edges, groups, true);
   const some = factsAt(facts, edges, groups, false);
-  for (const id of facts.resolved.keys())
-    if (warn && !every.has(id))
+  for (const id of facts.warned.keys())
+    if (!every.has(id))
       report.warn(problems, vertexAt(id), 'unreachable-vertex', `Vertex ${id} is not reachable from the entry`, {
         vertex: id,
       });
@@ -127,40 +129,38 @@ export function checkFacts(problems: report.Report, facts: Facts, edges: graph.E
       );
     }
   }
-  for (const [id, vertex] of facts.resolved) {
-    if (every.has(id)) checkInputFacts(problems, { id, location: vertexAt(id), vertex, warn }, every, some);
-  }
+  for (const { id, name } of unsureInputs(facts.resolved, every, false))
+    report.error(
+      problems,
+      `${vertexAt(id)}.inputs.${name}`,
+      'required-input-unsure',
+      `input ${name} is required, but some route to ${id} may not produce any of its sources; ` +
+        'admission checks routes, not runs, so if every run does produce one, mark the input optional',
+      { input: name, vertex: id },
+    );
+  for (const { id, name } of unsureInputs(facts.warned, some, true))
+    report.warn(
+      problems,
+      `${vertexAt(id)}.inputs.${name}`,
+      'optional-input-unsure',
+      `input ${name} is optional, but no route to ${id} is sure to produce any of its sources; ` +
+        'admission checks routes, not runs, so it may still arrive on some runs',
+      { input: name, vertex: id },
+    );
 }
 
-function checkInputFacts(
-  problems: report.Report,
-  place: { id: string; location: string; vertex: model.DeclaredVertexJson; warn: boolean },
-  every: Map<string, string[]>,
-  some: Map<string, string[]>,
+// The inputs, optional or required, of each Vertex of `vertices` the routes reach that `holding` gives no source of.
+function unsureInputs(
+  vertices: Map<string, model.DeclaredVertexJson>,
+  holding: Map<string, string[]>,
+  optional: boolean,
 ) {
-  const { id } = place;
-  for (const [name, input] of Object.entries(place.vertex.inputs)) {
-    const group = JSON.stringify(input.from);
-    const where = `${place.location}.inputs.${name}`;
-    if (!input.optional && !(every.get(id) as string[]).includes(group)) {
-      report.error(
-        problems,
-        where,
-        'required-input-unsure',
-        `input ${name} is required, but some route to ${id} may not produce any of its sources; ` +
-          'admission checks routes, not runs, so if every run does produce one, mark the input optional',
-        { input: name, vertex: id },
-      );
-    }
-    if (place.warn && input.optional && !(some.get(id) as string[]).includes(group)) {
-      report.warn(
-        problems,
-        where,
-        'optional-input-unsure',
-        `input ${name} is optional, but no route to ${id} is sure to produce any of its sources; ` +
-          'admission checks routes, not runs, so it may still arrive on some runs',
-        { input: name, vertex: id },
-      );
-    }
-  }
+  return [...vertices]
+    .filter(([id]) => holding.has(id))
+    .flatMap(([id, vertex]) =>
+      Object.entries(vertex.inputs)
+        .filter(([, input]) => Boolean(input.optional) === optional)
+        .filter(([, input]) => !(holding.get(id) as string[]).includes(JSON.stringify(input.from)))
+        .map(([name]) => ({ id, name })),
+    );
 }
