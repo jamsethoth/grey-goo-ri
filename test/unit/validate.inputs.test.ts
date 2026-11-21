@@ -26,7 +26,7 @@ function judge(requires: { ok: string[]; changes: string[] }, checks: string[], 
 
 test('a required input missing on one path is an error', () => {
   const config = exampleSource.config();
-  delete config.flows.default.ticket.vertices.green.inputs.testFiles.optional;
+  exampleSource.putAt(config.flows.default.ticket.vertices.green.inputs.testFiles, ['optional']);
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: `${VERTICES}.green.inputs.testFiles`,
@@ -37,7 +37,10 @@ test('a required input missing on one path is an error', () => {
 
 test('an optional input no route produces is a warning', () => {
   const config = exampleSource.config();
-  config.flows.default.ticket.vertices['implementer-fix'].inputs.previous = { from: 'publish.rescue', optional: true };
+  exampleSource.putAt(config.flows.default.ticket.vertices['implementer-fix'].inputs, ['previous'], {
+    from: 'publish.rescue',
+    optional: true,
+  });
   const { errors, warnings } = exampleSource.check(config);
   assert.deepEqual(errors, []);
   assert.deepEqual(exampleSource.firedRules(warnings).at(-1), {
@@ -48,36 +51,44 @@ test('an optional input no route produces is a warning', () => {
 
 test('a required list input is met when each passing token produces a different source', () => {
   const config = exampleSource.config();
-  config.procedures.judge = judge({ ok: ['a'], changes: ['b'] }, ['a', 'b'], {
-    passed: [
-      { when: { claim: 'ok' }, outcome: 'go' },
-      { when: { claim: 'changes' }, outcome: 'go' },
-    ],
-  });
-  config.flows.default.ticket = {
+  exampleSource.putAt(
+    config.procedures,
+    ['judge'],
+    judge({ ok: ['a'], changes: ['b'] }, ['a', 'b'], {
+      passed: [
+        { when: { claim: 'ok' }, outcome: 'go' },
+        { when: { claim: 'changes' }, outcome: 'go' },
+      ],
+    }),
+  );
+  exampleSource.putAt(config.flows.default, ['ticket'], {
     entry: 'judge',
     routes: UNROUTED_NEEDS_HUMAN,
     vertices: {
       judge: { use: 'reviewer', procedure: 'judge', route: { go: 'consumer' } },
       consumer: { procedure: 'base-check', inputs: { evidence: { from: ['judge.a.evidence', 'judge.b.evidence'] } } },
     },
-  };
+  });
   assert.deepEqual(exampleSource.check(config).errors, []);
 });
 
 test("a row's Outcome counts for every Claim token of its table, so an input one token's Check gives is unmet", () => {
   const config = exampleSource.config();
-  config.procedures.judge = judge({ ok: ['a'], changes: [] }, ['a'], {
-    passed: [{ when: { claim: 'ok' }, outcome: 'go' }],
-  });
-  config.flows.default.ticket = {
+  exampleSource.putAt(
+    config.procedures,
+    ['judge'],
+    judge({ ok: ['a'], changes: [] }, ['a'], {
+      passed: [{ when: { claim: 'ok' }, outcome: 'go' }],
+    }),
+  );
+  exampleSource.putAt(config.flows.default, ['ticket'], {
     entry: 'judge',
     routes: UNROUTED_NEEDS_HUMAN,
     vertices: {
       judge: { use: 'reviewer', procedure: 'judge', route: { go: 'consumer' } },
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'judge.a.evidence' } } },
     },
-  };
+  });
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.evidence`,
@@ -88,7 +99,7 @@ test("a row's Outcome counts for every Claim token of its table, so an input one
 
 test("a Vertex's exhausted target counts from its first entry, so an input the Vertex gives is unmet there", () => {
   const config = exampleSource.config();
-  config.flows.default.ticket = {
+  exampleSource.putAt(config.flows.default, ['ticket'], {
     entry: 'start',
     routes: UNROUTED_NEEDS_HUMAN,
     vertices: {
@@ -96,7 +107,7 @@ test("a Vertex's exhausted target counts from its first entry, so an input the V
       producer: { procedure: 'base-check', max: 1, exhausted: 'consumer', route: { ok: 'producer' } },
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'producer.test.evidence' } } },
     },
-  };
+  });
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.evidence`,
@@ -107,7 +118,7 @@ test("a Vertex's exhausted target counts from its first entry, so an input the V
 
 test("an edge's exhausted target counts from its first traversal, so an input its target gives is unmet there", () => {
   const config = exampleSource.config();
-  config.flows.default.ticket = {
+  exampleSource.putAt(config.flows.default, ['ticket'], {
     entry: 'start',
     routes: UNROUTED_NEEDS_HUMAN,
     vertices: {
@@ -115,7 +126,7 @@ test("an edge's exhausted target counts from its first traversal, so an input it
       producer: { procedure: 'base-check', route: { ok: 'start' } },
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'producer.test.evidence' } } },
     },
-  };
+  });
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.evidence`,
@@ -126,14 +137,14 @@ test("an edge's exhausted target counts from its first traversal, so an input it
 
 test('a failed Claim guarantees no evidence, so an optional input reading only it is warned', () => {
   const config = exampleSource.config();
-  config.flows.default.ticket = {
+  exampleSource.putAt(config.flows.default, ['ticket'], {
     entry: 'producer',
     routes: UNROUTED_NEEDS_HUMAN,
     vertices: {
       producer: { procedure: 'base-check', route: { failed: 'consumer' } },
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'producer.test.evidence', optional: true } } },
     },
-  };
+  });
   const { errors, warnings } = exampleSource.check(config);
   assert.deepEqual(errors, []);
   assert.deepEqual(exampleSource.firedRules(warnings).at(-1), {
@@ -144,7 +155,7 @@ test('a failed Claim guarantees no evidence, so an optional input reading only i
 
 test('a Vertex max above 1 counts as spent from the first entry, so an input a later Vertex gives is unmet', () => {
   const config = exampleSource.config();
-  config.flows.default.ticket = {
+  exampleSource.putAt(config.flows.default, ['ticket'], {
     entry: 'a',
     routes: UNROUTED_NEEDS_HUMAN,
     vertices: {
@@ -155,7 +166,7 @@ test('a Vertex max above 1 counts as spent from the first entry, so an input a l
       /* eslint-enable id-length */
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'c.test.evidence' } } },
     },
-  };
+  });
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.evidence`,
@@ -166,20 +177,24 @@ test('a Vertex max above 1 counts as spent from the first entry, so an input a l
 
 test('a row taken by an earlier row counts its Outcome for every token, so an input one token gives is unmet', () => {
   const config = exampleSource.config();
-  config.procedures.judge = judge({ ok: ['a'], changes: ['b'] }, ['a', 'b'], {
-    passed: [
-      { when: { claim: 'ok' }, outcome: 'a-go' },
-      { when: {}, outcome: 'b-go' },
-    ],
-  });
-  config.flows.default.ticket = {
+  exampleSource.putAt(
+    config.procedures,
+    ['judge'],
+    judge({ ok: ['a'], changes: ['b'] }, ['a', 'b'], {
+      passed: [
+        { when: { claim: 'ok' }, outcome: 'a-go' },
+        { when: {}, outcome: 'b-go' },
+      ],
+    }),
+  );
+  exampleSource.putAt(config.flows.default, ['ticket'], {
     entry: 'judge',
     routes: UNROUTED_NEEDS_HUMAN,
     vertices: {
       judge: { use: 'reviewer', procedure: 'judge', route: { 'b-go': 'consumer' } },
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'judge.b.evidence' } } },
     },
-  };
+  });
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.evidence`,
@@ -192,20 +207,20 @@ test(
   'a failed Claim guarantees no evidence of a later required Check, ' + 'so an optional input reading it is warned',
   () => {
     const config = exampleSource.config();
-    config.procedures.both = {
+    exampleSource.putAt(config.procedures, ['both'], {
       actions: [
         { id: 'a', do: 'check', kind: 'command', command: 'test' },
         { id: 'b', do: 'check', kind: 'command', command: 'test' },
       ],
-    };
-    config.flows.default.ticket = {
+    });
+    exampleSource.putAt(config.flows.default, ['ticket'], {
       entry: 'producer',
       routes: UNROUTED_NEEDS_HUMAN,
       vertices: {
         producer: { procedure: 'both', route: { failed: 'consumer' } },
         consumer: { procedure: 'base-check', inputs: { evidence: { from: 'producer.b.evidence', optional: true } } },
       },
-    };
+    });
     const { errors, warnings } = exampleSource.check(config);
     assert.deepEqual(errors, []);
     assert.deepEqual(exampleSource.firedRules(warnings).at(-1), {
@@ -217,17 +232,21 @@ test(
 
 test('an Outcome of the stopped table carries no evidence, whatever a row names', () => {
   const config = exampleSource.config();
-  config.procedures.judge = judge({ ok: ['test'], changes: [] }, ['test'], {
-    stopped: [{ when: { 'check.test': 'passed' }, outcome: 'has-evidence' }],
-  });
-  config.flows.default.ticket = {
+  exampleSource.putAt(
+    config.procedures,
+    ['judge'],
+    judge({ ok: ['test'], changes: [] }, ['test'], {
+      stopped: [{ when: { 'check.test': 'passed' }, outcome: 'has-evidence' }],
+    }),
+  );
+  exampleSource.putAt(config.flows.default, ['ticket'], {
     entry: 'judge',
     routes: UNROUTED_NEEDS_HUMAN,
     vertices: {
       judge: { use: 'reviewer', procedure: 'judge', route: { 'has-evidence': 'consumer' } },
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'judge.test.evidence' } } },
     },
-  };
+  });
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.evidence`,
@@ -238,17 +257,21 @@ test('an Outcome of the stopped table carries no evidence, whatever a row names'
 
 test('a stopped Claim guarantees no evidence, so an optional input reading it is warned', () => {
   const config = exampleSource.config();
-  config.procedures.judge = judge({ ok: ['test'], changes: [] }, ['test'], {
-    stopped: [{ when: { 'check.test': 'failed' }, outcome: 'no-evidence' }],
-  });
-  config.flows.default.ticket = {
+  exampleSource.putAt(
+    config.procedures,
+    ['judge'],
+    judge({ ok: ['test'], changes: [] }, ['test'], {
+      stopped: [{ when: { 'check.test': 'failed' }, outcome: 'no-evidence' }],
+    }),
+  );
+  exampleSource.putAt(config.flows.default, ['ticket'], {
     entry: 'judge',
     routes: UNROUTED_NEEDS_HUMAN,
     vertices: {
       judge: { use: 'reviewer', procedure: 'judge', route: { 'no-evidence': 'consumer' } },
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'judge.test.evidence', optional: true } } },
     },
-  };
+  });
   const { errors, warnings } = exampleSource.check(config);
   assert.deepEqual(errors, []);
   assert.deepEqual(exampleSource.firedRules(warnings).at(-1), {
@@ -259,20 +282,24 @@ test('a stopped Claim guarantees no evidence, so an optional input reading it is
 
 test('an Outcome of stopped rows carries no evidence, even when each needs a different Check passed', () => {
   const config = exampleSource.config();
-  config.procedures.judge = judge({ ok: [], changes: [] }, ['a', 'b'], {
-    stopped: [
-      { when: { 'check.a': 'passed' }, outcome: 'go' },
-      { when: { 'check.b': 'passed' }, outcome: 'go' },
-    ],
-  });
-  config.flows.default.ticket = {
+  exampleSource.putAt(
+    config.procedures,
+    ['judge'],
+    judge({ ok: [], changes: [] }, ['a', 'b'], {
+      stopped: [
+        { when: { 'check.a': 'passed' }, outcome: 'go' },
+        { when: { 'check.b': 'passed' }, outcome: 'go' },
+      ],
+    }),
+  );
+  exampleSource.putAt(config.flows.default, ['ticket'], {
     entry: 'judge',
     routes: UNROUTED_NEEDS_HUMAN,
     vertices: {
       judge: { use: 'reviewer', procedure: 'judge', route: { go: 'consumer' } },
       consumer: { procedure: 'base-check', inputs: { evidence: { from: ['judge.a.evidence', 'judge.b.evidence'] } } },
     },
-  };
+  });
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.evidence`,
@@ -283,20 +310,24 @@ test('an Outcome of stopped rows carries no evidence, even when each needs a dif
 
 test('an optional input that only some ways of an Outcome produce is warned', () => {
   const config = exampleSource.config();
-  config.procedures.judge = judge({ ok: ['a'], changes: [] }, ['a'], {
-    passed: [
-      { when: { claim: 'ok' }, outcome: 'go' },
-      { when: { claim: 'changes' }, outcome: 'go' },
-    ],
-  });
-  config.flows.default.ticket = {
+  exampleSource.putAt(
+    config.procedures,
+    ['judge'],
+    judge({ ok: ['a'], changes: [] }, ['a'], {
+      passed: [
+        { when: { claim: 'ok' }, outcome: 'go' },
+        { when: { claim: 'changes' }, outcome: 'go' },
+      ],
+    }),
+  );
+  exampleSource.putAt(config.flows.default, ['ticket'], {
     entry: 'judge',
     routes: UNROUTED_NEEDS_HUMAN,
     vertices: {
       judge: { use: 'reviewer', procedure: 'judge', route: { go: 'consumer' } },
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'judge.a.evidence', optional: true } } },
     },
-  };
+  });
   const { errors, warnings } = exampleSource.check(config);
   assert.deepEqual(errors, []);
   assert.deepEqual(exampleSource.firedRules(warnings).at(-1), {
@@ -307,15 +338,15 @@ test('an optional input that only some ways of an Outcome produce is warned', ()
 
 test('a harness failure leaves no response', () => {
   const config = exampleSource.config();
-  config.procedures.judge = judge({ ok: [], changes: [] }, []);
-  config.flows.default.ticket = {
+  exampleSource.putAt(config.procedures, ['judge'], judge({ ok: [], changes: [] }, []));
+  exampleSource.putAt(config.flows.default, ['ticket'], {
     entry: 'judge',
     routes: UNROUTED_NEEDS_HUMAN,
     vertices: {
       judge: { use: 'reviewer', procedure: 'judge', route: { 'harness-timeout': 'consumer' } },
       consumer: { procedure: 'base-check', inputs: { report: { from: 'judge.judge.response' } } },
     },
-  };
+  });
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.report`,
@@ -327,7 +358,7 @@ test('a harness failure leaves no response', () => {
 // A worktree with nothing to rescue leaves no rescue (N4), so no route guarantees one.
 test('a required input from a rescue is an error, on a route that rescues', () => {
   const config = exampleSource.config();
-  delete config.flows.default.ticket.vertices['senior-green'].inputs.previous.optional;
+  exampleSource.putAt(config.flows.default.ticket.vertices['senior-green'].inputs.previous, ['optional']);
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: `${VERTICES}.senior-green.inputs.previous`,
@@ -346,8 +377,11 @@ test('an optional input from a rescue on a route that rescues gets no warning', 
 
 test('a passing Outcome leaves no rescue', () => {
   const config = exampleSource.config();
-  config.flows.default.ticket.vertices['implementer-fix'].route = { ok: 'reviewer' };
-  config.flows.default.ticket.vertices.reviewer.inputs.previous = { from: 'implementer-fix.rescue', optional: true };
+  exampleSource.putAt(config.flows.default.ticket.vertices['implementer-fix'], ['route'], { ok: 'reviewer' });
+  exampleSource.putAt(config.flows.default.ticket.vertices.reviewer.inputs, ['previous'], {
+    from: 'implementer-fix.rescue',
+    optional: true,
+  });
   assert.deepEqual(
     exampleSource.firedRules(
       exampleSource.check(config).warnings.filter((warning) => warning.at === `${VERTICES}.reviewer.inputs.previous`),
@@ -358,7 +392,7 @@ test('a passing Outcome leaves no rescue', () => {
 
 test('a read-only Vertex leaves no rescue', () => {
   const config = exampleSource.config();
-  config.flows.default.ticket.vertices.green.access = 'read-only';
+  exampleSource.putAt(config.flows.default.ticket.vertices.green, ['access'], 'read-only');
   assert.deepEqual(
     exampleSource.firedRules(
       exampleSource

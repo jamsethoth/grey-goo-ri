@@ -41,9 +41,9 @@ const exampleTicket = (config: Source) => config.flows.default.ticket;
 // A change to the example that fires each route-map check.
 const ROUTE_MAP_CASES: Record<string, (config: Source) => void> = {
   'unrouted-outcome': (config) => {
-    delete exampleTicket(config).routes['*'];
-    exampleTicket(config).routes.blocked = { end: 'needs-human' };
-    delete exampleTicket(config).vertices.reviewer.route.repeat;
+    exampleSource.putAt(exampleTicket(config).routes, ['*']);
+    exampleSource.putAt(exampleTicket(config).routes, ['blocked'], { end: 'needs-human' });
+    exampleSource.putAt(exampleTicket(config).vertices.reviewer.route, ['repeat']);
   },
   'write-without-commit': (config) => {
     const { implement } = config.procedures;
@@ -53,23 +53,25 @@ const ROUTE_MAP_CASES: Record<string, (config: Source) => void> = {
     config.procedures.fix.claimTokens.ok.requires = [];
   },
   'unbounded-cycle': (config) => {
-    exampleTicket(config).vertices.reviewer.route.changes = 'implementer-fix';
+    exampleSource.putAt(exampleTicket(config).vertices.reviewer.route, ['changes'], 'implementer-fix');
   },
   'exhausted-loop': (config) => {
     Object.assign(exampleTicket(config).vertices.red, { max: 1, exhausted: 'green' });
     Object.assign(exampleTicket(config).vertices.green, { max: 1, exhausted: 'red' });
   },
   'pr-ready-skippable': (config) => {
-    exampleTicket(config).vertices.reviewer.route.ok = { end: 'ready-for-qa' };
+    exampleSource.putAt(exampleTicket(config).vertices.reviewer.route, ['ok'], { end: 'ready-for-qa' });
   },
   'required-input-unsure': (config) => {
-    exampleTicket(config).vertices.baseline.inputs = { last: { from: 'green.commit.files' } };
+    exampleSource.putAt(exampleTicket(config).vertices.baseline, ['inputs'], { last: { from: 'green.commit.files' } });
   },
   'optional-input-unsure': (config) => {
-    exampleTicket(config).vertices.baseline.inputs = { last: { from: 'green.commit.files', optional: true } };
+    exampleSource.putAt(exampleTicket(config).vertices.baseline, ['inputs'], {
+      last: { from: 'green.commit.files', optional: true },
+    });
   },
   'unreachable-vertex': (config) => {
-    exampleTicket(config).vertices.orphan = { procedure: 'base-check', route: { ok: 'red' } };
+    exampleSource.putAt(exampleTicket(config).vertices, ['orphan'], { procedure: 'base-check', route: { ok: 'red' } });
   },
 };
 
@@ -86,25 +88,25 @@ const UNRELATED_ERRORS: Record<string, { code: string; change: (config: Source) 
     code: 'unknown-key',
     change: (config) => {
       const gate = { procedure: 'base-check', rout: {}, route: { ok: { end: 'needs-human' } } };
-      config.flows.misspelt = { actionCap: 20, ticket: { entry: 'gate', vertices: { gate } } };
+      exampleSource.putAt(config.flows, ['misspelt'], { actionCap: 20, ticket: { entry: 'gate', vertices: { gate } } });
     },
   },
   'a route key gg never takes': {
     code: 'unknown-outcome',
     change: (config) => {
-      exampleTicket(config).vertices.publish.route.pased = { end: 'needs-human' };
+      exampleSource.putAt(exampleTicket(config).vertices.publish.route, ['pased'], { end: 'needs-human' });
     },
   },
   'a Procedure no Vertex names': {
     code: 'not-a-list',
     change: (config) => {
-      config.procedures.spare = { ...structuredClone(config.procedures.fix), passed: 7 };
+      exampleSource.putAt(config.procedures, ['spare'], { ...structuredClone(config.procedures.fix), passed: 7 });
     },
   },
   'an Agent no Vertex uses': {
     code: 'harness-unregistered',
     change: (config) => {
-      config.agents.spare = { persona: 'implementer.md', harness: 'other' };
+      exampleSource.putAt(config.agents, ['spare'], { persona: 'implementer.md', harness: 'other' });
     },
   },
 };
@@ -143,9 +145,9 @@ const routeMapWarnings = (warnings: report.Problem[]) =>
 // one through reviewer and implementer-fix waits with it. The warnings wait while any Vertex does (#449, Q2 A).
 test('a Vertex whose Procedure has an error holds the checks that read it, and only those', () => {
   const config = exampleSource.config();
-  config.procedures.review.passed = 7;
-  exampleTicket(config).vertices.green.route['bad-test'] = 'red';
-  exampleTicket(config).vertices.reviewer.route.changes = 'implementer-fix';
+  exampleSource.putAt(config.procedures.review, ['passed'], 7);
+  exampleSource.putAt(exampleTicket(config).vertices.green.route, ['bad-test'], 'red');
+  exampleSource.putAt(exampleTicket(config).vertices.reviewer.route, ['changes'], 'implementer-fix');
   const { errors, warnings } = exampleSource.check(config);
   assert.deepEqual(exampleSource.firedRules(errors), [
     { at: 'procedures.review.passed', code: 'not-a-list' },
@@ -176,8 +178,8 @@ test("an error at a Vertex's own key holds the cycle through it", () => {
     ['model', 7, 'not-a-string'],
   ] as const) {
     const config = exampleSource.config();
-    exampleTicket(config).vertices.green[key] = value;
-    exampleTicket(config).vertices.green.route['bad-test'] = 'red';
+    exampleSource.putAt(exampleTicket(config).vertices.green, [key], value);
+    exampleSource.putAt(exampleTicket(config).vertices.green.route, ['bad-test'], 'red');
     const at = key === 'model' ? `${VERTICES}.green.model` : `${VERTICES}.green`;
     assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [{ at, code }], key);
   }
@@ -198,8 +200,8 @@ test('a refused bound holds the cycle checks that read its Vertex', () => {
 test('an entry naming no Vertex holds only the checks that read the entry', () => {
   const config = exampleSource.config();
   exampleTicket(config).entry = 'nowhere';
-  exampleTicket(config).vertices.green.route['bad-test'] = 'red';
-  exampleTicket(config).vertices.reviewer.route.ok = { end: 'ready-for-qa' };
+  exampleSource.putAt(exampleTicket(config).vertices.green.route, ['bad-test'], 'red');
+  exampleSource.putAt(exampleTicket(config).vertices.reviewer.route, ['ok'], { end: 'ready-for-qa' });
   const { errors, warnings } = exampleSource.check(config);
   assert.deepEqual(exampleSource.firedRules(errors), [
     { at: 'flows.default.ticket.entry', code: 'unknown-vertex' },
@@ -211,8 +213,8 @@ test('an entry naming no Vertex holds only the checks that read the entry', () =
 // The Flow's other Vertices are checked beside a Procedure none of them names (#449, Q3 A, reversing H6 (b)).
 test('a Procedure no Vertex of the Flow names holds none of its checks', () => {
   const config = exampleSource.config();
-  config.procedures.spare = { ...structuredClone(config.procedures.fix), passed: 7 };
-  exampleTicket(config).vertices.green.route['bad-test'] = 'red';
+  exampleSource.putAt(config.procedures, ['spare'], { ...structuredClone(config.procedures.fix), passed: 7 });
+  exampleSource.putAt(exampleTicket(config).vertices.green.route, ['bad-test'], 'red');
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     { at: 'procedures.spare.passed', code: 'not-a-list' },
     { at: 'flows.default.ticket', code: 'unbounded-cycle' },
@@ -224,7 +226,7 @@ test('a refused exhausted target of a Vertex the map does not read adds nothing 
   const exhaustedAt = [{ at: `${VERTICES}.senior-dev.exhausted`, code: 'malformed-route-target' }];
   const errorsOf = (exhausted: unknown, viaRed: boolean) => {
     const config = exampleSource.config();
-    exampleTicket(config).vertices['senior-dev'].exhausted = exhausted;
+    exampleSource.putAt(exampleTicket(config).vertices['senior-dev'], ['exhausted'], exhausted);
     if (viaRed) exampleTicket(config).vertices.red.route['no-test'] = 'senior-dev';
     return exampleSource.firedRules(exampleSource.check(config).errors);
   };
@@ -242,7 +244,7 @@ test('a refused exhausted target of a Vertex the map does not read adds nothing 
 test('a sound exhausted target of a mapped Vertex adds its landing to the map', () => {
   const config = exampleSource.config();
   exampleTicket(config).vertices.red.route['no-test'] = 'senior-dev';
-  exampleTicket(config).vertices['senior-dev'].exhausted = 'senior-red';
+  exampleSource.putAt(exampleTicket(config).vertices['senior-dev'], ['exhausted'], 'senior-red');
   const fired = exampleSource.firedRules(exampleSource.check(config).errors);
   assert.ok(
     fired.some(({ at, code }) => code === 'required-input-unsure' && at === `${VERTICES}.senior-red.inputs.findings`),
@@ -253,8 +255,9 @@ test('a sound exhausted target of a mapped Vertex adds its landing to the map', 
 test('an edge to a Vertex the map does not read keeps its exhausted landing', () => {
   const config = exampleSource.config();
   const { vertices } = exampleTicket(config);
-  vertices.red.route['no-test'] = { to: 'senior-red', max: 1, exhausted: { end: 'ready-for-qa' } };
-  vertices['senior-red'].colour = 'blue';
+  const exhausted = { end: 'ready-for-qa' };
+  exampleSource.putAt(vertices.red.route, ['no-test'], { to: 'senior-red', max: 1, exhausted });
+  exampleSource.putAt(vertices['senior-red'], ['colour'], 'blue');
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     { at: `${VERTICES}.senior-red`, code: 'unknown-key' },
     { at: `${VERTICES}.red`, code: 'pr-ready-skippable' },
@@ -264,7 +267,7 @@ test('an edge to a Vertex the map does not read keeps its exhausted landing', ()
 // A Vertex that is not an object has no routes the map can read, so the warnings wait (#449, Q2 A).
 test('a Vertex that is not an object holds the warnings', () => {
   const config = exampleSource.config();
-  exampleTicket(config).vertices.green = 7;
+  exampleSource.putAt(exampleTicket(config).vertices, ['green'], 7);
   assert.deepEqual(routeMapWarnings(exampleSource.check(config).warnings), []);
 });
 
@@ -276,8 +279,8 @@ test("a null on a Vertex's own key or its Agent holds the cycle through it", () 
     [(config: Source) => exampleTicket(config).vertices.green, 'effort'],
   ] as const) {
     const config = exampleSource.config();
-    owner(config)[key] = null;
-    exampleTicket(config).vertices.green.route['bad-test'] = 'red';
+    exampleSource.putAt(owner(config), [key], null);
+    exampleSource.putAt(exampleTicket(config).vertices.green.route, ['bad-test'], 'red');
     const [only, ...rest] = exampleSource.firedRules(exampleSource.check(config).errors);
     assert.deepEqual([only?.code, rest], ['null-value', []], key);
   }
@@ -286,8 +289,8 @@ test("a null on a Vertex's own key or its Agent holds the cycle through it", () 
 // senior runs no Vertex of the cycle through red and green, so its null holds none of the cycle's checks.
 test('a null on an Agent outside a cycle holds none of its checks', () => {
   const config = exampleSource.config();
-  config.agents.senior.model = null;
-  exampleTicket(config).vertices.green.route['bad-test'] = 'red';
+  exampleSource.putAt(config.agents.senior, ['model'], null);
+  exampleSource.putAt(exampleTicket(config).vertices.green.route, ['bad-test'], 'red');
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     { at: 'agents.senior.model', code: 'null-value' },
     { at: 'flows.default.ticket', code: 'unbounded-cycle' },
@@ -300,7 +303,7 @@ test('a null Agent model holds the loop through its Vertex', () => {
   const config = exampleSource.config();
   Object.assign(exampleTicket(config).vertices.red, { max: 1, exhausted: 'green' });
   Object.assign(exampleTicket(config).vertices.green, { max: 1, exhausted: 'red' });
-  config.agents.implementer.model = null;
+  exampleSource.putAt(config.agents.implementer, ['model'], null);
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     { at: 'agents.implementer.model', code: 'null-value' },
   ]);
@@ -311,11 +314,11 @@ test('a null Agent model holds the loop through its Vertex', () => {
 test("a Procedure error found in one Vertex's input scope holds only that Vertex", () => {
   const config = exampleSource.config();
   const { vertices } = exampleTicket(config);
-  vertices.reviewer.route.changes = 'implementer-fix';
-  vertices.reviewer.route.repeat = 'senior-dev';
-  delete vertices['senior-dev'].max;
-  delete vertices['senior-dev'].exhausted;
-  delete vertices['implementer-fix'].inputs.testFiles.pick;
+  exampleSource.putAt(vertices.reviewer.route, ['changes'], 'implementer-fix');
+  exampleSource.putAt(vertices.reviewer.route, ['repeat'], 'senior-dev');
+  exampleSource.putAt(vertices['senior-dev'], ['max']);
+  exampleSource.putAt(vertices['senior-dev'], ['exhausted']);
+  exampleSource.putAt(vertices['implementer-fix'].inputs.testFiles, ['pick']);
   const { errors } = exampleSource.check(config);
   assert.deepEqual(exampleSource.firedAtVertices(errors), [
     { at: 'procedures.fix.tests', code: 'not-a-list-of-strings', flow: 'default', vertex: 'implementer-fix' },
@@ -328,11 +331,11 @@ test("a Procedure error found in one Vertex's input scope holds only that Vertex
 test('a Procedure error found in its references alone holds every Vertex naming it', () => {
   const config = exampleSource.config();
   const { vertices } = exampleTicket(config);
-  vertices.reviewer.route.changes = 'implementer-fix';
-  vertices.reviewer.route.repeat = 'senior-dev';
-  delete vertices['senior-dev'].max;
-  delete vertices['senior-dev'].exhausted;
-  config.procedures.fix.actions[4].with.report = 'nowhere.response';
+  exampleSource.putAt(vertices.reviewer.route, ['changes'], 'implementer-fix');
+  exampleSource.putAt(vertices.reviewer.route, ['repeat'], 'senior-dev');
+  exampleSource.putAt(vertices['senior-dev'], ['max']);
+  exampleSource.putAt(vertices['senior-dev'], ['exhausted']);
+  exampleSource.putAt(config.procedures.fix.actions, ['4', 'with', 'report'], 'nowhere.response');
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     { at: 'procedures.fix.actions[4]', code: 'undefined-reference' },
   ]);
@@ -356,19 +359,19 @@ const CANARIES = [
 type Canary = (typeof CANARIES)[number];
 function withCanaries(config: Source) {
   const { vertices, routes } = exampleTicket(config);
-  vertices.green.route['bad-test'] = { to: 'red' };
+  exampleSource.putAt(vertices.green.route, ['bad-test'], { to: 'red' });
   // With no Check required, implement has no failed Outcome, so green's route for it is unknown.
   config.procedures.implement.claimTokens.ok.requires = [];
   const { implement } = config.procedures;
   implement.actions = implement.actions.filter((action: { id: string }) => action.id !== 'commit');
-  delete routes['*'];
-  delete routes.misscoped;
-  delete vertices.green.inputs.findings.optional;
-  vertices.reviewer.route.ok = { end: 'ready-for-qa' };
-  vertices.reviewer.route.changes = 'publish';
-  vertices.publish.route.ok = 'reviewer';
-  vertices['senior-green'].exhausted = 'senior-red';
-  vertices['senior-red'].exhausted = 'senior-green';
+  exampleSource.putAt(routes, ['*']);
+  exampleSource.putAt(routes, ['misscoped']);
+  exampleSource.putAt(vertices.green.inputs.findings, ['optional']);
+  exampleSource.putAt(vertices.reviewer.route, ['ok'], { end: 'ready-for-qa' });
+  exampleSource.putAt(vertices.reviewer.route, ['changes'], 'publish');
+  exampleSource.putAt(vertices.publish.route, ['ok'], 'reviewer');
+  exampleSource.putAt(vertices['senior-green'], ['exhausted'], 'senior-red');
+  exampleSource.putAt(vertices['senior-red'], ['exhausted'], 'senior-green');
   return config;
 }
 function heldCanaries(errors: report.Problem[]): Canary[] {
@@ -536,8 +539,9 @@ const NESTED_KEY_SITES: Record<string, Site> = {
     path: ['procedures', 'publish', 'actions', '3'],
     keys: { decisions: [7, ['cycle elsewhere']] },
     prepare: (config) => {
-      config.procedures.publish.actions.push({ id: 'ask', do: 'await-approval', decisions: ['approved'] });
-      exampleTicket(config).vertices.publish.route = { approved: 'reviewer' };
+      const ask = { id: 'ask', do: 'await-approval', decisions: ['approved'] };
+      exampleSource.putAt(config.procedures.publish, ['actions', '3'], ask);
+      exampleSource.putAt(exampleTicket(config).vertices.publish, ['route'], { approved: 'reviewer' });
     },
   },
 };
@@ -623,7 +627,7 @@ test("the graph checks read only a whole Vertex's typed Actions", () => {
 test('an Agent with a null at any key is refused by its own check', () => {
   const notRefused = agentChecks.AGENT_KEYS.filter((key) => {
     const config = exampleSource.config();
-    config.agents.implementer[key] = null;
+    exampleSource.putAt(config.agents.implementer, [key], null);
     const { agents } = agentChecks.checkAgents(report.newReport(), config, { fake: {} }, new Set(['implementer']));
     return !report.isReported(agents.get('implementer')?.typed);
   });

@@ -12,7 +12,7 @@ const VERTICES = 'flows.default.ticket.vertices';
 
 test('a Claim enum that differs from the declared tokens is an error', () => {
   const config = exampleSource.config();
-  config.procedures['tests-fail'].claimTokens.stuck = { stop: true };
+  exampleSource.putAt(config.procedures['tests-fail'].claimTokens, ['stuck'], { stop: true });
   const { errors } = exampleSource.check(config);
   assert.deepEqual(exampleSource.firedRules(errors), [
     {
@@ -63,7 +63,7 @@ test('an undeclared command is an error naming the Check', () => {
 
 test('a reference to a field the schema lacks is an error', () => {
   const config = exampleSource.config();
-  config.procedures['tests-fail'].stopped[0].when = { 'response.cause': 'misscoped' };
+  exampleSource.putAt(config.procedures['tests-fail'].stopped, ['0', 'when'], { 'response.cause': 'misscoped' });
   config.flows.default.ticket.vertices.red.inputs.findings.from = 'reviewer.review.response.issues';
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     { at: 'procedures.tests-fail.stopped[0]', code: 'undefined-reference' },
@@ -81,7 +81,7 @@ test("a reference through an Action the Vertex's Procedure lacks is an error", (
 
 test('a malformed reference path is the same error in a rule field and an input', () => {
   const config = exampleSource.config();
-  config.procedures['tests-fail'].stopped[0].when = { 'a..b': 'misscoped' };
+  exampleSource.putAt(config.procedures['tests-fail'].stopped, ['0', 'when'], { 'a..b': 'misscoped' });
   config.flows.default.ticket.vertices.red.inputs.findings.from = 'a..b';
   const { errors } = exampleSource.check(config);
   assert.deepEqual(exampleSource.firedRules(errors), [
@@ -132,7 +132,7 @@ const NAMED_VALUES: [string, unknown, string][] = [
 for (const [what, named, code] of NAMED_VALUES) {
   test(`tests: named that is ${what} is an error`, () => {
     const config = exampleSource.config();
-    config.procedures.fix.tests.named = named;
+    exampleSource.putAt(config.procedures.fix.tests, ['named'], named);
     assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
       { at: 'procedures.fix.tests', code },
     ]);
@@ -141,7 +141,7 @@ for (const [what, named, code] of NAMED_VALUES) {
 
 test('tests with a key beside named is an error', () => {
   const config = exampleSource.config();
-  config.procedures.fix.tests.other = 1;
+  exampleSource.putAt(config.procedures.fix.tests, ['other'], 1);
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     { at: 'procedures.fix.tests', code: 'invalid-tests-setting' },
   ]);
@@ -149,7 +149,9 @@ test('tests with a key beside named is an error', () => {
 
 test('is left out on a field that is neither an enum nor a boolean reports the field', () => {
   const config = exampleSource.config();
-  procedureActions.actionById(config.procedures.review, 'review-pass').allOf[0] = { field: 'summary' };
+  exampleSource.putAt(procedureActions.actionById(config.procedures.review, 'review-pass'), ['allOf', '0'], {
+    field: 'summary',
+  });
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     { at: 'procedures.review.actions[1]', code: 'invalid-condition-field' },
   ]);
@@ -170,13 +172,13 @@ test('a Check parameter of the wrong type is an error', () => {
 
 test('a response Check condition outside the schema or its values is an error', () => {
   const config = exampleSource.config();
-  procedureActions.actionById(config.procedures.review, 'review-pass').allOf[0] = {
+  exampleSource.putAt(procedureActions.actionById(config.procedures.review, 'review-pass'), ['allOf', '0'], {
     field: 'definitionOfDoneMet',
     is: 'yes',
-  };
-  procedureActions.actionById(config.procedures.review, 'review-pass').allOf[2].where = {
+  });
+  exampleSource.putAt(procedureActions.actionById(config.procedures.review, 'review-pass'), ['allOf', '2', 'where'], {
     severity: ['blocker', 'critical'],
-  };
+  });
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: 'procedures.review.actions[1]',
@@ -191,7 +193,7 @@ test('a response Check condition outside the schema or its values is an error', 
 
 test('a rule on a free-text field is an error', () => {
   const config = exampleSource.config();
-  config.procedures['tests-fail'].stopped[0].when = { 'response.summary': 'x' };
+  exampleSource.putAt(config.procedures['tests-fail'].stopped, ['0', 'when'], { 'response.summary': 'x' });
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: 'procedures.tests-fail.stopped[0]',
@@ -202,7 +204,7 @@ test('a rule on a free-text field is an error', () => {
 
 test('a malformed rule condition is an error', () => {
   const config = exampleSource.config();
-  config.procedures.review.passed[1].when = { 'check.repeat': { '!=': 'passed' } };
+  exampleSource.putAt(config.procedures.review.passed, ['1', 'when'], { 'check.repeat': { '!=': 'passed' } });
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: 'procedures.review.passed[1]',
@@ -213,7 +215,7 @@ test('a malformed rule condition is an error', () => {
 
 test('a condition that does not fit its field is an error', () => {
   const config = exampleSource.config();
-  config.procedures.implement.passed = [{ when: { pass: 'two' }, outcome: 'ok' }];
+  exampleSource.putAt(config.procedures.implement, ['passed'], [{ when: { pass: 'two' }, outcome: 'ok' }]);
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: 'procedures.implement.passed[0]',
@@ -235,7 +237,7 @@ test('a row that never fires is an error from the rule table analysis', () => {
 
 test('a passed row on a required Check failing is unreachable', () => {
   const config = exampleSource.config();
-  config.procedures.implement.passed = [{ when: { 'check.test': 'failed' }, outcome: 'odd' }];
+  exampleSource.putAt(config.procedures.implement, ['passed'], [{ when: { 'check.test': 'failed' }, outcome: 'odd' }]);
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: 'procedures.implement.passed',
@@ -246,7 +248,11 @@ test('a passed row on a required Check failing is unreachable', () => {
 
 test('a failed table in a Procedure whose tokens require no Check is an error', () => {
   const config = exampleSource.config();
-  config.procedures.review.failed = [{ when: { 'check.repeat': 'failed' }, outcome: 'repeat' }];
+  exampleSource.putAt(
+    config.procedures.review,
+    ['failed'],
+    [{ when: { 'check.repeat': 'failed' }, outcome: 'repeat' }],
+  );
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: 'procedures.review.failed',
@@ -257,11 +263,11 @@ test('a failed table in a Procedure whose tokens require no Check is an error', 
 
 test('a rule on an input is typed at each Vertex using the Procedure', () => {
   const config = exampleSource.config();
-  config.flows.default.ticket.vertices['implementer-fix'].inputs.needsTest = {
+  exampleSource.putAt(config.flows.default.ticket.vertices['implementer-fix'].inputs, ['needsTest'], {
     from: 'reviewer.review.response.needsTest',
     optional: true,
-  };
-  config.procedures.fix.passed = [{ when: { 'inputs.needsTest': true }, outcome: 'ok' }];
+  });
+  exampleSource.putAt(config.procedures.fix, ['passed'], [{ when: { 'inputs.needsTest': true }, outcome: 'ok' }]);
   assert.deepEqual(exampleSource.firedAtVertices(exampleSource.check(config).errors), [
     { at: 'procedures.fix.passed[0]', code: 'undefined-reference', flow: 'default', vertex: 'senior-dev' },
   ]);
@@ -271,11 +277,15 @@ test(
   'a passed row on a Check its token requires failing is unreachable ' + 'even when another token requires nothing',
   () => {
     const config = exampleSource.config();
-    config.procedures.implement.claimTokens.partial = { requires: [] };
-    config.procedures.implement.passed = [{ when: { claim: 'ok', 'check.test': 'failed' }, outcome: 'odd' }];
+    exampleSource.putAt(config.procedures.implement.claimTokens, ['partial'], { requires: [] });
+    exampleSource.putAt(
+      config.procedures.implement,
+      ['passed'],
+      [{ when: { claim: 'ok', 'check.test': 'failed' }, outcome: 'odd' }],
+    );
     const files = exampleSource.schemas();
     exampleSource.putAt(files['implement.schema.json'], ['properties', 'claim', 'enum'], ['ok', 'blocked', 'partial']);
-    config.procedures.fix.claimTokens.partial = { requires: [] };
+    exampleSource.putAt(config.procedures.fix.claimTokens, ['partial'], { requires: [] });
     // fix's partial commits with no Check, which implement's error no longer holds (#449, Q2 A).
     assert.deepEqual(exampleSource.firedRules(exampleSource.check(config, files).errors), [
       {
@@ -290,7 +300,7 @@ test(
 
 test("a failed row on its token's only required Check passing is unreachable", () => {
   const config = exampleSource.config();
-  config.procedures.implement.failed = [{ when: { 'check.test': 'passed' }, outcome: 'odd' }];
+  exampleSource.putAt(config.procedures.implement, ['failed'], [{ when: { 'check.test': 'passed' }, outcome: 'odd' }]);
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: 'procedures.implement.failed',
@@ -307,11 +317,19 @@ const NOT_RUN_ROWS: Record<procedureChecks.TableName, (config: exampleSource.Sou
     return 'procedures.review.passed';
   },
   failed: (config) => {
-    config.procedures.implement.failed = [{ when: { 'check.test': 'not-run' }, outcome: 'misscoped' }];
+    exampleSource.putAt(
+      config.procedures.implement,
+      ['failed'],
+      [{ when: { 'check.test': 'not-run' }, outcome: 'misscoped' }],
+    );
     return 'procedures.implement.failed';
   },
   stopped: (config) => {
-    config.procedures.implement.stopped.unshift({ when: { 'check.test': 'not-run' }, outcome: 'misscoped' });
+    exampleSource.putAt(
+      config.procedures.implement,
+      ['stopped'],
+      [{ when: { 'check.test': 'not-run' }, outcome: 'misscoped' }, ...config.procedures.implement.stopped],
+    );
     return 'procedures.implement.stopped';
   },
 };
@@ -338,15 +356,15 @@ test('the Check states the request lets a rule name are the states the Execution
 
 test('a token whose every passing case a row maps away is not an Outcome', () => {
   const config = exampleSource.config();
-  config.procedures.implement.claimTokens.partial = { requires: ['test'] };
-  config.procedures.implement.passed = [{ when: { claim: 'ok' }, outcome: 'done-ish' }];
+  exampleSource.putAt(config.procedures.implement.claimTokens, ['partial'], { requires: ['test'] });
+  exampleSource.putAt(config.procedures.implement, ['passed'], [{ when: { claim: 'ok' }, outcome: 'done-ish' }]);
   const files = exampleSource.schemas();
   exampleSource.putAt(files['implement.schema.json'], ['properties', 'claim', 'enum'], ['ok', 'blocked', 'partial']);
-  config.procedures.fix.claimTokens.partial = { requires: ['test'] };
-  config.flows.default.ticket.routes['done-ish'] = 'reviewer';
+  exampleSource.putAt(config.procedures.fix.claimTokens, ['partial'], { requires: ['test'] });
+  exampleSource.putAt(config.flows.default.ticket.routes, ['done-ish'], 'reviewer');
   // No row gives ok now, so a route keyed by it is one gg never takes (#436).
-  delete config.flows.default.ticket.vertices.green.route.ok;
-  delete config.flows.default.ticket.vertices['senior-green'].route.ok;
+  exampleSource.putAt(config.flows.default.ticket.vertices.green.route, ['ok']);
+  exampleSource.putAt(config.flows.default.ticket.vertices['senior-green'].route, ['ok']);
   const { errors, flows } = exampleSource.check(config, files);
   assert.deepEqual(errors, []);
   assert.deepEqual(flows.default.ticket.vertices.green.outcomes, [
@@ -380,7 +398,11 @@ test('engine outputs have their fields: rescue, evidence and cleanup', () => {
 
 test("a rescue and a Check's evidence are different types", () => {
   const config = exampleSource.config();
-  config.flows.default.ticket.vertices.green.inputs.previous.from = ['green.rescue', 'green.test.evidence'];
+  exampleSource.putAt(
+    config.flows.default.ticket.vertices.green.inputs.previous,
+    ['from'],
+    ['green.rescue', 'green.test.evidence'],
+  );
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: `${VERTICES}.green.inputs.previous`,
@@ -428,16 +450,24 @@ test("a Check's evidence and a response object of the same fields are one type",
 test('a row partly taken only across Claim tokens is warned once', () => {
   const config = exampleSource.config();
   // In token ok's inputs row 1 takes all of row 2; in token changes' row 2 is free. Together it is partly taken.
-  config.procedures.review.passed = [
-    { when: { claim: 'ok' }, outcome: 'ok' },
-    { when: {}, outcome: 'other' },
-  ];
+  exampleSource.putAt(
+    config.procedures.review,
+    ['passed'],
+    [
+      { when: { claim: 'ok' }, outcome: 'ok' },
+      { when: {}, outcome: 'other' },
+    ],
+  );
   // The reviewer still loops back, so the Flow's inputs keep a producing path; with no changes, implementer-fix is cut
   // off.
-  config.flows.default.ticket.vertices.reviewer.route.other = { to: 'red', max: 2, exhausted: 'senior-red' };
+  exampleSource.putAt(config.flows.default.ticket.vertices.reviewer.route, ['other'], {
+    to: 'red',
+    max: 2,
+    exhausted: 'senior-red',
+  });
   // The reviewer no longer produces retest, changes or repeat, so their routes are ones gg never takes (#436).
   for (const outcome of ['retest', 'changes', 'repeat'])
-    delete config.flows.default.ticket.vertices.reviewer.route[outcome];
+    exampleSource.putAt(config.flows.default.ticket.vertices.reviewer.route, [outcome]);
   const { errors, warnings } = exampleSource.check(config);
   assert.deepEqual(errors, []);
   assert.deepEqual(exampleSource.firedRules(warnings), [
@@ -453,7 +483,11 @@ test('a row partly taken only across Claim tokens is warned once', () => {
 // index.
 test('a with alias that steps into a list of objects is an error', () => {
   const config = exampleSource.config();
-  procedureActions.actionById(config.procedures.fix, 'pr').with.files = 'inputs.findings.file';
+  exampleSource.putAt(
+    procedureActions.actionById(config.procedures.fix, 'pr'),
+    ['with', 'files'],
+    'inputs.findings.file',
+  );
   const { errors } = exampleSource.check(config, exampleSource.schemas(), exampleSource.templates());
   assert.deepEqual(exampleSource.firedAtVertices(errors), [
     { at: 'procedures.fix.actions[4]', code: 'reference-into-list', flow: 'default', vertex: 'implementer-fix' },
@@ -463,9 +497,9 @@ test('a with alias that steps into a list of objects is an error', () => {
 
 test('an input source that steps into a list of objects is an error', () => {
   const config = exampleSource.config();
-  config.flows.default.ticket.vertices['implementer-fix'].inputs.testFiles = {
+  exampleSource.putAt(config.flows.default.ticket.vertices['implementer-fix'].inputs, ['testFiles'], {
     from: 'reviewer.review.response.findings.file',
-  };
+  });
   const { errors } = exampleSource.check(config);
   assert.deepEqual(exampleSource.firedRules(errors), [
     {
@@ -501,10 +535,14 @@ function nestedFindings() {
 test('a response condition list that steps into a list of objects is an error', () => {
   const config = exampleSource.config();
   const { review } = config.procedures;
-  review.actions = review.actions.map((action: { id: string }) =>
-    action.id === 'review-pass'
-      ? { id: 'review-pass', do: 'check', kind: 'response', none: 'findings.detail', where: { severity: 'major' } }
-      : action,
+  exampleSource.putAt(
+    review,
+    ['actions'],
+    review.actions.map((action: { id: string }) =>
+      action.id === 'review-pass'
+        ? { id: 'review-pass', do: 'check', kind: 'response', none: 'findings.detail', where: { severity: 'major' } }
+        : action,
+    ),
   );
   const { errors } = exampleSource.check(config, nestedFindings());
   assert.deepEqual(exampleSource.firedRules(errors), [
@@ -518,10 +556,14 @@ test('a response condition list that steps into a list of objects is an error', 
 test('a where field or repeat field is one field of each item, not a path', () => {
   const config = exampleSource.config();
   const { review } = config.procedures;
-  review.actions = review.actions.map((action: { id: string }) =>
-    action.id === 'review-pass'
-      ? { id: 'review-pass', do: 'check', kind: 'response', none: 'findings', where: { 'detail.severity': 'major' } }
-      : action,
+  exampleSource.putAt(
+    review,
+    ['actions'],
+    review.actions.map((action: { id: string }) =>
+      action.id === 'review-pass'
+        ? { id: 'review-pass', do: 'check', kind: 'response', none: 'findings', where: { 'detail.severity': 'major' } }
+        : action,
+    ),
   );
   procedureActions.actionById(config.procedures.review, 'repeat').fields = ['file', 'detail.severity'];
   const { errors } = exampleSource.check(config, nestedFindings());
@@ -533,10 +575,10 @@ test('a where field or repeat field is one field of each item, not a path', () =
 
 test('a pick that steps into a list inside each item is an error', () => {
   const config = exampleSource.config();
-  config.flows.default.ticket.vertices['implementer-fix'].inputs.details = {
+  exampleSource.putAt(config.flows.default.ticket.vertices['implementer-fix'].inputs, ['details'], {
     from: 'reviewer.review.response.findings',
     pick: 'details.file',
-  };
+  });
   const { errors } = exampleSource.check(config, nestedFindings());
   assert.deepEqual(exampleSource.firedRules(errors), [
     {
@@ -548,10 +590,10 @@ test('a pick that steps into a list inside each item is an error', () => {
 
 test("an input may read a repeat Check's Findings Hash", () => {
   const config = exampleSource.config();
-  config.flows.default.ticket.vertices['implementer-fix'].inputs.findingsHash = {
+  exampleSource.putAt(config.flows.default.ticket.vertices['implementer-fix'].inputs, ['findingsHash'], {
     from: 'reviewer.repeat.findingsHash',
     optional: true,
-  };
+  });
   assert.deepEqual(exampleSource.check(config).errors, []);
 });
 
@@ -567,7 +609,7 @@ test('a Procedure that declares the hand-off note or the handed-off token itself
   const tokened = exampleSource.schemas();
   const config = exampleSource.config();
   exampleSource.putAt(tokened['red.schema.json'], ['properties', 'claim', 'enum'], ['ok', 'blocked', 'handed-off']);
-  config.procedures['tests-fail'].claimTokens['handed-off'] = { requires: ['red-check'] };
+  exampleSource.putAt(config.procedures['tests-fail'].claimTokens, ['handed-off'], { requires: ['red-check'] });
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config, tokened).errors), [
     { at: 'procedures.tests-fail.claimTokens', code: 'reserved-handoff-name' },
   ]);
@@ -575,8 +617,8 @@ test('a Procedure that declares the hand-off note or the handed-off token itself
 
 test('a Vertex whose Agent has a contextBudget may route harness-handoff', () => {
   const config = exampleSource.config();
-  config.agents.implementer.contextBudget = 150000;
-  config.flows.default.ticket.vertices.green.route['harness-handoff'] = { end: 'needs-replan' };
+  exampleSource.putAt(config.agents.implementer, ['contextBudget'], 150000);
+  exampleSource.putAt(config.flows.default.ticket.vertices.green.route, ['harness-handoff'], { end: 'needs-replan' });
   const { errors, flows } = exampleSource.check(config);
   assert.deepEqual(exampleSource.firedRules(errors), []);
   assert.ok(flows.default.ticket.vertices.green.outcomes.includes('harness-handoff'));

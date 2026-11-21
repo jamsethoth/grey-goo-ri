@@ -88,7 +88,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a Vertex's procedure",
     (config) => {
-      delete config.flows.default.ticket.vertices.publish.procedure;
+      exampleSource.putAt(config.flows.default.ticket.vertices.publish, ['procedure']);
     },
     [
       {
@@ -102,7 +102,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a ticket's entry",
     (config) => {
-      delete config.flows.default.ticket.entry;
+      exampleSource.putAt(config.flows.default.ticket, ['entry']);
     },
     [
       {
@@ -116,7 +116,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a ticket's vertices",
     (config) => {
-      delete config.flows.default.ticket.vertices;
+      exampleSource.putAt(config.flows.default.ticket, ['vertices']);
     },
     [
       { at: VERTICES, code: LEFT_OUT, message: 'vertices must be a non-empty object', params: { key: 'vertices' } },
@@ -131,7 +131,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a Flow's ticket",
     (config) => {
-      delete config.flows.default.ticket;
+      exampleSource.putAt(config.flows.default, ['ticket']);
     },
     [
       { at: 'flows.default.ticket', code: LEFT_OUT, message: 'ticket must be an object', params: { key: 'ticket' } },
@@ -147,7 +147,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a Flow's actionCap",
     (config) => {
-      delete config.flows.default.actionCap;
+      exampleSource.putAt(config.flows.default, ['actionCap']);
     },
     [
       {
@@ -161,7 +161,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a Procedure's actions",
     (config) => {
-      delete config.procedures.publish.actions;
+      exampleSource.putAt(config.procedures.publish, ['actions']);
     },
     [
       {
@@ -175,7 +175,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "an Action's id",
     (config) => {
-      delete procedureActions.actionById(config.procedures.publish, 'pr-ready').id;
+      exampleSource.putAt(procedureActions.actionById(config.procedures.publish, 'pr-ready'), ['id']);
     },
     [
       {
@@ -189,7 +189,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "an Action's do",
     (config) => {
-      delete procedureActions.actionById(config.procedures.publish, 'pr-ready').do;
+      exampleSource.putAt(procedureActions.actionById(config.procedures.publish, 'pr-ready'), ['do']);
     },
     [
       {
@@ -203,7 +203,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a Check's kind",
     (config) => {
-      delete procedureActions.actionById(config.procedures['base-check'], 'test').kind;
+      exampleSource.putAt(procedureActions.actionById(config.procedures['base-check'], 'test'), ['kind']);
     },
     [
       {
@@ -217,7 +217,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a Check's command",
     (config) => {
-      delete procedureActions.actionById(config.procedures['base-check'], 'test').command;
+      exampleSource.putAt(procedureActions.actionById(config.procedures['base-check'], 'test'), ['command']);
     },
     [
       {
@@ -231,7 +231,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a tests-fail Check's testNames",
     (config) => {
-      delete procedureActions.actionById(config.procedures['tests-fail'], 'red-check').testNames;
+      exampleSource.putAt(procedureActions.actionById(config.procedures['tests-fail'], 'red-check'), ['testNames']);
     },
     [
       {
@@ -245,7 +245,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a repeat Check's list",
     (config) => {
-      delete procedureActions.actionById(config.procedures.review, 'repeat').list;
+      exampleSource.putAt(procedureActions.actionById(config.procedures.review, 'repeat'), ['list']);
     },
     [
       {
@@ -259,7 +259,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a repeat Check's fields",
     (config) => {
-      delete procedureActions.actionById(config.procedures.review, 'repeat').fields;
+      exampleSource.putAt(procedureActions.actionById(config.procedures.review, 'repeat'), ['fields']);
     },
     [
       {
@@ -273,7 +273,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a comment's target",
     (config) => {
-      delete procedureActions.actionById(config.procedures.review, 'comment').target;
+      exampleSource.putAt(procedureActions.actionById(config.procedures.review, 'comment'), ['target']);
     },
     [
       {
@@ -287,7 +287,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "an input's from",
     (config) => {
-      config.flows.default.ticket.vertices.red.inputs.oddly = { optional: true };
+      exampleSource.putAt(config.flows.default.ticket.vertices.red.inputs, ['oddly'], { optional: true });
     },
     [
       {
@@ -301,7 +301,9 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a response condition's is",
     (config) => {
-      procedureActions.actionById(config.procedures.review, 'review-pass').allOf[0] = { field: 'definitionOfDoneMet' };
+      exampleSource.putAt(procedureActions.actionById(config.procedures.review, 'review-pass'), ['allOf', '0'], {
+        field: 'definitionOfDoneMet',
+      });
     },
     [
       {
@@ -315,7 +317,9 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a response condition's is, on an enum field",
     (config) => {
-      procedureActions.actionById(config.procedures.review, 'review-pass').allOf[0] = { field: 'reason' };
+      exampleSource.putAt(procedureActions.actionById(config.procedures.review, 'review-pass'), ['allOf', '0'], {
+        field: 'reason',
+      });
     },
     [
       {
@@ -330,8 +334,8 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
     "a Check's id and command",
     (config) => {
       const check = procedureActions.actionById(config.procedures['base-check'], 'test');
-      delete check.id;
-      delete check.command;
+      exampleSource.putAt(check, ['id']);
+      exampleSource.putAt(check, ['command']);
     },
     [
       {
@@ -352,7 +356,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
     "a Check's id, when its command is not declared",
     (config) => {
       const check = procedureActions.actionById(config.procedures['base-check'], 'test');
-      delete check.id;
+      exampleSource.putAt(check, ['id']);
       check.command = 'lint';
     },
     [
@@ -373,7 +377,11 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a Check's id, when it comes after an effect",
     (config) => {
-      config.procedures.publish.actions.push({ do: 'check', kind: 'command', command: 'test' });
+      exampleSource.putAt(
+        config.procedures.publish,
+        ['actions'],
+        [...config.procedures.publish.actions, { do: 'check', kind: 'command', command: 'test' }],
+      );
     },
     [
       {
@@ -395,7 +403,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "an effect's id, when a Check comes after it",
     (config) => {
-      delete procedureActions.actionById(config.procedures.publish, 'pr').id;
+      exampleSource.putAt(procedureActions.actionById(config.procedures.publish, 'pr'), ['id']);
       config.procedures.publish.actions.push({ id: 'late', do: 'check', kind: 'command', command: 'test' });
     },
     [
@@ -418,7 +426,9 @@ const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Pro
   [
     "a response condition's where",
     (config) => {
-      procedureActions.actionById(config.procedures.review, 'review-pass').allOf[2] = { none: 'findings' };
+      exampleSource.putAt(procedureActions.actionById(config.procedures.review, 'review-pass'), ['allOf', '2'], {
+        none: 'findings',
+      });
     },
     [
       {
@@ -441,7 +451,10 @@ for (const [what, mutate, errors] of LEFT_OUT_KEYS) {
 
 test('a response condition whose is fits no value of its enum field keeps its code and message', () => {
   const config = exampleSource.config();
-  procedureActions.actionById(config.procedures.review, 'review-pass').allOf[0] = { field: 'reason', is: 'x' };
+  exampleSource.putAt(procedureActions.actionById(config.procedures.review, 'review-pass'), ['allOf', '0'], {
+    field: 'reason',
+    is: 'x',
+  });
   assert.deepEqual(exampleSource.check(config).errors, [
     {
       at: 'procedures.review.actions[1]',
@@ -462,11 +475,15 @@ function valuePaths(value: unknown, path: (string | number)[] = []): (string | n
 // A key's value left out, or replaced by a number, which every key but a count refuses.
 function mutated(path: (string | number)[], leftOut: boolean) {
   const config = exampleSource.config();
-  const parent = path.slice(0, -1).reduce((value, key) => value[key], config);
+  const parent = path
+    .slice(0, -1)
+    .reduce<unknown>(
+      (value, key) => (value !== null && typeof value === 'object' ? Reflect.get(value, key) : undefined),
+      config,
+    );
   const key = path.at(-1) as string | number;
-  if (!leftOut) parent[key] = 3;
-  else if (Array.isArray(parent)) parent.splice(key as number, 1);
-  else delete parent[key];
+  if (leftOut && Array.isArray(parent)) parent.splice(key as number, 1);
+  else exampleSource.putAt(config, path.map(String), leftOut ? undefined : 3);
   return config;
 }
 // Dotted keys and [index], with no spaces or parentheses: what a program can split back into the configuration's keys.
@@ -503,7 +520,7 @@ test('two Vertices report the same Procedure problem once each, at the Procedure
 test('the same Vertex in two Flows reports a Procedure problem once in each', () => {
   const config = exampleSource.config();
   config.procedures.fix.tests.named = 'inputs.findings';
-  config.flows.other = structuredClone(config.flows.default);
+  exampleSource.putAt(config.flows, ['other'], structuredClone(config.flows.default));
   const { errors } = exampleSource.check(config);
   assert.deepEqual(
     exampleSource.firedAtVertices(errors).map(({ flow, vertex }) => `${flow}.${vertex}`),
@@ -513,10 +530,10 @@ test('the same Vertex in two Flows reports a Procedure problem once in each', ()
 
 test('an unset harness names its Agent in params, or the Vertex whose own Agent keys left it out', () => {
   const config = exampleSource.config();
-  delete config.agents.reviewer.harness;
+  exampleSource.putAt(config.agents.reviewer, ['harness']);
   const red = config.flows.default.ticket.vertices.red;
-  delete red.use;
-  red.model = 'model-x';
+  exampleSource.putAt(red, ['use']);
+  exampleSource.putAt(red, ['model'], 'model-x');
   const unset = exampleSource.check(config).errors.filter((problem) => problem.code === 'harness-unset');
   assert.deepEqual(unset, [
     {
@@ -539,28 +556,33 @@ const NAMED_IN_AT: [string, (config: exampleSource.Source) => void, Pick<report.
   [
     'a required input some route may not produce',
     (config) => {
-      config.flows.default.ticket.vertices.green.inputs.previous = { from: 'green.commit.files' };
+      exampleSource.putAt(config.flows.default.ticket.vertices.green.inputs, ['previous'], {
+        from: 'green.commit.files',
+      });
     },
     { code: 'required-input-unsure', params: { input: 'previous', vertex: 'green' } },
   ],
   [
     'an unreachable Vertex',
     (config) => {
-      config.flows.default.ticket.vertices.spare = { procedure: 'base-check', route: { ok: { end: 'needs-human' } } };
+      exampleSource.putAt(config.flows.default.ticket.vertices, ['spare'], {
+        procedure: 'base-check',
+        route: { ok: { end: 'needs-human' } },
+      });
     },
     { code: 'unreachable-vertex', params: { vertex: 'spare' } },
   ],
   [
     'a table no Claim token reaches',
     (config) => {
-      config.procedures['base-check'].stopped = [{ when: {}, outcome: 'x' }];
+      exampleSource.putAt(config.procedures['base-check'], ['stopped'], [{ when: {}, outcome: 'x' }]);
     },
     { code: 'table-never-applies', params: { table: 'stopped' } },
   ],
   [
     'a table that is not a list',
     (config) => {
-      config.procedures['base-check'].passed = 3;
+      exampleSource.putAt(config.procedures['base-check'], ['passed'], 3);
     },
     { code: 'not-a-list', params: { table: 'passed' } },
   ],
@@ -606,7 +628,7 @@ const SPLIT: [string, (config: exampleSource.Source) => void, string, report.Pro
   [
     'claimTokens that is not an object',
     (config) => {
-      config.procedures['tests-fail'].claimTokens = 3;
+      exampleSource.putAt(config.procedures['tests-fail'], ['claimTokens'], 3);
     },
     'procedures.tests-fail.claimTokens',
     [
@@ -621,7 +643,7 @@ const SPLIT: [string, (config: exampleSource.Source) => void, string, report.Pro
   [
     'claimTokens left out keeps its sentence',
     (config) => {
-      delete config.procedures['tests-fail'].claimTokens;
+      exampleSource.putAt(config.procedures['tests-fail'], ['claimTokens']);
     },
     'procedures.tests-fail.claimTokens',
     [
@@ -635,7 +657,7 @@ const SPLIT: [string, (config: exampleSource.Source) => void, string, report.Pro
   [
     'fields that is not a list',
     (config) => {
-      procedureActions.actionById(config.procedures.review, 'repeat').fields = 3;
+      exampleSource.putAt(procedureActions.actionById(config.procedures.review, 'repeat'), ['fields'], 3);
     },
     'procedures.review.actions[2]',
     [
@@ -650,7 +672,7 @@ const SPLIT: [string, (config: exampleSource.Source) => void, string, report.Pro
   [
     'fields that is empty',
     (config) => {
-      procedureActions.actionById(config.procedures.review, 'repeat').fields = [];
+      exampleSource.putAt(procedureActions.actionById(config.procedures.review, 'repeat'), ['fields'], []);
     },
     'procedures.review.actions[2]',
     [{ at: 'procedures.review.actions[2]', code: 'empty-list', message: 'fields must name at least one field' }],
@@ -658,7 +680,7 @@ const SPLIT: [string, (config: exampleSource.Source) => void, string, report.Pro
   [
     'fields with items that are not names, each named by its index',
     (config) => {
-      procedureActions.actionById(config.procedures.review, 'repeat').fields = ['file', '', 7];
+      exampleSource.putAt(procedureActions.actionById(config.procedures.review, 'repeat'), ['fields'], ['file', '', 7]);
     },
     'procedures.review.actions[2]',
     [
