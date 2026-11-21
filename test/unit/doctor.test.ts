@@ -347,7 +347,7 @@ test("gg doctor reports harness-preflight-failed for each Vertex on a stub Harne
   const { text, exitCode } = await doctor.doctor({ config: sources(source), ...DEPS, harnesses: { claude } });
   assert.equal(exitCode, 1, text);
   const vertices = Object.entries(source.flows.default.ticket.vertices)
-    .filter(([, vertex]) => (vertex as { use?: string }).use !== undefined)
+    .filter(([, vertex]) => 'use' in vertex)
     .map(([id]) => id);
   assert.ok(vertices.length > 1, 'the example runs several Vertices on an Agent');
   assert.deepEqual(
