@@ -417,3 +417,26 @@ test('a payload that fits no write-ahead payload is a corrupt row naming it', ()
   );
   refused('ticket', broken, /: its writeAheadLog\[3\]\.payload is not /, 'a push payload with no sha');
 });
+
+test('RecordCorruptError builds from each argument form it takes, the base three-argument one included', () => {
+  const base = ['rows#ticket-7', 'its flow is not a string', '{}'] as const;
+  const forms: [string, () => recordJson.RecordCorruptError, number, string | undefined][] = [
+    ['(file, reason, raw), as before #439', () => new recordJson.RecordCorruptError(...base), 0, undefined],
+    ['with the record number', () => new recordJson.RecordCorruptError(...base, { recordNumber: 7 }), 7, undefined],
+    [
+      'with the record number and field',
+      () => new recordJson.RecordCorruptError(...base, { recordNumber: 7, field: 'flow' }),
+      7,
+      'flow',
+    ],
+  ];
+  for (const [form, build, recordNumber, field] of forms) {
+    let err: recordJson.RecordCorruptError | undefined;
+    assert.doesNotThrow(() => (err = build()), form);
+    assert.deepEqual(
+      [err?.message, err?.file, err?.reason, err?.raw, err?.recordNumber, err?.field],
+      ['corrupt record rows#ticket-7: its flow is not a string', ...base, recordNumber, field],
+      form,
+    );
+  }
+});

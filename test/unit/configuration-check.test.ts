@@ -8,6 +8,7 @@ import * as configurationCheck from '../../lib/configuration-check.ts';
 import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as procedureKinds from '../../lib/procedures.ts';
 import * as report from '../../lib/validate/report.ts';
+import * as corruptRecords from '../support/corrupt-records.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
 import type * as golden from '../support/golden.ts';
 import * as recordedCli from '../support/recorded-cli.ts';
@@ -563,14 +564,44 @@ test('an Execution Record a Run would resume whose Flow is gone is a gone-Flow r
   const checked = await checkOf(sources(repository, user), { commonDir });
   assert.deepEqual(errorLines(checked), []);
   assert.deepEqual(
-    checked.goneFlowRecords().map((problem) => problem.at),
+    checked.recordProblems().map((problem) => problem.at),
     expected,
   );
-  assert.ok(!checked.goneFlowRecords().some((problem) => problem.at === `records.${declared.execution}`));
+  assert.ok(!checked.recordProblems().some((problem) => problem.at === `records.${declared.execution}`));
   assert.equal(
-    report.line('error', checked.goneFlowRecords()[0]!),
+    report.line('error', checked.recordProblems()[0]!),
     'error: records.ticket-1: Execution Record ticket-1 runs Flow gone, which is no longer declared; declare it ' +
       'again to resume it, or run gg work abandon 1 to start over [unknown-flow]',
+  );
+});
+
+// gg run holds a Ticket whose row the reader refuses for a human, so gg doctor lists that row as an error beside the
+// records whose Flow is gone, one for each way a row is refused, naming the field the reader refused when it names one
+// (#439, Q1 A).
+test('gg doctor reports a corrupt Execution Record', async (t) => {
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-configuration-check-');
+  corruptRecords.CORRUPTIONS.forEach((corruption, index) => {
+    seededRecords.seed(commonDir, index + 1, 'default', seededRecords.SHAPES[0]!);
+    corruptRecords.plant(commonDir, index + 1, corruption);
+  });
+  seededRecords.seed(commonDir, 9, 'gone', seededRecords.SHAPES[0]!);
+  const checked = await checkOf(sources(repositorySource()), { commonDir });
+  assert.deepEqual(errorLines(checked), []);
+  assert.deepEqual(
+    checked.recordProblems().map((problem) => [problem.at, problem.code, problem.params]),
+    [
+      ...corruptRecords.CORRUPTIONS.map(({ field, reason }, index) => [
+        `records.ticket-${index + 1}`,
+        'corrupt-record',
+        { ticket: index + 1, ...(field !== undefined && { field }), reason },
+      ]),
+      ['records.ticket-9', 'unknown-flow', { name: 'gone', declared: ['default'], ticket: 9 }],
+    ],
+  );
+  assert.equal(
+    report.line('error', checked.recordProblems()[0]!),
+    'error: records.ticket-1: Execution Record ticket-1 cannot be read: its flow is not a string; gg run holds ' +
+      'Ticket 1 for a human, and gg work abandon 1 forgets it [corrupt-record]',
   );
 });
 

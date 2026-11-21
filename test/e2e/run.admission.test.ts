@@ -2,12 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as locks from '../../lib/locks.ts';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as executionReads from '../support/execution-reads.ts';
-import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.ts';
+import * as work from '../../lib/work.ts';
 import * as executionContext from '../support/execution-context.ts';
 import * as gitShell from '../support/git-shell.ts';
 import * as runFixture from '../support/run-fixture.ts';
@@ -104,7 +105,7 @@ test('a merge conflict at ticket start is held with the diff stat', async (t) =>
   assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 0, 'following the advice starts the Ticket');
 });
 
-// The hold's comment says how to inspect the held record and delete its row; the Terminal Reason does not.
+// The hold's comment says how to inspect the held record and abandon it; the Terminal Reason does not.
 async function assertHeldRecordAdvice(fixture: RunFixture) {
   assert.ok(
     fixture
@@ -113,11 +114,9 @@ async function assertHeldRecordAdvice(fixture: RunFixture) {
   );
   const inspect =
     'Inspect the row first in the State Database at .git/gg/gg.db (relative to the main checkout) using a SQLite ' +
-    'client.';
+    `client if you need what it held. Then run gg work abandon ${TICKET}, which removes the row and its State Labels ` +
+    `and keeps the worktree and branch, and re-run gg run ${TICKET}.`;
   assert.ok(fixture.comments().some((body) => body.includes(inspect)));
-  assert.ok(
-    fixture.comments().some((body) => body.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)),
-  );
   assert.equal(
     paths.pathKey((await fixture.options.deps.git.repoInfo(fixture.worktree)).gitCommonDir),
     paths.pathKey(fixture.commonDir),
@@ -128,7 +127,7 @@ async function assertHeldRecordAdvice(fixture: RunFixture) {
   assert.equal(held.state, 'held');
   assert.doesNotMatch(
     held.terminalReason?.text as string,
-    /DELETE FROM|SQLite/,
+    /gg work abandon|SQLite/,
     'the recovery advice is in the comment, not the Terminal Reason',
   );
 }
@@ -148,15 +147,13 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
     'skipped',
     'removing the label alone cannot resume a finished record',
   );
-  const statement = fixture
-    .comments()
-    .join('\n')
-    .match(/`(DELETE FROM records WHERE kind = 'ticket' AND n = \d+;)`/)?.[1] as string;
-  stateDatabase.open(fixture.commonDir).exec(statement);
+  const ticket = Number(/gg work abandon (\d+),/.exec(fixture.comments().join('\n'))?.[1]);
+  const { gh } = fixture.options.deps;
+  await work.abandon({ ticket, commonDir: fixture.commonDir, cwd: fixture.mainRoot, labelPrefix: 'gg', gh, locks });
   assert.equal(
     run.runExitCode(await run.runTarget(fixture.options)),
     0,
-    'deleting only the held row allows a fresh Execution',
+    'abandoning only the held record allows a fresh Execution',
   );
 });
 

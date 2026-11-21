@@ -237,7 +237,7 @@ const directCalls = (text: string): string[] =>
 const TAKES_NO_DEPENDENCY: Record<string, string[]> = {
   'lib/doctor.ts': ['stateDatabase.open'],
   'lib/harnesses/ask-session.ts': ['stateDatabase.loadAll'],
-  'lib/work.ts': ['stateDatabase.load', 'stateDatabase.open', 'stateDatabase.removeRecord'],
+  'lib/work.ts': ['stateDatabase.open', 'stateDatabase.removeRecord'],
 };
 
 test("no lib module on a Run's path reaches the State Database by commonDir: each goes through database (#367)", () => {

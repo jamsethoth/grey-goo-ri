@@ -30,13 +30,26 @@ export interface AbandonOptions {
 // person to do by hand, since admission skips a record that is merely marked finished; its Events, worktree and branch
 // stay, so the next gg run starts a new Execution on that branch. Readiness refuses a Ticket with any State Label, and
 // an in-progress one with no record behind it reads as stuck, so every State Label goes first, and the row only once
-// they have.
+// they have. A row the reader refuses goes the same way: the person who types abandon is the human its hold waits for
+// (#439, Q2 A).
 export async function abandon({ ticket, commonDir, cwd, labelPrefix, gh, locks }: AbandonOptions): Promise<string> {
   // Before the lock, which would leave its file in a repository gg init never set up (#150).
   stateDatabase.open(commonDir);
   return underTicketLock({ commonDir, ticket, locks, verb: 'abandon' }, async () => {
-    const executionRecord = stateDatabase.load(commonDir, 'ticket', ticket);
-    if (!executionRecord) throw new Error(`Ticket ${ticket} has no Execution Record to abandon`);
+    const { executionRecord, corrupt } = reconcile.loadExecutionRecord(commonDir, ticket, stateDatabase);
+    // What the text says it forgot and kept: the row's Flow, worktree and branch, or why it could not be read.
+    const forgotten = executionRecord
+      ? {
+          record: ` of Flow ${executionRecord.flow}`,
+          kept:
+            `its Events, its worktree ${executionRecord.worktree} and its branch ${executionRecord.branch} are kept. ` +
+            `gg run ${ticket} --flow <name> starts a new Execution on that branch.`,
+        }
+      : corrupt && {
+          record: `, which could not be read (${corrupt.reason})`,
+          kept: `its Events, worktree and branch are kept. gg run ${ticket} --flow <name> starts a new Execution.`,
+        };
+    if (!forgotten) throw new Error(`Ticket ${ticket} has no Execution Record to abandon`);
     const names = labels.labelsFor(labelPrefix);
     const stateLabels = gh
       .labelNames(await gh.viewIssue(ticket, cwd))
@@ -48,11 +61,8 @@ export async function abandon({ ticket, commonDir, cwd, labelPrefix, gh, locks }
     stateDatabase.removeRecord(commonDir, 'ticket', ticket);
     const plural = stateLabels.length > 1 ? 's' : '';
     const removed = stateLabels.length ? ` and removed the ${stateLabels.join(', ')} label${plural}` : '';
-    return (
-      `gg work abandon deleted Execution Record ticket-${ticket} of Flow ${executionRecord.flow}${removed}; its ` +
-      `Events, its worktree ${executionRecord.worktree} and its branch ${executionRecord.branch} are kept. ` +
-      `gg run ${ticket} --flow <name> starts a new Execution on that branch.\n`
-    );
+    const { record: what, kept } = forgotten;
+    return `gg work abandon deleted Execution Record ticket-${ticket}${what}${removed}; ${kept}\n`;
   });
 }
 
