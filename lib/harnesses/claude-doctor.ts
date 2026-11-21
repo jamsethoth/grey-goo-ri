@@ -122,8 +122,12 @@ async function said(runner: Runner, args: string[], more: Partial<exec.LaunchOpt
       ...more,
       onLine: (line) => lines.push(line),
     });
-    const failure = ended.timedOut ? `claude ${args[0]} timed out` : null;
-    const exited = ended.code ? `claude ${args[0]} exited ${ended.code}` : null;
+    // A model call is named by -p, a cheap command by its whole argv; on POSIX a crash ends by a signal, with no code.
+    const command = `claude ${args.includes('-p') ? '-p' : args.join(' ')}`;
+    const failure = ended.timedOut ? `${command} timed out` : null;
+    const exited = ended.code
+      ? `${command} exited ${ended.code}`
+      : ended.signal && `${command} ended by ${ended.signal}`;
     return { started: true, lines, failure, exited };
   } catch (err) {
     return { started: false, lines, failure: (err as Error).message, exited: null };
