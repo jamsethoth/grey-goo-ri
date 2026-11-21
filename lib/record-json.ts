@@ -21,7 +21,12 @@ export class RecordCorruptError extends Error {
   declare recordNumber: number;
   declare reason: string;
   declare field: string | undefined;
-  constructor(file: string, reason: string, raw: string, refused: { recordNumber: number; field?: string }) {
+  constructor(
+    file: string,
+    reason: string,
+    raw: string,
+    refused: { recordNumber: number; field?: string } = { recordNumber: 0 },
+  ) {
     super(`corrupt record ${file}: ${reason}`);
     this.name = 'RecordCorruptError';
     this.file = file;
