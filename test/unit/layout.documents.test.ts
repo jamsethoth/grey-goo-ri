@@ -37,18 +37,27 @@ test('a living document names only code files that exist', () => {
 // #431 amended these documents to what gg builds; each phrase is wording it replaced, which must not come back.
 const AMENDED_DOCUMENTS = ['GLOSSARY.md', 'docs/adr/0014-procedures-are-data.md', 'docs/requests/node-harness-dag.md'];
 const SUPERSEDED_WORDING = [
-  /back edge/i,
-  /gg init` creates the labels/,
-  /every terminated attempt,/,
-  /at action end/i,
-  /labels the flow references missing/,
-  /about 10 min/,
-  /default about\s+60/,
+  'back edge',
+  'gg init` creates the labels',
+  'every terminated attempt,',
+  'at action end',
+  'labels the flow references missing',
+  'about 10 min',
+  'default about 60',
 ];
+// Lower case, each run of whitespace one space: a rewrapped or capitalised phrase is still found.
+const supersededIn = (text: string) => {
+  const words = text.replace(/\s+/g, ' ').toLowerCase();
+  return SUPERSEDED_WORDING.filter((phrase) => words.includes(phrase));
+};
+
+test('a superseded phrase is found across a line break and in capitals', () => {
+  const rewrapped = SUPERSEDED_WORDING.map((phrase) => phrase.replaceAll(' ', '\r\n  ').toUpperCase()).join('\n');
+  assert.deepEqual(supersededIn(rewrapped), SUPERSEDED_WORDING);
+});
 
 for (const document of AMENDED_DOCUMENTS) {
   test(`${document} holds no wording #431 superseded`, () => {
-    const text = readFileSync(root + document, 'utf8');
-    assert.deepEqual(SUPERSEDED_WORDING.filter((phrase) => phrase.test(text)).map(String), []);
+    assert.deepEqual(supersededIn(readFileSync(root + document, 'utf8')), []);
   });
 }
