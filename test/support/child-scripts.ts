@@ -49,8 +49,7 @@ export function nodeCommand(t: TestContext, ...args: string[]) {
       // cmd.exe leaves %NAME% as it is when NAME is empty, so an empty argument is written as one.
       if (value === '') return '""';
       const name = `GG_TEST_ARG_${createHash('sha256').update(value).digest('hex').slice(0, 16).toUpperCase()}`;
-      // set once per case: a second caseEnv would restore the value the first had set, after the first removed it
-      if (process.env[name] !== value) caseEnv.caseEnv(t, { [name]: value });
+      caseEnv.caseEnv(t, { [name]: value });
       return process.platform === 'win32' ? `"%${name}%"` : `"$${name}"`;
     })
     .join(' ');
