@@ -26,6 +26,7 @@ empty-list
 not-a-boolean
 not-a-list
 not-a-positive-integer
+not-a-non-negative-integer
 not-a-string
 not-an-object
 null-value
@@ -135,6 +136,7 @@ The rule each code names, and its severity: an error unless the row says "(warni
 | `not-a-boolean` | a value must be `true` or `false` |
 | `not-a-list` | a value must be a list |
 | `not-a-positive-integer` | a value must be a positive integer |
+| `not-a-non-negative-integer` | a value must be a whole number 0 or more |
 | `not-a-string` | a value must be a string |
 | `not-an-object` | a value must be an object |
 | `null-value` | `null` is never a value in a configuration file: set a value or leave the key out |
