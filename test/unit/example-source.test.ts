@@ -49,34 +49,52 @@ function exampleReads(checker: ts.TypeChecker) {
       ts.isParenthesizedExpression(node) ||
       ts.isNonNullExpression(node)) &&
       reaches(node.expression));
-  // A place that takes any key with an `unknown` or `any` value, such as Record<string, unknown>, and is not the
-  // example's: a value handed to it can be written or deleted at any key with nothing checked.
-  const widened = (type: ts.Type | undefined) =>
-    type !== undefined &&
-    !fromExample(type) &&
-    (type.isUnion() ? type.types : [type]).some(
-      (member) => ((member.getStringIndexType()?.flags ?? 0) & (ts.TypeFlags.Unknown | ts.TypeFlags.Any)) !== 0,
-    );
+  // A place that opens, and is not the example's.
+  const widened = (type: ts.Type | undefined) => type !== undefined && !fromExample(type) && opens(checker, type);
+  const isExample = (expression: ts.Expression) => fromExample(checker.getTypeAtLocation(expression));
+  return { fromExample, isConfigCall, reaches, widened, isExample };
+}
+
+// A type that, at any depth, takes any key (a string index signature, such as Record<string, object>) or any value at
+// a key (a property typed `unknown` or `any`): a value handed to it can be written there with nothing checked.
+function opens(checker: ts.TypeChecker, type: ts.Type, walking = new Set<ts.Type>()): boolean {
+  if (walking.has(type)) return false;
+  walking.add(type);
+  if (type.isUnionOrIntersection()) return type.types.some((member) => opens(checker, member, walking));
+  if (checker.isArrayType(type) || checker.isTupleType(type))
+    return checker.getTypeArguments(type as ts.TypeReference).some((member) => opens(checker, member, walking));
+  if (type.getStringIndexType() !== undefined) return true;
+  return checker.getPropertiesOfType(type).some((property) => {
+    const held = checker.getTypeOfSymbol(property);
+    return (held.flags & (ts.TypeFlags.Unknown | ts.TypeFlags.Any)) !== 0 || opens(checker, held, walking);
+  });
+}
+
+// A place the example is handed to that edits nothing, though its type opens.
+function handedOff(node: ts.Node, checker: ts.TypeChecker) {
+  const { parent } = node;
   // gg's own code reads what a case gives it, so an argument to a function declared outside test/ widens nothing.
-  const handedToGg = (node: ts.Node) =>
-    ts.isCallExpression(node.parent) &&
-    node.parent.arguments.includes(node as ts.Expression) &&
-    !(checker.getResolvedSignature(node.parent)?.declaration?.getSourceFile().fileName ?? '').startsWith(
+  if (ts.isCallExpression(parent) && parent.arguments.includes(node as ts.Expression))
+    return !(checker.getResolvedSignature(parent)?.declaration?.getSourceFile().fileName ?? '').startsWith(
       `${root}test/`,
     );
-  const isExample = (expression: ts.Expression) => fromExample(checker.getTypeAtLocation(expression));
-  return { fromExample, isConfigCall, reaches, widened, handedToGg, isExample };
+  // The golden fixture's configuration is its own fixture type, which golden cases edit through that type; nothing
+  // edits the example run's configuration today.
+  if (ts.isPropertyAssignment(parent) && ts.isObjectLiteralExpression(parent.parent))
+    return checker.getContextualType(parent.parent)?.getSymbol()?.name === 'GoldenConfig';
+  // tsc gives a destructuring's binding pattern a contextual type with `unknown` properties.
+  return ts.isVariableDeclaration(parent) && ts.isObjectBindingPattern(parent.name);
 }
 
 // What `node` does to the example that tsc does not check: a cast of it, an `any`, an Object.assign onto it, or the
 // example handed to a place that no longer checks it, directly or through a type argument.
 function escapes(node: ts.Node, checker: ts.TypeChecker, reads: ReturnType<typeof exampleReads>) {
-  const { reaches, widened, handedToGg, isExample } = reads;
+  const { reaches, widened, isExample } = reads;
   const found = ts.isCallExpression(node) ? callEscapes(node, checker, reads) : [];
   if (isCast(node) && reaches(node.expression)) found.push('a cast of the example');
   if (node.kind === ts.SyntaxKind.AnyKeyword && node.getSourceFile().fileName !== WRITES_ANY) found.push('an any');
   // The contextual type is asked first: most expressions have none, and it is cheaper than the type of each.
-  if (ts.isExpression(node) && widened(checker.getContextualType(node)) && isExample(node) && !handedToGg(node))
+  if (ts.isExpression(node) && widened(checker.getContextualType(node)) && isExample(node) && !handedOff(node, checker))
     found.push('the example widened to an index signature');
   return found;
 }
@@ -157,6 +175,15 @@ test('the census finds a config() not typed by the example, each cast of it, eac
     ['Object.assign(config.agents.implementer, { mcp: [] });', 'an Object.assign onto the example'],
     ['export const site: Record<string, unknown> = config.agents.implementer;', WIDENED],
     ['((value: Record<string, unknown>) => value)(config.procedures.implement);', WIDENED],
+    ['export const nested: Record<string, Record<string, unknown>> = config.flows.default.ticket.vertices;', WIDENED],
+    ['export const deep: Record<string, Record<string, Record<string, unknown>>> = config.flows;', WIDENED],
+    ['export const listed: Record<string, unknown>[] = Object.values(config.agents);', WIDENED],
+    ['export const objects: Record<string, object> = config.flows.default.ticket.vertices;', WIDENED],
+    ['export const named: { model?: unknown } = config.agents.implementer;', WIDENED],
+    [
+      'export const inner: { ticket: { vertices: Record<string, Record<string, unknown>> } } = config.flows.default;',
+      WIDENED,
+    ],
     [
       'export const each = Object.values<Record<string, unknown>>(config.agents);',
       'the example widened by a type argument',
@@ -166,6 +193,8 @@ test('the census finds a config() not typed by the example, each cast of it, eac
     ["exampleSource.putAt(config, ['labelPrefix'], null);", null],
     ["export const constant = 'x' as const;", null],
     ["export const parsed = JSON.parse('{}') as typeof config;", null],
+    ['export const { implement } = config.procedures;', null],
+    ['export const typed: exampleSource.Source["agents"] = config.agents;', null],
   ];
   const { program, plantedFile } = plantedProgram([...HEADER, ...samples.map(([sample]) => sample)]);
   const { configCalls, found } = census(program, (sourceFile) => sourceFile === plantedFile);

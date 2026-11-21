@@ -149,7 +149,7 @@ function procedureForms(add: Add, procedure: procedures.Procedure) {
 
 // The forms of a Vertex's values, by the closed set each is drawn from. Its Agent resolves merged, so whether the
 // Vertex sets its own access over the Agent it uses is read from the source as written.
-function vertexForms(add: Add, vertex: model.ResolvedVertexJson, written: Record<string, unknown>) {
+function vertexForms(add: Add, vertex: model.ResolvedVertexJson, written: object) {
   add('agent', agentForm(vertex));
   add('vertex access', vertex.access);
   add('vertex max', presence(vertex.max));
@@ -178,12 +178,12 @@ function formsOf(flow: model.ResolvedFlowJson, source: exampleSource.Source) {
     if (value.exhausted !== undefined) target('edge exhausted', value.exhausted);
   };
   Object.values(flow.ticket.routes).forEach(routeTarget('flow route'));
-  const written: Record<string, Record<string, unknown>> = source.flows.default.ticket.vertices;
+  const written = new Map(Object.entries(source.flows.default.ticket.vertices));
   for (const [id, vertex] of Object.entries(flow.ticket.vertices)) {
     Object.values(vertex.route).forEach(routeTarget('vertex route'));
     if (vertex.exhausted === null) add('vertex exhausted', 'absent');
     else target('vertex exhausted', vertex.exhausted);
-    vertexForms(add, vertex, written[id]!);
+    vertexForms(add, vertex, written.get(id)!);
   }
   for (const procedure of Object.values(flow.procedures)) procedureForms(add, procedure);
   return found;
