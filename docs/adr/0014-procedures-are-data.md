@@ -17,15 +17,16 @@ The interpreter names no Procedure, Action or Check.
 - **One agent step per Procedure.** A Procedure has at most one agent Action; with none it is a deterministic Vertex
   (a gate, `publish`). Multi-step work is composed from Vertices, and Sessions never cross Vertices, so red and green
   become two Vertices.
-- **Claim tokens decide what is required.** Each token is `{ requires: [<check ids>] }` or `{ stop: true }`. The
-  Outcome is decided once per Visit: gg's fixed rows (integrity, harness failure, parse), then a stop token through
-  the `stopped` table, then the `passed` or `failed` table by whether every required Check passed on the current
+- **Claim tokens decide what is required.** Each token is `{ requires: [<check ids>] }` or `{ stop: true }`. The Outcome
+  is decided once per Visit: gg's fixed rows (unconfirmed cleanup, integrity, harness failure, parse), then a stop token
+  through the `stopped` table, then the `passed` or `failed` table by whether every required Check passed on the current
   tree. Tables are first match over enum, boolean and integer fields, analysed exactly at admission. With no `failed`
   row matching, the Outcome is the engine Outcome `failed`.
 - **Recovery is per Visit.** `recover: { max, brief }` resumes the agent's Session after a pass in which a required
   Check failed recoverably, then every Check runs again.
-- **Integrity is never configurable.** Protected Files, read-only enforcement and Test Immutability over `testPaths`
-  run after every agent Attempt; a Procedure only declares how much it may touch tests (`frozen`, `named`, `write`).
+- **Integrity is never configurable.** Protected Files, read-only enforcement and Test Immutability over `testPaths` run
+  after every agent Attempt once its cleanup is confirmed; a Procedure only declares how much it may touch tests
+  (`frozen`, `named`, `write`).
 - **A human approval is an Action.** `await-approval` ends a Procedure with no agent Action, asks for a Decision
   through ADR 0003's label protocol, and ends the run for the Ticket; the Decision a later run consumes is the
   Visit's Outcome, routed like any other. There is no separate approval kind of Vertex.
