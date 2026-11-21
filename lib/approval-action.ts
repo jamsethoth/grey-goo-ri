@@ -5,7 +5,7 @@ import * as approval from './approval.ts';
 import * as attempt from './attempt.ts';
 import * as bounds from './bounds.ts';
 import * as comment from './effects/comment.ts';
-import type * as label from './effects/label.ts';
+import * as label from './effects/label.ts';
 import * as sideEffect from './effects/side-effect.ts';
 import * as labels from './labels.ts';
 import * as pendingReport from './pending-report.ts';
@@ -128,8 +128,10 @@ function consume(
 ): Promise<visitScope.ActionResolution> {
   const { record: executionRecord } = runContext;
   const actionMarker = runContext.markerOf(reportActionOf(running, instance, 'consume'));
-  const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as Consumption | undefined;
-  const payload: Consumption = intended ?? consumptionOf(runContext, running, instance, found as Replied);
+  const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent');
+  const payload: Consumption = intended
+    ? writeAhead.payloadOf(intended, label.readConsumption)
+    : consumptionOf(runContext, running, instance, found as Replied);
   const { outcome, actor, reply } = payload.decision;
   const resolution: visit.DecisionResolution = {
     outcome,

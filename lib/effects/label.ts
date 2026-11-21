@@ -20,23 +20,23 @@ const labelFields = (field: (key: string) => recordReadNode.Node): Payload => ({
   add: texts(field('add')),
   remove: texts(field('remove')),
 });
+// A consumed Decision's payload, which an await-approval's consume intent saves under this Effect
+// (lib/approval-action.ts).
+export const readConsumption: recordReadNode.Read<approvalAction.Consumption> = object((field) => ({
+  ...labelFields(field),
+  decision: object((decision, has) => ({
+    instance: text(decision('instance')),
+    event: count(decision('event')),
+    actor: has('actor') ? text(decision('actor')) : undefined,
+    time: text(decision('time')),
+    outcome: text(decision('outcome')),
+    next: text(decision('next')),
+    reply: nullable(text)(decision('reply')),
+  }))(field('decision')),
+}));
 export const readPayload: recordReadNode.Read<Payload | approvalAction.Consumption> = variant('a label payload', [
   { required: ['ticket', 'add', 'remove'], read: object(labelFields) },
-  {
-    required: ['ticket', 'add', 'remove', 'decision'],
-    read: object((field) => ({
-      ...labelFields(field),
-      decision: object((decision, has) => ({
-        instance: text(decision('instance')),
-        event: count(decision('event')),
-        actor: has('actor') ? text(decision('actor')) : undefined,
-        time: text(decision('time')),
-        outcome: text(decision('outcome')),
-        next: text(decision('next')),
-        reply: nullable(text)(decision('reply')),
-      }))(field('decision')),
-    })),
-  },
+  { required: ['ticket', 'add', 'remove', 'decision'], read: readConsumption },
 ]);
 
 // The gh verb labels are written with, and where it reports a write that failed (lib/github.ts).

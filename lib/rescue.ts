@@ -156,8 +156,8 @@ export async function rescueAndReset(
   const { testPaths } = executionRecord.configurationSnapshot!;
   const untracked = integrity.rollbackSet(baseline, protectedPaths, checks.testPathSet(testPaths));
 
-  const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as
-    rescueEffect.Payload | undefined;
+  const intent = writeAhead.findEntry(executionRecord, actionMarker, 'intent');
+  const intended = intent && writeAhead.payloadOf(intent, rescueEffect.readPayload);
   const payload = intended ?? (await attempt.whileBusy(runContext, () => planRescue(runContext, rescuing, untracked)));
   if (!payload) return null;
   // Not busy as a whole: its Effects are bracketed one by one, the reset's by the reset, and the brackets do not nest.
@@ -205,7 +205,7 @@ export async function recoverInterrupted(runContext: RunContext): Promise<void> 
   const interrupted = writeAhead.openIntents(executionRecord).find((entry) => entry.effect === 'call');
   if (!interrupted) return;
   const actionIdentity = attemptOf(executionRecord, interrupted.actionMarker);
-  const { baseline: own, containment } = interrupted.payload as writeAhead.CallPayload;
+  const { baseline: own, containment } = writeAhead.payloadOf(interrupted, writeAhead.readCallPayload);
   // Reset to where the Visit started, as a routed failure is: a later call's own baseline holds the earlier Attempts'
   // uncommitted work, which #118's reset cannot restore, and the Rescue Ref keeps it (D2).
   const baseline = executionRecord.visitState?.firstAttemptBaseline ?? own;
