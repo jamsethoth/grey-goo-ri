@@ -31,7 +31,34 @@ type Kind = keyof typeof SHAPES;
 
 const valueAt = (row: Json, segments: Segment[]) =>
   segments.reduce<Json>((held, segment) => (held as Record<Segment, Json>)[segment], row);
-const declaredAt = (kind: Kind, row: Json, segments: Segment[]) => typeShape.declaredAt(SHAPES[kind], row, segments);
+
+// An intent's payload is read by the reader of the effect it names (#384): the one form that effect saves, or label's
+// own and a consumed Decision's. An unknown effect's keeps the whole union; an entry outside an intent holds none.
+const FORMS_OF: Record<string, string[]> = {
+  call: ['writeAhead.CallPayload'],
+  label: ['label.Payload', 'approvalAction.Consumption'],
+};
+const formsOf = (effect: string) =>
+  FORMS_OF[effect] ?? [`${effect.replace(/-(\w)/g, (_, letter: string) => letter.toUpperCase())}.Payload`];
+const isKnownEffect = (effect: Json): effect is string =>
+  effect === 'call' || (typeof effect === 'string' && effects.lookup(effect) !== undefined);
+const entryOf = (row: Json, segments: Segment[]) =>
+  segments.length === 3 && segments[0] === 'writeAheadLog' && segments[2] === 'payload'
+    ? (valueAt(row, segments.slice(0, 2)) as { step: Json; effect: Json })
+    : undefined;
+const isPayloadOutsideIntent = (row: Json, segments: Segment[]) => {
+  const entry = entryOf(row, segments);
+  return entry !== undefined && entry.step !== 'intent';
+};
+const declaredAt = (kind: Kind, row: Json, segments: Segment[]) => {
+  const declared = typeShape.declaredAt(SHAPES[kind], row, segments);
+  const entry = entryOf(row, segments);
+  if (declared?.kind !== 'union' || entry?.step !== 'intent' || !isKnownEffect(entry.effect)) return declared;
+  const names = formsOf(entry.effect);
+  const forms = declared.forms.filter(({ name }) => names.includes(name));
+  assert.equal(forms.length, names.length, `${entry.effect}'s payload forms ${names.join(', ')} are declared`);
+  return forms.length === 1 ? { ...forms[0].shape, nullable: false } : { ...declared, forms, nullable: false };
+};
 // The node's shape as the row's value there is read: a union as the form it fits.
 const placedAt = (kind: Kind, row: Json, segments: Segment[]) => {
   const declared = declaredAt(kind, row, segments);
@@ -281,7 +308,7 @@ test('a string outside its closed set is a corrupt row naming it; any other stri
 // A union told apart by its keys names itself by what its reader calls it.
 const UNION_NAMES: Record<string, string> = {
   'record.DecidedByAction': 'one form of decidedBy',
-  'writeAhead.CallPayload': 'a write-ahead payload',
+  'approvalAction.Consumption': 'a label payload',
   'integrity.UntrackedLink': 'a link or base64 bytes',
 };
 // Any other scalar, a closed set or a string-or-number among them, is read as a string first.
@@ -355,7 +382,10 @@ function refusesWhole(kind: Kind, row: Json, segments: Segment[], value: Json) {
   const set = (held: Json) =>
     changed(row, segments, (parent, key) => void ((parent as Record<Segment, Json>)[key] = held));
   const wrong = set(typeof value === 'boolean' ? 'x' : true);
-  refusedExactly(kind, wrong, `${path} ${wrongTypeRefusal(declaredAt(kind, row, segments)!)}`, path);
+  const wrongRefusal = isPayloadOutsideIntent(row, segments)
+    ? 'is not null outside an intent'
+    : wrongTypeRefusal(declaredAt(kind, row, segments)!);
+  refusedExactly(kind, wrong, `${path} ${wrongRefusal}`, path);
   const placed = placedAt(kind, row, segments);
   if (placed?.kind === 'scalar' && placed.members && typeof value === 'string') {
     const closed = listing(closedSet(kind, row, segments, placed.members), path);
@@ -409,13 +439,81 @@ test('a decidedBy that mixes two forms, holds none, or names half a Visit is a c
   }
 });
 
-test('a payload that fits no write-ahead payload is a corrupt row naming it', () => {
+test("a payload missing a key its effect's form requires is a corrupt row naming the key", () => {
   const broken = changed(
     FIXTURE.execution,
     ['writeAheadLog', 3, 'payload'],
     (parent, key) => void ((parent as Record<Segment, Json>)[key] = { branch: 'b' }),
   );
-  refused('ticket', broken, /: its writeAheadLog\[3\]\.payload is not /, 'a push payload with no sha');
+  refused('ticket', broken, /: its writeAheadLog\[3\]\.payload\.sha is missing$/, 'a push payload with no sha');
+});
+
+// The fixture's write-ahead log, which holds an intent of every Effect and of an agent call.
+type Entry = { step: Json; effect: Json; payload: Json };
+const LOG = FIXTURE.execution.writeAheadLog as Entry[];
+const INTENTS = LOG.flatMap((entry, index) =>
+  entry.step === 'intent' ? [{ index, effect: String(entry.effect), payload: entry.payload }] : [],
+);
+// The fixture's row with its entry at `index` holding `payload`, and naming `effect` when one is given.
+const withPayload = (index: number, payload: Json, effect?: string) =>
+  changed(FIXTURE.execution, ['writeAheadLog', index], (log, key) => {
+    const entry = (log as Record<Segment, Entry>)[key];
+    entry.payload = payload;
+    if (effect !== undefined) entry.effect = effect;
+  });
+// What parseRow makes of a row: `loads`, or the reason it gives for refusing it.
+function outcomeOf(row: Json) {
+  try {
+    parse('ticket', row);
+    return 'loads';
+  } catch (err) {
+    if (!(err instanceof recordJson.RecordCorruptError)) throw err;
+    return err.reason;
+  }
+}
+
+test("an intent holding another effect's payload is a corrupt row naming its payload", () => {
+  assert.deepEqual(
+    [...new Set(INTENTS.map(({ effect }) => effect))].sort(),
+    [...effects.all().map(({ name }) => name), 'call'].sort(),
+    'an intent of every Effect and of an agent call',
+  );
+  const accepted = INTENTS.flatMap(({ index, effect }) =>
+    INTENTS.filter((other) => other.effect !== effect).flatMap((other) => {
+      const reason = outcomeOf(withPayload(index, other.payload));
+      const named =
+        reason.startsWith(`its writeAheadLog[${index}].payload `) ||
+        reason.startsWith(`its writeAheadLog[${index}].payload.`);
+      return named ? [] : [`${effect} holding ${other.effect}'s payload: ${reason}`];
+    }),
+  );
+  assert.deepEqual(accepted, []);
+});
+
+test('an intent with no payload is a corrupt row naming its payload', () => {
+  assert.deepEqual(
+    INTENTS.map(({ index, effect }) => `${effect}: ${outcomeOf(withPayload(index, null))}`),
+    INTENTS.map(({ index, effect }) => `${effect}: its writeAheadLog[${index}].payload is not an object`),
+  );
+});
+
+test('an evidence or complete entry holding a payload is a corrupt row naming it', () => {
+  const others = LOG.flatMap((entry, index) => (entry.step === 'intent' ? [] : [{ index, step: entry.step }]));
+  assert.deepEqual([...new Set(others.map(({ step }) => step))].sort(), ['complete', 'evidence']);
+  // The commit intent's payload, which fits the effect the fixture's evidence entry names.
+  const [{ payload }] = INTENTS.filter(({ effect }) => effect === 'commit');
+  assert.deepEqual(
+    others.map(({ index, step }) => `${String(step)}: ${outcomeOf(withPayload(index, payload))}`),
+    others.map(
+      ({ index, step }) => `${String(step)}: its writeAheadLog[${index}].payload is not null outside an intent`,
+    ),
+  );
+});
+
+// record.md: an intent whose effect names no Effect gg can find loads, and Reconciliation holds its Ticket.
+test('an intent naming an effect gg does not know still loads, holding any form of payload', () => {
+  for (const { index, effect, payload } of INTENTS)
+    loads('ticket', withPayload(index, payload, 'teleport'), `an unknown effect holding ${effect}'s payload`);
 });
 
 test('RecordCorruptError builds from each argument form it takes, the base three-argument one included', () => {
