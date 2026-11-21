@@ -13,7 +13,7 @@ import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as run from '../../lib/run.ts';
 import * as caseEnv from '../support/case-env.ts';
 import * as claudeRecordings from '../support/claude-recordings.ts';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 import * as fakeGh from '../support/fake-gh.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
 import * as recordedCli from '../support/recorded-cli.ts';
@@ -38,18 +38,18 @@ const sources = ({
   files: { repository: files, user: {} },
 });
 
-// The example Layer as loadLayers gives it, with every Agent on the Claude Harness, as gg init --harness claude writes
-// it: seven Vertices on one CLI.
+// The example Source as loadSources gives it, with every Agent on the Claude Harness, as gg init --harness claude
+// writes it: seven Vertices on one CLI.
 function claudeExample() {
-  const layer = exampleLayer.config();
-  layer.files = Object.fromEntries(
-    exampleLayer.WRITTEN_NAMES.filter((name) => name !== 'gg.json').map((name) => [
+  const source = exampleSource.config();
+  source.files = Object.fromEntries(
+    exampleSource.WRITTEN_NAMES.filter((name) => name !== 'gg.json').map((name) => [
       name,
-      file(exampleLayer.fixtureText(name)),
+      file(exampleSource.fixtureText(name)),
     ]),
   );
-  for (const agent of Object.values<Record<string, unknown>>(layer.agents)) agent.harness = 'claude';
-  return layer;
+  for (const agent of Object.values<Record<string, unknown>>(source.agents)) agent.harness = 'claude';
+  return source;
 }
 
 // gg doctor over the Claude Harness shipped builds, its CLI answering as recorded, changed by `state`, and every

@@ -1,5 +1,5 @@
-// The example Layer `gg init` writes, run as the golden Execution: its Agents on the fake Harness, its Procedures, Flow
-// and files, over a fake suite whose tests say what they require. `exampleFixture` builds it and runs nothing;
+// The example Source `gg init` writes, run as the golden Execution: its Agents on the fake Harness, its Procedures,
+// Flow and files, over a fake suite whose tests say what they require. `exampleFixture` builds it and runs nothing;
 // `runExample` runs it.
 import type { TestContext } from 'node:test';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -8,7 +8,7 @@ import * as marker from '../../lib/marker.ts';
 import * as record from '../../lib/record.ts';
 import type * as runContext from '../../lib/run-context.ts';
 import * as addSuite from './add-suite.ts';
-import * as exampleLayer from './example-layer.ts';
+import * as exampleSource from './example-source.ts';
 import type * as fakeHarnessModule from './fake-harness.ts';
 import * as golden from './golden.ts';
 import * as goldenRun from './golden-run.ts';
@@ -70,15 +70,15 @@ const AGENTS = {
 
 // The example as the golden configuration: its gg.json with the Agents above, and every file it names.
 export function exampleConfig(): golden.GoldenConfig {
-  const layer = exampleLayer.config();
-  const named = exampleLayer.WRITTEN_NAMES.filter((name) => name !== 'gg.json');
+  const source = exampleSource.config();
+  const named = exampleSource.WRITTEN_NAMES.filter((name) => name !== 'gg.json');
   return {
-    commands: layer.commands,
-    testPaths: layer.testPaths,
+    commands: source.commands,
+    testPaths: source.testPaths,
     agents: structuredClone(AGENTS),
-    procedures: layer.procedures,
-    flows: layer.flows,
-    files: Object.fromEntries(named.map((name) => [name, golden.layerFile(exampleLayer.fixtureText(name))])),
+    procedures: source.procedures,
+    flows: source.flows,
+    files: Object.fromEntries(named.map((name) => [name, golden.sourceFile(exampleSource.fixtureText(name))])),
   };
 }
 

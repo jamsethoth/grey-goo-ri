@@ -154,7 +154,7 @@ function changeMidVisit(fixture: golden.GoldenFixture): Record<string, Seen> {
       fixture.options.pinned.configuration.commands.test = 'npm run other';
       fixture.options.pinned.configuration.testPaths.push('lib/**');
       agent.effort = 'low';
-      fixture.files['implementer.md'] = golden.layerFile('# changed\n');
+      fixture.files['implementer.md'] = golden.sourceFile('# changed\n');
     }
     return run(call);
   };

@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 
 // The example's Personas, which `gg init` writes.
-const persona = (name: string) => exampleLayer.fixtureText(`${name}.md`);
+const persona = (name: string) => exampleSource.fixtureText(`${name}.md`);
 const properties = (...schemas: string[]) =>
   new Set(
     schemas.flatMap((name) =>
-      Object.keys((JSON.parse(exampleLayer.fixtureText(`${name}.schema.json`)) as { properties: object }).properties),
+      Object.keys((JSON.parse(exampleSource.fixtureText(`${name}.schema.json`)) as { properties: object }).properties),
     ),
   );
 // The fields a Persona's report section asks for, one `- \`field\`` line each.

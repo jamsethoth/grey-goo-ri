@@ -7,7 +7,7 @@ import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
 import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 import * as fakeGh from '../support/fake-gh.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
 import * as namedFlow from '../support/named-flow.ts';
@@ -42,21 +42,21 @@ const sources = (
   files: { repository: repositoryFiles, user: userFiles },
 });
 
-// The example Layer as loadLayers gives it: every file it names loaded beside it.
+// The example Source as loadSources gives it: every file it names loaded beside it.
 function example() {
-  const layer = exampleLayer.config();
-  layer.files = Object.fromEntries(
-    exampleLayer.WRITTEN_NAMES.filter((name) => name !== 'gg.json').map((name) => [
+  const source = exampleSource.config();
+  source.files = Object.fromEntries(
+    exampleSource.WRITTEN_NAMES.filter((name) => name !== 'gg.json').map((name) => [
       name,
-      file(exampleLayer.fixtureText(name)),
+      file(exampleSource.fixtureText(name)),
     ]),
   );
-  return layer;
+  return source;
 }
 
 test("gg doctor prints each Vertex's Procedure, Checks, tables and Outcomes", async () => {
   const { text, exitCode } = await doctor.doctor({ config: sources(example()), ...DEPS });
-  assert.equal(text, exampleLayer.fixtureText('doctor.txt').replaceAll('\r\n', '\n'));
+  assert.equal(text, exampleSource.fixtureText('doctor.txt').replaceAll('\r\n', '\n'));
   assert.equal(exitCode, 0);
 });
 
@@ -97,9 +97,9 @@ test('a warning line ends in its code', async () => {
 
 // gg doctor and gg run preflight check the same repository contract, so doctor never passes what run refuses (#301).
 test('gg doctor reports the repository contract problems gg run preflight refuses', async () => {
-  const layer = example();
-  layer.commands = { ...layer.commands, Test: 'npm test' };
-  const { text, exitCode } = await doctor.doctor({ config: sources(layer), ...DEPS });
+  const source = example();
+  source.commands = { ...source.commands, Test: 'npm test' };
+  const { text, exitCode } = await doctor.doctor({ config: sources(source), ...DEPS });
   assert.equal(exitCode, 1);
   assert.ok(
     text.includes(
@@ -111,10 +111,10 @@ test('gg doctor reports the repository contract problems gg run preflight refuse
 
 // Doctor lists the settings' problems first, as gg run preflight does, so the two read the same (#301).
 test("gg doctor prints the repository contract's errors before the Flows', as preflight does", async () => {
-  const layer = example();
-  layer.commands = { ...layer.commands, Test: 'npm test' };
-  layer.flows.default.ticket.vertices.red.procedure = 'red';
-  const { text } = await doctor.doctor({ config: sources(layer), ...DEPS });
+  const source = example();
+  source.commands = { ...source.commands, Test: 'npm test' };
+  source.flows.default.ticket.vertices.red.procedure = 'red';
+  const { text } = await doctor.doctor({ config: sources(source), ...DEPS });
   assert.deepEqual(
     text
       .split('\n')
@@ -233,7 +233,7 @@ test("gg doctor reports an Agent's model that is not a string at agents.<name>.m
   assert.match(text, /\nerror: agents\.implementer\.model: .*\[not-a-string\]\n/);
 });
 
-test('gg doctor reads schemas from the loaded Layer files', async () => {
+test('gg doctor reads schemas from the loaded Source files', async () => {
   const config = example();
   const schema = JSON.parse(config.files['review.schema.json'].bytes) as { properties: { claim: { enum: string[] } } };
   schema.properties.claim.enum = ['ok', 'changes'];
@@ -341,12 +341,12 @@ test('gg doctor lists an Execution Record whose Flow is no longer declared as an
 // gg doctor runs the Harness preflight gg run does, so a stub Harness fails both (#362, decision 1).
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
 test("gg doctor reports harness-preflight-failed for each Vertex on a stub Harness, as gg run's preflight does", async () => {
-  const layer = example();
-  for (const agent of Object.values<Record<string, unknown>>(layer.agents)) agent.harness = 'claude';
+  const source = example();
+  for (const agent of Object.values<Record<string, unknown>>(source.agents)) agent.harness = 'claude';
   const claude = await import('../../lib/harnesses/claude.ts');
-  const { text, exitCode } = await doctor.doctor({ config: sources(layer), ...DEPS, harnesses: { claude } });
+  const { text, exitCode } = await doctor.doctor({ config: sources(source), ...DEPS, harnesses: { claude } });
   assert.equal(exitCode, 1, text);
-  const vertices = Object.entries(layer.flows.default.ticket.vertices)
+  const vertices = Object.entries(source.flows.default.ticket.vertices)
     .filter(([, vertex]) => (vertex as { use?: string }).use !== undefined)
     .map(([id]) => id);
   assert.ok(vertices.length > 1, 'the example runs several Vertices on an Agent');
@@ -402,10 +402,10 @@ test("gg doctor gives every error gg run's preflight refuses with, line for line
 });
 
 test("the example declares its Procedures in the validator's shape", () => {
-  const { flows, errors } = exampleLayer.check(
-    exampleLayer.config(),
-    exampleLayer.schemas(),
-    exampleLayer.exampleTemplates(),
+  const { flows, errors } = exampleSource.check(
+    exampleSource.config(),
+    exampleSource.schemas(),
+    exampleSource.exampleTemplates(),
   );
   assert.deepEqual(errors, []);
   const actions = (name: string) =>
@@ -426,7 +426,7 @@ test("the example declares its Procedures in the validator's shape", () => {
 
 test("the example's schemas spell the Definition of Done and the red and green evidence in full", () => {
   const required = (name: string) =>
-    (JSON.parse(exampleLayer.fixtureText(`${name}.schema.json`)) as { required: string[] }).required;
+    (JSON.parse(exampleSource.fixtureText(`${name}.schema.json`)) as { required: string[] }).required;
   assert.deepEqual(required('implement'), [
     'claim',
     'reason',
@@ -449,10 +449,10 @@ test("the example's schemas spell the Definition of Done and the red and green e
 });
 
 test('every template the example writes names only declared inputs at every Vertex that uses it', () => {
-  const { errors, warnings } = exampleLayer.check(
-    exampleLayer.config(),
-    exampleLayer.schemas(),
-    exampleLayer.exampleTemplates(),
+  const { errors, warnings } = exampleSource.check(
+    exampleSource.config(),
+    exampleSource.schemas(),
+    exampleSource.exampleTemplates(),
   );
   assert.deepEqual(errors, []);
   assert.deepEqual(
@@ -625,7 +625,7 @@ test('gg doctor prints a Flow named entirely with Object.prototype names like on
       ...DEPS,
     });
   const ordinary = await print(namedFlow.ORDINARY);
-  // Its one command is named for the comparison, which the repository Layer's command rule refuses, as gg run
+  // Its one command is named for the comparison, which the repository Source's command rule refuses, as gg run
   // preflight does (#301); the Flow itself is clean.
   assert.deepEqual(
     ordinary.text.split('\n').filter((line) => line.startsWith('error: ') && !line.startsWith('error: commands: ')),
@@ -635,11 +635,11 @@ test('gg doctor prints a Flow named entirely with Object.prototype names like on
 });
 
 // The example's one Flow is printed again under its second name, after the first, and its findings once.
-test('gg doctor prints each declared Flow, in the order the Layer declares them', async () => {
+test('gg doctor prints each declared Flow, in the order the Source declares them', async () => {
   const config = example();
   config.flows.light = structuredClone(config.flows.default);
   const { text, exitCode } = await doctor.doctor({ config: sources(config), ...DEPS });
-  const one = exampleLayer.fixtureText('doctor.txt').replaceAll('\r\n', '\n');
+  const one = exampleSource.fixtureText('doctor.txt').replaceAll('\r\n', '\n');
   const flowSection = one.slice(0, one.indexOf('\nwarning: ') + 1);
   assert.equal(text, one.replace(flowSection, flowSection + flowSection.replace('flow default\n', 'flow light\n')));
   assert.equal(exitCode, 0);
@@ -662,31 +662,31 @@ type KeyPath = (string | number)[];
 // The example with the summary sites it lacks: a Vertex that asks a human, and a comparison in a table row. No field
 // of the example's schemas is a number, so the comparison's field is undefined, an error doctor reports beside the
 // summary.
-function summaryLayer() {
-  const layer = asking();
-  layer.procedures.review.passed.push({ when: { 'response.count': { '>': 0 } }, outcome: 'retest' });
-  return layer;
+function summarySource() {
+  const source = asking();
+  source.procedures.review.passed.push({ when: { 'response.count': { '>': 0 } }, outcome: 'retest' });
+  return source;
 }
 
-// Puts `value` at `path` in `layer`.
-function setValue(layer: exampleLayer.Layer, path: KeyPath, value: unknown) {
-  const parent = path.slice(0, -1).reduce((node, key) => node[key], layer);
+// Puts `value` at `path` in `source`.
+function setValue(source: exampleSource.Source, path: KeyPath, value: unknown) {
+  const parent = path.slice(0, -1).reduce((node, key) => node[key], source);
   parent[path.at(-1)!] = value;
 }
 
-// The summary layer with `value` at `path`.
+// The summary source with `value` at `path`.
 function withValue(path: KeyPath, value: unknown) {
-  const layer = summaryLayer();
-  setValue(layer, path, value);
-  return layer;
+  const source = summarySource();
+  setValue(source, path, value);
+  return source;
 }
 
 // A value that is not a string shows as JSON, where String() would print [object Object] or a blank (#305).
 for (const shown of ['{}', '[]']) {
   test(`gg doctor shows ${shown} where a key holds it in place of a string`, async () => {
-    const layer = summaryLayer();
-    for (const path of SHOWN_KEYS) setValue(layer, path, JSON.parse(shown));
-    const { text } = await doctor.doctor({ config: sources(layer), ...DEPS });
+    const source = summarySource();
+    for (const path of SHOWN_KEYS) setValue(source, path, JSON.parse(shown));
+    const { text } = await doctor.doctor({ config: sources(source), ...DEPS });
     for (const line of [
       `\nvertex red\n  procedure: tests-fail\n  agent: implementer (harness fake)\n  access: ${shown}\n`,
       `\n  checks: test (${shown} test)\n`,
@@ -705,21 +705,21 @@ for (const shown of ['{}', '[]']) {
 
 // JSON.parse reads a number past the largest double, such as 1e999, as Infinity, which JSON would spell null.
 test('gg doctor shows a number too large for a double as Infinity, not null', async () => {
-  const layer = withValue(['flows', 'default', 'actionCap'], JSON.parse('1e999'));
-  const { text } = await doctor.doctor({ config: sources(layer), ...DEPS });
+  const source = withValue(['flows', 'default', 'actionCap'], JSON.parse('1e999'));
+  const { text } = await doctor.doctor({ config: sources(source), ...DEPS });
   assert.ok(text.includes('\n  actionCap: Infinity\n'), text);
 });
 
 test("gg doctor says a null item in an input's from is no source", async () => {
-  const layer = withValue(
+  const source = withValue(
     ['flows', 'default', 'ticket', 'vertices', 'implementer-fix', 'inputs', 'previous', 'from', 0],
     null,
   );
-  const { text } = await doctor.doctor({ config: sources(layer), ...DEPS });
+  const { text } = await doctor.doctor({ config: sources(source), ...DEPS });
   assert.ok(text.includes('\n    previous <- no source | senior-red.rescue (optional)\n'), text);
 });
 
-// Every key of a Layer, an object's keys and a list's indexes.
+// Every key of a Source, an object's keys and a list's indexes.
 function keyPaths(value: unknown, path: KeyPath = []): KeyPath[] {
   if (value === null || typeof value !== 'object') return [];
   return Object.entries(value).flatMap(([key, child]) => {
@@ -727,8 +727,8 @@ function keyPaths(value: unknown, path: KeyPath = []): KeyPath[] {
     return [childPath, ...keyPaths(child, childPath)];
   });
 }
-// The summary layer's keys, not the files loaded beside it.
-const SUMMARY_KEYS = keyPaths(summaryLayer()).filter((path) => path[0] !== 'files');
+// The summary source's keys, not the files loaded beside it.
+const SUMMARY_KEYS = keyPaths(summarySource()).filter((path) => path[0] !== 'files');
 
 // A summary line that shows a value as String() does: [object Object], or a blank where a value belongs, which leaves
 // trailing or doubled whitespace, a space inside parentheses or before a separator, or a label with no prefix.
@@ -744,7 +744,7 @@ async function unclearLines(path: KeyPath, value: unknown) {
 }
 
 test("the example's doctor.txt shows no value unclearly", () => {
-  const lines = exampleLayer.fixtureText('doctor.txt').replaceAll('\r\n', '\n').split('\n');
+  const lines = exampleSource.fixtureText('doctor.txt').replaceAll('\r\n', '\n').split('\n');
   assert.deepEqual(
     lines.filter((line) => !/^(error|warning): /.test(line) && UNCLEAR_VALUE.test(line)),
     [],
@@ -752,7 +752,7 @@ test("the example's doctor.txt shows no value unclearly", () => {
   assert.ok(SUMMARY_KEYS.length > 500, `${SUMMARY_KEYS.length} keys`);
 });
 
-// Each key of the summary layer in turn, swapped for {}, for [], and each list item for null (#305).
+// Each key of the summary source in turn, swapped for {}, for [], and each list item for null (#305).
 for (const [name, value, paths] of [
   ['{}', {}, SUMMARY_KEYS],
   ['[]', [], SUMMARY_KEYS],

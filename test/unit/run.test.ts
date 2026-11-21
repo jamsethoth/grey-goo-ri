@@ -442,7 +442,7 @@ test('an unknown --flow fails preflight listing the declared Flows', async (t) =
 });
 
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
-test('without --flow, a repository Layer declaring no default Flow fails preflight listing the declared Flows', async (t) => {
+test('without --flow, a repository Source declaring no default Flow fails preflight listing the declared Flows', async (t) => {
   const fixture = twoFlows(t);
   delete fixture.options.config.repository.flows.default;
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
@@ -534,7 +534,7 @@ test('gg run rejects a Flow gg doctor rejects, with the same message', async (t)
   assert.ok(text.includes(`\n${line}\n`), text);
 });
 
-test('an Agent naming no harness still exits 2 naming the example Layers', async (t) => {
+test('an Agent naming no harness still exits 2 naming the example Sources', async (t) => {
   const fixture = runFixture.fixture(t);
   delete (fixture.options.config.repository.agents.implementer as { harness?: unknown }).harness;
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
@@ -663,7 +663,7 @@ test('an epic Run resumes a Pending sub-issue', async (t) => {
   );
 });
 
-test('approvers in the repository Layer reach the reader through gg run', async (t) => {
+test('approvers in the repository Source reach the reader through gg run', async (t) => {
   const fixture = runFixture.fixture(t);
   fixture.options.config.repository.approvers = ['a-triager'];
   fixture.options.config.repository.procedures.approval = {

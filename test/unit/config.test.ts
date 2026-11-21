@@ -11,7 +11,7 @@ import * as model from '../../lib/model.ts';
 import * as procedures from '../../lib/procedures.ts';
 import * as run from '../../lib/run.ts';
 import * as settings from '../../lib/settings.ts';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
 import * as runFixture from '../support/run-fixture.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
@@ -54,11 +54,11 @@ test("a PinnedFlow's configuration is a Pinned Configuration", () => {
 });
 
 test('configHash changes with persona, vertex, command and testPaths changes and ignores key order', () => {
-  const example = exampleLayer.config();
+  const example = exampleSource.config();
   const base = {
     flow: example.flows.default,
     files: Object.fromEntries(
-      exampleLayer.PERSONA_NAMES.map((name) => [name, sourceFile(exampleLayer.fixtureText(name))]),
+      exampleSource.PERSONA_NAMES.map((name) => [name, sourceFile(exampleSource.fixtureText(name))]),
     ),
     harnesses: { claude: {} },
     launchProfile: null,
@@ -393,7 +393,7 @@ test('loadSources reads the file at every file-naming key, on an Agent and on a 
 test("this repository declares the example's test globs and its suite launcher as its testPaths", (t) => {
   const { user } = sources(t);
   assert.deepEqual(config.loadSources(repoRoot, user).repository.testPaths, [
-    ...exampleLayer.TEST_GLOBS,
+    ...exampleSource.TEST_GLOBS,
     'scripts/run-suite.ts',
   ]);
 });

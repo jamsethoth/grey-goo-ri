@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as validate from '../../lib/validate/index.ts';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 import * as procedureActions from '../support/procedure-actions.ts';
 
 // A case about a rule asserts which one fired and where: a Problem's `code` and `at` (lib/validate/report.ts).
@@ -10,7 +10,7 @@ import * as procedureActions from '../support/procedure-actions.ts';
 const VERTICES = 'flows.default.ticket.vertices';
 
 // Each malformed edit, named for the case, with the errors it gives.
-const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.FiredRule[]][] = [
+const MALFORMED: [string, (config: exampleSource.Source) => void, exampleSource.FiredRule[]][] = [
   [
     'a Procedure that is null',
     (config) => {
@@ -538,9 +538,9 @@ const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.Fir
 ];
 for (const [what, mutate, errors] of MALFORMED) {
   test(`malformed configuration is an error, never a throw: ${what}`, () => {
-    const config = exampleLayer.config();
+    const config = exampleSource.config();
     mutate(config);
-    assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), errors);
+    assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), errors);
   });
 }
 
@@ -548,9 +548,9 @@ for (const [what, mutate, errors] of MALFORMED) {
 // Each key counts only at the path its own check reports at: `actions` at the Procedure, every other key at itself.
 test('every Procedure key that is null is reported by its own check too', () => {
   const unreported = validate.PROCEDURE_KEYS.filter((key) => {
-    const config = exampleLayer.config();
+    const config = exampleSource.config();
     config.procedures.review[key] = null;
-    return !exampleLayer
+    return !exampleSource
       .check(config)
       .errors.some(
         (problem) =>

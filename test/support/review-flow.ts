@@ -52,7 +52,7 @@ export const FIX_INPUTS = {
 
 // Adds the reviewer, the fix Vertices and their routes to the golden configuration.
 function withReview(configured: golden.GoldenConfig) {
-  configured.files['reviewer.md'] = golden.layerFile(REVIEWER_PERSONA);
+  configured.files['reviewer.md'] = golden.sourceFile(REVIEWER_PERSONA);
   configured.agents.reviewer = { ...golden.implementerAgent('reviewer.md'), model: 'model-r', access: 'read-only' };
   const { vertices } = configured.flows.golden!.ticket;
   vertices.green!.route = { ok: 'reviewer' };

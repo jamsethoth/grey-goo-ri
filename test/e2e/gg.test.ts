@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as stateDatabase from '../../lib/state-database/index.ts';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
@@ -192,7 +192,7 @@ test('gg run in a repository without a Flow fails preflight naming gg init', (t)
 
 test('gg run fails preflight naming the unimplemented harness', (t) => {
   const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
-  writeExampleLayer(join(repo, '.agents', 'gg'));
+  writeExampleSource(join(repo, '.agents', 'gg'));
   const result = ggIn('run', '1');
   assert.equal(result.status, 1, result.stderr);
   assert.match(result.stderr, /harness codex: not implemented/);
@@ -201,7 +201,7 @@ test('gg run fails preflight naming the unimplemented harness', (t) => {
 
 test('gg run without a harness fails admission naming the vertex and agent', (t) => {
   const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
-  writeExampleLayer(join(repo, '.agents', 'gg'));
+  writeExampleSource(join(repo, '.agents', 'gg'));
   const file = join(repo, '.agents', 'gg', 'gg.json');
   const example = JSON.parse(readFileSync(file, 'utf8')) as { agents: unknown };
   example.agents = {
@@ -235,7 +235,7 @@ test('gg run without a harness fails admission naming the vertex and agent', (t)
 // The flag reaches admission, which looks its value up among the declared Flows.
 test('gg run accepts --flow with a value', (t) => {
   const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
-  writeExampleLayer(join(repo, '.agents', 'gg'));
+  writeExampleSource(join(repo, '.agents', 'gg'));
   const result = ggIn('run', '1', '--flow', 'light');
   assert.equal(result.status, 1, result.stderr);
   assert.ok(
@@ -267,10 +267,10 @@ function assertOnlyStubPreflight(stdout: string, status: number | null) {
 
 // The example fixture as the repository's configuration in `directory`: its gg.json and every file it names, each
 // Agent on the Codex Harness, a stub, so no case's gg run can start a real CLI now that Claude passes preflight (#425).
-function writeExampleLayer(directory: string) {
+function writeExampleSource(directory: string) {
   mkdirSync(directory, { recursive: true });
-  for (const name of exampleLayer.WRITTEN_NAMES) writeFileSync(join(directory, name), exampleLayer.fixtureText(name));
-  const example = JSON.parse(exampleLayer.fixtureText('gg.json')) as { agents: Record<string, { harness: string }> };
+  for (const name of exampleSource.WRITTEN_NAMES) writeFileSync(join(directory, name), exampleSource.fixtureText(name));
+  const example = JSON.parse(exampleSource.fixtureText('gg.json')) as { agents: Record<string, { harness: string }> };
   for (const agent of Object.values(example.agents)) agent.harness = 'codex';
   writeFileSync(join(directory, 'gg.json'), JSON.stringify(example, null, 2));
 }
@@ -287,7 +287,7 @@ const REPO_COMMANDS: [
     ['init'],
     (result, repo) => {
       assert.equal(result.status, 0, String(result.stderr));
-      assert.deepEqual(readdirSync(join(repo, '.agents', 'gg')).sort(), [...exampleLayer.WRITTEN_NAMES].sort());
+      assert.deepEqual(readdirSync(join(repo, '.agents', 'gg')).sort(), [...exampleSource.WRITTEN_NAMES].sort());
     },
   ],
   [
@@ -311,7 +311,7 @@ for (const [name, args, acted] of REPO_COMMANDS) {
   test(`gg ${name} --repo <path> acts on that repository from outside it`, (t) => {
     const { repo, ggOutside } = tempRepo(t, MACHINE_SETTINGS);
     if (name !== 'init') {
-      writeExampleLayer(join(repo, '.agents', 'gg'));
+      writeExampleSource(join(repo, '.agents', 'gg'));
       stateDatabase.create(join(repo, '.git'));
     }
     const without = ggOutside(...args);
@@ -347,8 +347,8 @@ test('gg init writes the example at the repository root, and a second gg init ke
   const { repo, ggIn } = tempRepo(t);
   const first = ggIn('init');
   assert.equal(first.status, 0, first.stderr);
-  const layer = join(repo, '.agents', 'gg');
-  assert.deepEqual(readdirSync(layer).sort(), [...exampleLayer.WRITTEN_NAMES].sort());
+  const source = join(repo, '.agents', 'gg');
+  assert.deepEqual(readdirSync(source).sort(), [...exampleSource.WRITTEN_NAMES].sort());
   const second = ggIn('init');
   assert.equal(second.status, 0, second.stderr);
   assert.match(second.stdout, /^gg init kept the existing configuration and wrote none of the example: /);
@@ -386,7 +386,7 @@ test("gg init --harness codex then gg doctor reports only the stub Harness's pre
 
 test("gg doctor reads the repository's configuration and its schemas and prints the Resolved Flow", (t) => {
   const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
-  writeExampleLayer(join(repo, '.agents', 'gg'));
+  writeExampleSource(join(repo, '.agents', 'gg'));
   stateDatabase.create(join(repo, '.git'));
   const result = ggIn('doctor');
   assert.ok(
@@ -400,7 +400,7 @@ test("gg doctor reads the repository's configuration and its schemas and prints 
 // --probe joins gg doctor's flags (#427, decision 4); the example's Agents run on the Codex stub, so it starts no CLI.
 test('gg doctor takes --probe and reports what gg doctor does', (t) => {
   const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
-  writeExampleLayer(join(repo, '.agents', 'gg'));
+  writeExampleSource(join(repo, '.agents', 'gg'));
   stateDatabase.create(join(repo, '.git'));
   const result = ggIn('doctor', '--probe');
   assertOnlyStubPreflight(result.stdout, result.status);

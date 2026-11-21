@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as report from '../../lib/validate/report.ts';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 import * as procedureActions from '../support/procedure-actions.ts';
 
 // What every Problem carries beside its code (lib/validate/report.ts): the values its sentence names, in `params`, and
@@ -84,7 +84,7 @@ test('errorOf refuses a warning code, warnOf an error code, and each takes a cod
 const LEFT_OUT = 'required-key-missing' as const;
 // Each required key left out, with what it reports. The sentence is the behaviour here: it says what to add, and never
 // prints "undefined" as though that were a value. Its params name the key left out, as Ajv's missingProperty does.
-const LEFT_OUT_KEYS: [string, (config: exampleLayer.Layer) => void, report.Problem[]][] = [
+const LEFT_OUT_KEYS: [string, (config: exampleSource.Source) => void, report.Problem[]][] = [
   [
     "a Vertex's procedure",
     (config) => {
@@ -433,16 +433,16 @@ const LEFT_OUT_KEYS: [string, (config: exampleLayer.Layer) => void, report.Probl
 
 for (const [what, mutate, errors] of LEFT_OUT_KEYS) {
   test(`a required key left out says so and names it in params: ${what}`, () => {
-    const config = exampleLayer.config();
+    const config = exampleSource.config();
     mutate(config);
-    assert.deepEqual(exampleLayer.check(config).errors, errors);
+    assert.deepEqual(exampleSource.check(config).errors, errors);
   });
 }
 
 test('a response condition whose is fits no value of its enum field keeps its code and message', () => {
-  const config = exampleLayer.config();
+  const config = exampleSource.config();
   procedureActions.actionById(config.procedures.review, 'review-pass').allOf[0] = { field: 'reason', is: 'x' };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleSource.check(config).errors, [
     {
       at: 'procedures.review.actions[1]',
       code: 'condition-value-mismatch',
@@ -452,7 +452,7 @@ test('a response condition whose is fits no value of its enum field keeps its co
   ]);
 });
 
-// Every path to a value of the example Layer, as keys and list indices.
+// Every path to a value of the example Source, as keys and list indices.
 function valuePaths(value: unknown, path: (string | number)[] = []): (string | number)[][] {
   const children: [string | number, unknown][] = Array.isArray(value)
     ? value.map((item, index) => [index, item])
@@ -461,7 +461,7 @@ function valuePaths(value: unknown, path: (string | number)[] = []): (string | n
 }
 // A key's value left out, or replaced by a number, which every key but a count refuses.
 function mutated(path: (string | number)[], leftOut: boolean) {
-  const config = exampleLayer.config();
+  const config = exampleSource.config();
   const parent = path.slice(0, -1).reduce((value, key) => value[key], config);
   const key = path.at(-1) as string | number;
   if (!leftOut) parent[key] = 3;
@@ -472,14 +472,14 @@ function mutated(path: (string | number)[], leftOut: boolean) {
 // Dotted keys and [index], with no spaces or parentheses: what a program can split back into the configuration's keys.
 const PLAIN_PATH = /^[^\s().[\]]+(\.[^\s().[\]]+|\[\d+\])*$/;
 
-test('every at is a plain configuration path, across a mutation of every key of the example Layer', () => {
+test('every at is a plain configuration path, across a mutation of every key of the example Source', () => {
   const offending = new Map<string, string>();
-  for (const path of valuePaths(exampleLayer.config())) {
+  for (const path of valuePaths(exampleSource.config())) {
     for (const leftOut of [true, false]) {
-      const { errors, warnings } = exampleLayer.check(
+      const { errors, warnings } = exampleSource.check(
         mutated(path, leftOut),
-        exampleLayer.schemas(),
-        exampleLayer.templates(),
+        exampleSource.schemas(),
+        exampleSource.templates(),
       );
       for (const problem of [...errors, ...warnings])
         if (!PLAIN_PATH.test(problem.at)) offending.set(problem.at, `${path.join('.')}: ${problem.code}`);
@@ -489,10 +489,10 @@ test('every at is a plain configuration path, across a mutation of every key of 
 });
 
 test('two Vertices report the same Procedure problem once each, at the Procedure, naming the Vertex', () => {
-  const config = exampleLayer.config();
+  const config = exampleSource.config();
   config.procedures.fix.tests.named = 'inputs.findings';
-  const { errors } = exampleLayer.check(config);
-  assert.deepEqual(exampleLayer.firedAtVertices(errors), [
+  const { errors } = exampleSource.check(config);
+  assert.deepEqual(exampleSource.firedAtVertices(errors), [
     { at: 'procedures.fix.tests', code: 'not-a-list-of-strings', flow: 'default', vertex: 'implementer-fix' },
     { at: 'procedures.fix.tests', code: 'not-a-list-of-strings', flow: 'default', vertex: 'senior-dev' },
   ]);
@@ -501,23 +501,23 @@ test('two Vertices report the same Procedure problem once each, at the Procedure
 });
 
 test('the same Vertex in two Flows reports a Procedure problem once in each', () => {
-  const config = exampleLayer.config();
+  const config = exampleSource.config();
   config.procedures.fix.tests.named = 'inputs.findings';
   config.flows.other = structuredClone(config.flows.default);
-  const { errors } = exampleLayer.check(config);
+  const { errors } = exampleSource.check(config);
   assert.deepEqual(
-    exampleLayer.firedAtVertices(errors).map(({ flow, vertex }) => `${flow}.${vertex}`),
+    exampleSource.firedAtVertices(errors).map(({ flow, vertex }) => `${flow}.${vertex}`),
     ['default.implementer-fix', 'default.senior-dev', 'other.implementer-fix', 'other.senior-dev'],
   );
 });
 
 test('an unset harness names its Agent in params, or the Vertex whose own Agent keys left it out', () => {
-  const config = exampleLayer.config();
+  const config = exampleSource.config();
   delete config.agents.reviewer.harness;
   const red = config.flows.default.ticket.vertices.red;
   delete red.use;
   red.model = 'model-x';
-  const unset = exampleLayer.check(config).errors.filter((problem) => problem.code === 'harness-unset');
+  const unset = exampleSource.check(config).errors.filter((problem) => problem.code === 'harness-unset');
   assert.deepEqual(unset, [
     {
       at: 'agents.reviewer',
@@ -535,7 +535,7 @@ test('an unset harness names its Agent in params, or the Vertex whose own Agent 
 });
 
 // A value a sentence names is in params even where `at` spells it too, so a program never parses `at` for it.
-const NAMED_IN_AT: [string, (config: exampleLayer.Layer) => void, Pick<report.Problem, 'code' | 'params'>][] = [
+const NAMED_IN_AT: [string, (config: exampleSource.Source) => void, Pick<report.Problem, 'code' | 'params'>][] = [
   [
     'a required input some route may not produce',
     (config) => {
@@ -567,9 +567,9 @@ const NAMED_IN_AT: [string, (config: exampleLayer.Layer) => void, Pick<report.Pr
 ];
 for (const [what, mutate, expected] of NAMED_IN_AT) {
   test(`a value the sentence names is in params, though at spells it too: ${what}`, () => {
-    const config = exampleLayer.config();
+    const config = exampleSource.config();
     mutate(config);
-    const { errors, warnings } = exampleLayer.check(config);
+    const { errors, warnings } = exampleSource.check(config);
     const found = [...errors, ...warnings].filter((problem) => problem.code === expected.code);
     assert.deepEqual(
       found.map(({ code, params }) => ({ code, params })),
@@ -602,7 +602,7 @@ test('absentOr takes only the params required-key-missing can carry, since a key
 });
 
 // The owner's decisions on #301: these two sentences split by code, as their shared wording misread a value.
-const SPLIT: [string, (config: exampleLayer.Layer) => void, string, report.Problem[]][] = [
+const SPLIT: [string, (config: exampleSource.Source) => void, string, report.Problem[]][] = [
   [
     'claimTokens that is not an object',
     (config) => {
@@ -679,9 +679,9 @@ const SPLIT: [string, (config: exampleLayer.Layer) => void, string, report.Probl
 ];
 for (const [what, mutate, location, expected] of SPLIT) {
   test(`a sentence split by code says which rule the value breaks: ${what}`, () => {
-    const config = exampleLayer.config();
+    const config = exampleSource.config();
     mutate(config);
-    const { errors } = exampleLayer.check(config);
+    const { errors } = exampleSource.check(config);
     assert.deepEqual(
       errors.filter((problem) => problem.at === location),
       expected,

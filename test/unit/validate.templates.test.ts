@@ -1,28 +1,30 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 
 // A case about a rule asserts which one fired and where: a Problem's `code` and `at` (lib/validate/report.ts).
 /* eslint-disable id-denylist -- a Problem's key is at */
 
 // #116 (Y20, L2): every name a template reads resolves in the scope of each Vertex that uses it.
 test('a template that names an undeclared input is an error at its Action', () => {
-  const { errors } = exampleLayer.check(
-    exampleLayer.config(),
-    exampleLayer.schemas(),
-    exampleLayer.templates({ 'green.md': 'tests: {{#inputs.testFiles}}{{.}}{{/inputs.testFiles}}\n{{inputs.nope}}\n' }),
+  const { errors } = exampleSource.check(
+    exampleSource.config(),
+    exampleSource.schemas(),
+    exampleSource.templates({
+      'green.md': 'tests: {{#inputs.testFiles}}{{.}}{{/inputs.testFiles}}\n{{inputs.nope}}\n',
+    }),
   );
-  assert.deepEqual(exampleLayer.firedAtVertices(errors), [
+  assert.deepEqual(exampleSource.firedAtVertices(errors), [
     { at: 'procedures.implement.actions[0]', code: 'undefined-reference', flow: 'default', vertex: 'green' },
     { at: 'procedures.implement.actions[0]', code: 'undefined-reference', flow: 'default', vertex: 'senior-green' },
   ]);
 });
 
 test('a template may name gg context, own outputs, inputs and with aliases', () => {
-  const { errors } = exampleLayer.check(
-    exampleLayer.config(),
-    exampleLayer.schemas(),
-    exampleLayer.templates({
+  const { errors } = exampleSource.check(
+    exampleSource.config(),
+    exampleSource.schemas(),
+    exampleSource.templates({
       'green.md':
         '{{ticket.title}} {{baseBranch}} {{#commands}}{{name}}: {{command}}{{/commands}} ' +
         '{{#history}}{{text}}{{/history}} {{diff}}\n' +
@@ -46,38 +48,38 @@ test('a template may name gg context, own outputs, inputs and with aliases', () 
 });
 
 test('a template path that steps into a list of objects is an error, as rendering reads none', () => {
-  const { errors } = exampleLayer.check(
-    exampleLayer.config(),
-    exampleLayer.schemas(),
-    exampleLayer.templates({
+  const { errors } = exampleSource.check(
+    exampleSource.config(),
+    exampleSource.schemas(),
+    exampleSource.templates({
       'fix.md':
         '{{#inputs.findings}}{{file}}{{/inputs.findings}} {{inputs.findings.length}} {{inputs.findings.file}}\n',
     }),
   );
-  assert.deepEqual(exampleLayer.firedAtVertices(errors), [
+  assert.deepEqual(exampleSource.firedAtVertices(errors), [
     { at: 'procedures.fix.actions[0]', code: 'reference-into-list', flow: 'default', vertex: 'implementer-fix' },
     { at: 'procedures.fix.actions[0]', code: 'reference-into-list', flow: 'default', vertex: 'senior-dev' },
   ]);
 });
 
 test('a comment of a Procedure with no agent Action may not name the Agent', () => {
-  const config = exampleLayer.config();
+  const config = exampleSource.config();
   config.procedures['base-check'].actions.push({ id: 'note', do: 'comment', target: 'ticket', body: 'note.md' });
-  const { errors } = exampleLayer.check(
+  const { errors } = exampleSource.check(
     config,
-    exampleLayer.schemas(),
-    exampleLayer.templates({ 'note.md': '{{agent.model}} {{marker}}\n' }),
+    exampleSource.schemas(),
+    exampleSource.templates({ 'note.md': '{{agent.model}} {{marker}}\n' }),
   );
-  assert.deepEqual(exampleLayer.firedAtVertices(errors), [
+  assert.deepEqual(exampleSource.firedAtVertices(errors), [
     { at: 'procedures.base-check.actions[1]', code: 'undefined-reference', flow: 'default', vertex: 'baseline' },
   ]);
 });
 
 test('a template that cannot be read is an error at each Vertex rendering it', () => {
-  const templates = exampleLayer.templates();
+  const templates = exampleSource.templates();
   delete templates['review.md'];
-  const { errors } = exampleLayer.check(exampleLayer.config(), exampleLayer.schemas(), templates);
-  assert.deepEqual(exampleLayer.firedAtVertices(errors), [
+  const { errors } = exampleSource.check(exampleSource.config(), exampleSource.schemas(), templates);
+  assert.deepEqual(exampleSource.firedAtVertices(errors), [
     { at: 'procedures.review.actions[0]', code: 'template-unreadable', flow: 'default', vertex: 'reviewer' },
   ]);
   assert.deepEqual(errors[0].params, {
@@ -89,10 +91,10 @@ test('a template that cannot be read is an error at each Vertex rendering it', (
 });
 
 test('a Brief reads the base branch as baseBranch', () => {
-  const { errors } = exampleLayer.check(
-    exampleLayer.config(),
-    exampleLayer.schemas(),
-    exampleLayer.templates({ 'green.md': '{{baseBranch}} {{base}}\n' }),
+  const { errors } = exampleSource.check(
+    exampleSource.config(),
+    exampleSource.schemas(),
+    exampleSource.templates({ 'green.md': '{{baseBranch}} {{base}}\n' }),
   );
   assert.deepEqual(
     errors.map((problem) => problem.params),
@@ -107,10 +109,10 @@ test('a Brief reads the base branch as baseBranch', () => {
 });
 
 test("a comment reads its Agent's Persona hash as agent.personaHash", () => {
-  const { errors } = exampleLayer.check(
-    exampleLayer.config(),
-    exampleLayer.schemas(),
-    exampleLayer.templates({ 'review-comment.md': '{{agent.personaHash}} {{agent.hash}} {{marker}}\n' }),
+  const { errors } = exampleSource.check(
+    exampleSource.config(),
+    exampleSource.schemas(),
+    exampleSource.templates({ 'review-comment.md': '{{agent.personaHash}} {{agent.hash}} {{marker}}\n' }),
   );
   assert.deepEqual(
     errors.map((problem) => problem.params),

@@ -11,8 +11,8 @@ const DIRECTORY = fileURLToPath(new URL('../fixtures/shipped-flow/', import.meta
 export type SourceWithFiles = config.Source & { files: config.SourceFiles };
 
 // The source as gg read it: gg.json, with every other file of the fixture by its path from there.
-export function shippedLayer(): SourceWithFiles {
-  const layer = JSON.parse(readFileSync(join(DIRECTORY, 'gg.json'), 'utf8')) as config.Source;
+export function shippedSource(): SourceWithFiles {
+  const source = JSON.parse(readFileSync(join(DIRECTORY, 'gg.json'), 'utf8')) as config.Source;
   const files = readdirSync(DIRECTORY, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name !== 'gg.json')
     .map((entry) => {
@@ -20,5 +20,5 @@ export function shippedLayer(): SourceWithFiles {
       const name = relative(DIRECTORY, join(entry.parentPath, entry.name)).replaceAll('\\', '/');
       return [name, { bytes, hash: config.sha256(bytes) }];
     });
-  return { ...layer, files: Object.fromEntries(files) };
+  return { ...source, files: Object.fromEntries(files) };
 }

@@ -190,7 +190,7 @@ test('a shipped Brief names its inputs directly', async (t) => {
   editRuns(fixture, (result) => ({ ...result, output: `${result.output}\nSENTINEL red output` }));
   // The shipped green Brief, then every fixed name its context once carried for an input. Admission rejects those
   // names, so the file changes after it, to show the run itself carries no alias.
-  fixture.files['templates/green.md'] = golden.layerFile(
+  fixture.files['templates/green.md'] = golden.sourceFile(
     `${fixture.files['templates/green.md']!.bytes}\n[{{testFiles}}|{{redOutput}}|{{impl}}|{{report}}]`,
   );
   const { outcome } = await interpreter.runExecution(fixture.options);
@@ -214,10 +214,10 @@ test('a template names its own outputs and inputs directly', async (t) => {
     [FIRST_REVIEW]: reviewed(review('ok', [], { summary: 'SENTINEL review summary' })),
   });
   golden.configure(fixture, (configured) => {
-    configured.files['pr-direct.md'] = golden.layerFile(
+    configured.files['pr-direct.md'] = golden.sourceFile(
       'green: {{test.evidence.output}}\nred: {{inputs.red.output}}\n{{marker}}\n',
     );
-    configured.files['comment-direct.md'] = golden.layerFile('review: {{review.response.summary}}\n{{marker}}\n');
+    configured.files['comment-direct.md'] = golden.sourceFile('review: {{review.response.summary}}\n{{marker}}\n');
     replaceAction(configured.procedures.implement!, 'pr', { id: 'pr', do: 'pr-upsert', body: 'pr-direct.md' });
     replaceAction(configured.procedures.review!, 'comment', {
       id: 'comment',

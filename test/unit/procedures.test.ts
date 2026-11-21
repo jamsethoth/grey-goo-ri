@@ -88,7 +88,8 @@ test("the request's tables list exactly each Action kind's and Check kind's outp
   );
 });
 
-// The request lists each kind's keys for a Layer's author; this keeps the tables and the declared keys one list (#229).
+// The request lists each kind's keys for a Source's author; this keeps the tables and the declared keys one list
+// (#229).
 test("the request's tables list exactly each Action kind's and Check kind's keys", () => {
   assert.deepEqual(requestTables.keyTable('`do`'), requestTables.sortedKeys(procedures.ACTION_KEYS));
   assert.deepEqual(requestTables.keyTable('Check kind'), requestTables.sortedKeys(procedures.CHECK_KEYS));
