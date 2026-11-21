@@ -15,11 +15,11 @@ export interface LockHolder {
 }
 
 // Spawns `node args`, a process that takes a lock and prints its report as JSON, resolving once it has reported and
-// failing if it exited first. The case's end kills it, after the cleanups registered before it.
+// failing if it exited first. The case's end kills it: at a timeout on its signal, before the after hooks, since
+// removing the directory throws while it holds its lock; on a pass in an after hook.
 export function startHolder(t: TestContext, args: string[]): Promise<LockHolder> {
   const child = spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'inherit'] });
   t.after(() => child.kill());
-  // At the case's timeout too, before the after hooks: removing the directory throws while the holder keeps its lock.
   t.signal.addEventListener('abort', () => child.kill());
   const exited = new Promise((resolve) => child.on('exit', resolve));
   const release = () => {

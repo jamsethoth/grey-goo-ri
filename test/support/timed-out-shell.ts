@@ -21,7 +21,7 @@ export type ShellCaseOptions = {
 // A timed-out run's result, which names its survivors and its cleanup errors (lib/exec.ts's ShellResult).
 export type TimedOutResult = exec.ShellResult & { survivors: commandCleanup.Survivor[]; cleanupErrors: string[] };
 
-// A clock held until the case ends: the command runs in the job, and only its own end or the case's ends it.
+// A clock held until the case ends: the command runs in the job, and the case's end starts its timeout.
 export const noClock = (t: TestContext) => t.signal;
 
 // runShell's real inputs, and the rest of a case's options as its test hooks.
