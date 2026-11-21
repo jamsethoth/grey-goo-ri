@@ -51,7 +51,8 @@ export interface Signals {
   claim: visit.ClaimSignal;
   checks: TableCheck[];
   retries: Partial<Record<RetryKind, number>>;
-  policy?: ResolutionPolicy;
+  // Each budget left out keeps its shipped value (#435).
+  policy?: Partial<ResolutionPolicy>;
   cleanup?: { confirmed: boolean } | null;
 }
 type Resolving = Signals & { policy: ResolutionPolicy };
@@ -146,15 +147,8 @@ export const FIXED_ROWS: TableRow[] = [
   { name: 'claimed', matches: () => true, outcome: null, direction: 'advance' },
 ];
 
-export function resolve({
-  result,
-  claim,
-  checks,
-  retries,
-  policy = DEFAULT_RESOLUTION_POLICY,
-  cleanup,
-}: Signals): visit.TableResolution {
-  const input = { result, claim, checks, retries, policy, cleanup };
+export function resolve({ result, claim, checks, retries, policy, cleanup }: Signals): visit.TableResolution {
+  const input = { result, claim, checks, retries, policy: { ...DEFAULT_RESOLUTION_POLICY, ...policy }, cleanup };
   // The last row matches every input.
   const row = FIXED_ROWS.find((candidate) => candidate.matches(input)) as TableRow;
   const check = row.name === 'integrity-violation' ? (violated(input) as TableCheck).name : null;

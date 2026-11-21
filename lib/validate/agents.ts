@@ -2,6 +2,7 @@
 // under the Vertex's own Agent keys. Each check gives the value it typed, or Reported where it reported (#391).
 
 import type * as model from '../model.ts';
+import * as outcome from '../outcome.ts';
 import * as referencePaths from '../reference-paths.ts';
 import * as capabilityChecks from './capabilities.ts';
 import type * as checked from './procedures.ts';
@@ -56,6 +57,7 @@ export interface AgentKeys {
   // Checked but not typed into model.Agent, whose paths record.md and harness.md freeze: the Agent carries it as
   // declared (#429).
   timeouts: Timeouts | null | undefined | Reported;
+  resolutionPolicy: Partial<outcome.ResolutionPolicy> | null | undefined | Reported;
 }
 // A declared Agent as written, null when it is not an object, and its harness and other keys as its checks typed
 // them, or Reported when it had an error.
@@ -83,24 +85,44 @@ function checkAccess(problems: report.Report, location: string, access: unknown)
   );
 }
 
-// An Agent's own clocks, each a positive integer of ms; the Harness holds the defaults (#395).
-function checkTimeouts(problems: report.Report, location: string, timeouts: unknown) {
-  if (timeouts == null) return timeouts;
-  if (!referencePaths.isRecord(timeouts))
-    return report.error(problems, location, 'not-an-object', 'timeouts must be an object of stallMs and wallMs');
+// An object of whole numbers by name, each optional and its default held elsewhere: an Agent's clocks, each a
+// positive integer of ms whose defaults the Harness holds (#395), and its retry budgets, each 0 or more, whose
+// defaults are the shipped Resolution Policy's (#435, Q1 A and Q2 A).
+function checkNumbers<Key extends string>(
+  problems: report.Report,
+  agentLocation: string,
+  agent: Value,
+  shape: { name: string; keys: readonly Key[]; least: 0 | 1; must: string },
+) {
+  const location = `${agentLocation}.${shape.name}`;
+  const numbers = agent[shape.name];
+  if (numbers == null) return numbers;
+  if (!referencePaths.isRecord(numbers))
+    return report.error(
+      problems,
+      location,
+      'not-an-object',
+      `${shape.name} must be an object of ${shape.keys.join(', ')}`,
+    );
   const before = problems.errors.length;
-  report.unknownKeys(problems, timeouts, TIMEOUT_KEYS, location);
-  const typed: Timeouts = {};
-  for (const key of TIMEOUT_KEYS) {
-    const value = timeouts[key];
-    if (report.isCount(value)) typed[key] = value;
-    else if (value != null)
-      report.error(problems, `${location}.${key}`, 'not-a-positive-integer', `${key} must be a positive integer of ms`);
+  report.unknownKeys(problems, numbers, shape.keys, location);
+  const typed: Partial<Record<Key, number>> = {};
+  const code = shape.least ? 'not-a-positive-integer' : 'not-a-non-negative-integer';
+  for (const key of shape.keys) {
+    const value = numbers[key];
+    if (Number.isInteger(value) && (value as number) >= shape.least) typed[key] = value as number;
+    else if (value != null) report.error(problems, `${location}.${key}`, code, `${key} must be ${shape.must}`);
   }
   return report.reportedSince(problems, before) ?? typed;
 }
-const TIMEOUT_KEYS = ['stallMs', 'wallMs'] as const;
+const TIMEOUTS = { name: 'timeouts', keys: ['stallMs', 'wallMs'], least: 1, must: 'a positive integer of ms' } as const;
 type Timeouts = { stallMs?: number; wallMs?: number };
+const RESOLUTION_POLICY = {
+  name: 'resolutionPolicy',
+  keys: Object.keys(outcome.DEFAULT_RESOLUTION_POLICY) as outcome.RetryKind[],
+  least: 0,
+  must: 'a whole number 0 or more',
+} as const;
 
 // The Agent keys the interpreter reads, each held to its type wherever an Agent key is written (#386). A missing key
 // is the required checks', and a null only a null-value.
@@ -120,8 +142,9 @@ export function checkAgentKeys(problems: report.Report, location: string, agent:
     network == null || typeof network === 'boolean'
       ? network
       : report.error(problems, `${location}.network`, 'not-a-boolean', 'network must be true or false');
-  const timeouts = checkTimeouts(problems, `${location}.timeouts`, agent.timeouts);
-  return { access, persona: typedPersona, model, effort, network: typedNetwork, timeouts };
+  const timeouts = checkNumbers(problems, location, agent, TIMEOUTS);
+  const resolutionPolicy = checkNumbers(problems, location, agent, RESOLUTION_POLICY);
+  return { access, persona: typedPersona, model, effort, network: typedNetwork, timeouts, resolutionPolicy };
 }
 
 // What the Agent asks of its Harness, held to the Harness's Capabilities; one whose harness reported has none to read.
@@ -260,14 +283,15 @@ interface OwnAgentKeys {
 
 // The Agent keys as typed, or the first a check reported.
 function typedKeysOf(keys: AgentKeys) {
-  const { access, persona, model, effort, network, timeouts } = keys;
+  const { access, persona, model, effort, network, timeouts, resolutionPolicy } = keys;
   if (report.isReported(access)) return access;
   if (report.isReported(persona)) return persona;
   if (report.isReported(model)) return model;
   if (report.isReported(effort)) return effort;
   if (report.isReported(network)) return network;
   if (report.isReported(timeouts)) return timeouts;
-  return { access, persona, model, effort, network, timeouts };
+  if (report.isReported(resolutionPolicy)) return resolutionPolicy;
+  return { access, persona, model, effort, network, timeouts, resolutionPolicy };
 }
 
 // The Agent as declared and as typed, from its merged keys and what their checks gave. Its other keys are as declared.
@@ -281,8 +305,8 @@ function agentWith(merged: Value, harness: string | Reported, keys: AgentKeys): 
   if (report.isReported(harness)) return { declared, typed: harness, access: undefined };
   const typedKeys = typedKeysOf(keys);
   if (report.isReported(typedKeys)) return { declared, typed: typedKeys, access: typedKeys };
-  const { access, persona, network, timeouts } = typedKeys;
-  if (typeof persona !== 'string' || network === null || timeouts === null)
+  const { access, persona, network, timeouts, resolutionPolicy } = typedKeys;
+  if (typeof persona !== 'string' || network === null || timeouts === null || resolutionPolicy === null)
     return { declared, typed: undefined, access };
   const asJson = Object.entries(declared).flatMap(([key, value]) => {
     const json = declaredFlows.declaredValue(value);
@@ -344,6 +368,7 @@ function usedAgent(checking: AgentContext, place: VertexPlace, use: string, own:
     effort: keyOf('effort'),
     network: keyOf('network'),
     timeouts: keyOf('timeouts'),
+    resolutionPolicy: keyOf('resolutionPolicy'),
   };
   const harness = ownHarness ?? agent.typed.harness;
   checkCapabilities(checking, { location: place.location, own: overrides }, { harness, merged, keys });

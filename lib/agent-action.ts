@@ -166,8 +166,7 @@ function callAttempt(runContext: RunContext, running: Attempt): Promise<ActionRe
       const pinned = structuredClone(executionRecord.configurationSnapshot!);
       const brief = await briefOf(runContext, running, pinned.commands);
       const call = callOf(runContext, running, { pinned, brief, actionMarker, harness });
-      // The marker, Agent and Persona stay the Attempt's own: a Harness that edits its call cannot change what is
-      // saved.
+      // The marker, Agent and Persona stay the Attempt's own: a Harness editing its call cannot change what is saved.
       return { call, own: { actionMarker, agent: pinned.agent as Agent, persona: pinned.persona as Persona } };
     },
     work: async ({ call }) => {
@@ -296,6 +295,7 @@ function decideCall(
     claim,
     checks: visitScope.resolverChecks(integrityRows, []),
     retries: executionRecord.retries[key] ?? {},
+    policy: executionRecord.configurationSnapshot!.agent!.resolutionPolicy as outcome.Signals['policy'],
     cleanup: harnessResult.cleanup,
   });
   if (resolution.retryKind)

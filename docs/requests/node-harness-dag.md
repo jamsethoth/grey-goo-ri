@@ -58,7 +58,7 @@ An Agent is a named, declarative unit of work for one Agent CLI. Fields, all wit
 | `skills`, `mcp`, `plugins` | lists applied generically by the harness; no plugin name appears in code; default empty |
 | `mode` | `headless` (default) or `interactive` (the planner) |
 | `access`, `network` | permission intents: `read-only` or `workspace-write`; network boolean. Harness translates per surface |
-| `resolutionPolicy` | per-class retry budgets (3.4); shipped default, overridable. Outcome order is the Procedure's (ADR 0014) |
+| `resolutionPolicy` | per-class retry budgets and the hand-off budget (3.4, ADR 0029); shipped default, overridable per budget. Outcome order is the Procedure's (ADR 0014) |
 | `contextBudget` | optional; past it the agent hands off: it ends its Attempt with a note of what remains, and the next Attempt starts a fresh Session with the note, the handed-off Session kept on the record for a question (ADR 0029); the harness compaction threshold stays set above it as a backstop; compaction count logged |
 | `timeouts` | optional stall and wall-clock overrides (3.5) |
 

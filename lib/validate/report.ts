@@ -12,6 +12,7 @@ export const PROBLEM_CODES = [
   'not-a-boolean',
   'not-a-list',
   'not-a-positive-integer',
+  'not-a-non-negative-integer',
   'not-a-string',
   'not-an-object',
   'null-value',
