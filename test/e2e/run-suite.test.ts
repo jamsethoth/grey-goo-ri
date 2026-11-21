@@ -11,9 +11,14 @@ import * as options from '../support/shell-case-options.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
 const launcher = fileURLToPath(new URL('../../scripts/run-suite.ts', import.meta.url));
+// A synchronous spawn blocks the event loop, so no case timeout can fire while it runs: each carries this bound.
+const SPAWN_TIMEOUT_MS = 120_000;
 
 test('the launcher exits 2 with its usage and runs nothing for an argument outside its closed set', () => {
-  const result = spawnSync(process.execPath, [launcher, 'fast', '--import=x'], { encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [launcher, 'fast', '--import=x'], {
+    encoding: 'utf8',
+    timeout: SPAWN_TIMEOUT_MS,
+  });
   assert.equal(result.status, 2, result.stderr);
   assert.equal(result.stdout, '');
   assert.match(result.stderr, /^usage: node scripts\/run-suite\.ts \[fast \[boundary \.\.\.\]\]/);
@@ -72,6 +77,7 @@ function launcherCopy(t: TestContext, { prettier = 0, eslint = 0, tsc = 0, insta
   const run = (argv: string[], nodeFlags: string[] = [], given: Record<string, string> = {}) =>
     spawnSync(process.execPath, [...nodeFlags, join(root, 'scripts', 'run-suite.ts'), ...argv], {
       encoding: 'utf8',
+      timeout: SPAWN_TIMEOUT_MS,
       env: { ...env, ...given },
     });
   const steps = () => (existsSync(join(root, 'steps.log')) ? readFileSync(join(root, 'steps.log'), 'utf8') : '');

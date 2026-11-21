@@ -237,7 +237,8 @@ test('a clean worktree is not rescued or reset', async (t) => {
 // gg's cleanup could end it; detached, only gg's job can (#332). On POSIX it stays in the command's process group.
 const WRITER_START = process.platform === 'win32' ? 'detached' : 'ignore';
 
-test('a background writer left by a returned call is killed before the rescue', async (t) => {
+// Waits on a real command, so one that never ends fails at this bound, not at lib's 30-minute Check timeout.
+test('a background writer left by a returned call is killed before the rescue', { timeout: 120_000 }, async (t) => {
   const directory = tempDirectory.tempDirectory(t, 'gg-writer-');
   const pidFile = join(directory, 'writer.pid');
   t.after(() => processProbe.endProcessIn(pidFile));

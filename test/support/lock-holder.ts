@@ -19,6 +19,8 @@ export interface LockHolder {
 export function startHolder(t: TestContext, args: string[]): Promise<LockHolder> {
   const child = spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'inherit'] });
   t.after(() => child.kill());
+  // At the case's timeout too, before the after hooks: removing the directory throws while the holder keeps its lock.
+  t.signal.addEventListener('abort', () => child.kill());
   const exited = new Promise((resolve) => child.on('exit', resolve));
   const release = () => {
     child.kill();

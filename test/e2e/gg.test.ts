@@ -25,9 +25,11 @@ const bin = fileURLToPath(new URL('../../bin/gg.ts', import.meta.url));
 // gg over the fake gh, for a case whose command reads GitHub (#372).
 const ggOverFakeGh = fileURLToPath(new URL('../support/gg-over-fake-gh.ts', import.meta.url));
 const commands = ['init', 'doctor', 'plan', 'publish', 'run', 'work', 'trace', 'stats'];
+// A synchronous spawn blocks the event loop, so no case timeout can fire while it runs: each carries this bound.
+const SPAWN_TIMEOUT_MS = 120_000;
 
 function gg(...args: string[]) {
-  return spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8' });
+  return spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS });
 }
 
 function assertUsage(text: string) {
@@ -161,6 +163,7 @@ function tempRepo(t: TestContext, user?: object) {
     spawnSync(process.execPath, [ggOverFakeGh, ...args], {
       cwd,
       encoding: 'utf8',
+      timeout: SPAWN_TIMEOUT_MS,
       env: { ...process.env, HOME: home, USERPROFILE: home, GG_HOME: userDirectory },
     });
   const ggIn = (...args: string[]) => ggAt(repo, ...args);
@@ -471,7 +474,10 @@ function linkedInstall(t: TestContext) {
 
 test('gg runs through a linked install, as npm link and npm install -g <checkout> lay it out', (t) => {
   const link = linkedInstall(t);
-  const result = spawnSync(process.execPath, [join(link, 'bin', 'gg.ts'), '--help'], { encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [join(link, 'bin', 'gg.ts'), '--help'], {
+    encoding: 'utf8',
+    timeout: SPAWN_TIMEOUT_MS,
+  });
   assert.equal(result.status, 0, result.stderr);
   assertUsage(result.stdout);
   removeLink(link);
@@ -485,7 +491,7 @@ test('a copy of gg under node_modules cannot start, which is why the install is 
   const result = spawnSync(
     process.execPath,
     ['--preserve-symlinks', '--preserve-symlinks-main', join(link, 'bin', 'gg.ts'), '--help'],
-    { encoding: 'utf8' },
+    { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS },
   );
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING/);
