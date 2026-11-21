@@ -32,7 +32,7 @@ test(
     t.after(() => processProbe.endProcessIn(pidFile));
     const result = await exec.runShell(
       nodeCommand(t, childScripts.DETACHED_CHILD, 'ignore', pidFile),
-      timedOutShell.shellOptions({ timeoutMs: 20000, signal: timedOutShell.noClock() }),
+      timedOutShell.shellOptions({ timeoutMs: 20000, signal: timedOutShell.noClock(t) }),
     );
     assert.equal(result.code, 0);
     const pid = pidIn(pidFile);
@@ -75,15 +75,25 @@ test(
   WIN_CASE,
   async (t) => {
     const { kernel32, members } = kernel32Doubles.refusedTermination();
-    t.after(() => members.forEach(processProbe.endProcess));
     const pidFile = join(scratch, 'held-pipes.pid');
     const clock = new AbortController();
-    const result = await exec
-      .createExec({ kernel32 })
-      .runShell(
-        nodeCommand(t, childScripts.DETACHED_CHILD, 'inherit', pidFile),
-        timedOutShell.shellOptions({ timeoutMs: 200, signal: clock.signal, onExit: () => clock.abort() }),
-      );
+    const running = exec.createExec({ kernel32 }).runShell(
+      nodeCommand(t, childScripts.DETACHED_CHILD, 'inherit', pidFile),
+      timedOutShell.shellOptions({
+        timeoutMs: 200,
+        signal: AbortSignal.any([clock.signal, t.signal]),
+        onExit: () => clock.abort(),
+      }),
+    );
+    // the job is listed only as the run takes it down, so the members are ended once the run has answered
+    t.after(
+      async () => {
+        await running.catch(() => {});
+        members.forEach(processProbe.endProcess);
+      },
+      { timeout: options.CASE.timeout },
+    );
+    const result = await running;
     assert.equal(result.code, 0, result.output);
     assert.equal(result.timedOut, undefined);
     assert.equal(result.cleanup.confirmed, false);
@@ -118,12 +128,14 @@ test(
     const pidFile = join(scratch, 'uncontained-left.pid');
     t.after(() => processProbe.endProcessIn(pidFile));
     const clock = new AbortController();
-    const result = await exec
-      .createExec({ kernel32: noJob() })
-      .runShell(
-        `start "" /b ${nodeCommand(t, childScripts.LONG_LIVED, pidFile)}`,
-        timedOutShell.shellOptions({ timeoutMs: 200, signal: clock.signal, onExit: () => clock.abort() }),
-      );
+    const result = await exec.createExec({ kernel32: noJob() }).runShell(
+      `start "" /b ${nodeCommand(t, childScripts.LONG_LIVED, pidFile)}`,
+      timedOutShell.shellOptions({
+        timeoutMs: 200,
+        signal: AbortSignal.any([clock.signal, t.signal]),
+        onExit: () => clock.abort(),
+      }),
+    );
     assert.equal(result.code, 0, result.output);
     assert.equal(result.timedOut, undefined);
     assert.equal(result.leftovers, undefined, JSON.stringify(result.leftovers));
@@ -427,6 +439,7 @@ test(
     const pidFile = join(scratch, 'drain.pid');
     t.after(() => processProbe.endProcessIn(pidFile));
     const timers = manualTimers.manualTimers();
+    t.after(() => timers.tick(1)); // a run the case never saw answer times out at its end
     const result = await exec.runShell(
       nodeCommand(t, childScripts.DETACHED_CHILD, 'inherit', pidFile),
       timedOutShell.shellOptions({ timeoutMs: 1, timers }),

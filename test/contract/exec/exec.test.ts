@@ -33,9 +33,15 @@ test('run: child that exits early while 5 MB of stdin is written resolves/reject
   await assert.rejects(exec.run(process.execPath, args, { input }), (err: exec.CommandError) => err.code === 3);
 });
 
-test('run and runShell read a multi-byte character split across chunks exactly', async (t) => {
-  assert.equal((await exec.run(process.execPath, [childScripts.SPLIT_CHARACTER, '200'])).stdout.trim(), '€');
-  assert.equal((await exec.runShell(nodeCommand(t, childScripts.SPLIT_CHARACTER, '200'))).output.trim(), '€');
+test('run and runShell read a multi-byte character split across chunks exactly', CASE, async (t) => {
+  assert.equal(
+    (await exec.run(process.execPath, [childScripts.SPLIT_CHARACTER, '200'], { timeoutMs: 60_000 })).stdout.trim(),
+    '€',
+  );
+  assert.equal(
+    (await exec.runShell(nodeCommand(t, childScripts.SPLIT_CHARACTER, '200'), { timeoutMs: 60_000 })).output.trim(),
+    '€',
+  );
 });
 
 // Not timed out is the promptness check: a command left waiting on stdin would run until the case timeout. A
@@ -44,7 +50,7 @@ test('run and runShell read a multi-byte character split across chunks exactly',
 test('runShell: a command waiting for stdin EOF returns promptly', CASE, async (t) => {
   const result = await exec.runShell(
     nodeCommand(t, childScripts.STDIN_EOF, 'eof'),
-    shellOptions({ timeoutMs: 20000, signal: noClock() }),
+    shellOptions({ timeoutMs: 20000, signal: noClock(t) }),
   );
   assert.equal(result.timedOut, undefined, result.output);
   assert.match(result.output, /eof/);
@@ -53,7 +59,7 @@ test('runShell: a command waiting for stdin EOF returns promptly', CASE, async (
 test('runShell with a timeout still returns the exit code and output of a command that finishes', CASE, async (t) => {
   const result = await exec.runShell(
     nodeCommand(t, childScripts.PRINTS_LINE, 'hi', '7'),
-    shellOptions({ timeoutMs: 20000, signal: noClock() }),
+    shellOptions({ timeoutMs: 20000, signal: noClock(t) }),
   );
   assert.equal(result.code, 7);
   assert.match(result.output, /hi/);
@@ -161,7 +167,7 @@ function writtenPidFile(pid: number, written: Date) {
 
 for (const [recording, { itsOwn, anEarlier }] of Object.entries(RECORDINGS)) {
   if (itsOwn)
-    test(`a process recorded by ${recording} reads as running until it ends`, async (t) => {
+    test(`a process recorded by ${recording} reads as running until it ends`, CASE, async (t) => {
       const running = runningProcess(t);
       itsOwn(running.pid);
       assert.equal(processProbe.alive(running.pid), true, 'it runs');
@@ -182,7 +188,7 @@ for (const [recording, { itsOwn, anEarlier }] of Object.entries(RECORDINGS)) {
 // ends only once the shell has become that sleep, so no shell is left to reap it.
 test(
   'a zombie reads as not running, however it was recorded',
-  { skip: process.platform === 'win32' && 'a Windows process leaves no zombie' },
+  { ...CASE, skip: process.platform === 'win32' && 'a Windows process leaves no zombie' },
   async (t) => {
     const pidFile = join(scratch, 'zombie.pid');
     const child = `sh -c 'until [ "$(cat /proc/$PPID/comm)" = sleep ]; do sleep 0.01; done' &`;
@@ -201,7 +207,7 @@ test(
 );
 
 // Not every script names its pid file among its arguments: a shell script reads it from a variable.
-test('a process whose pid file is not among its arguments reads as running until it ends', async (t) => {
+test('a process whose pid file is not among its arguments reads as running until it ends', CASE, async (t) => {
   const pidFile = join(scratch, 'named-by-a-variable.pid');
   const writer = spawn(
     process.execPath,
@@ -252,7 +258,7 @@ test(
     t.after(() => processProbe.endProcessIn(pidFile));
     const result = await exec.runShell(
       nodeCommand(t, childScripts.BACKGROUND_STARTER, 'ignore', '0', pidFile, childScripts.LONG_LIVED),
-      shellOptions({ timeoutMs: 20000, signal: noClock() }),
+      shellOptions({ timeoutMs: 20000, signal: noClock(t) }),
     );
     assert.equal(result.code, 0);
     const pid = processProbe.pidIn(pidFile);
@@ -275,7 +281,7 @@ test(
     t.after(() => processProbe.endProcessIn(pidFile));
     const result = await exec.runShell(
       nodeCommand(t, childScripts.DETACHED_CHILD, 'ignore', pidFile),
-      shellOptions({ timeoutMs: 20000, signal: noClock() }),
+      shellOptions({ timeoutMs: 20000, signal: noClock(t) }),
     );
     assert.equal(result.code, 0);
     assert.equal(result.cleanup.confirmed, true);
@@ -293,7 +299,7 @@ test(
       nodeCommand(t, childScripts.BACKGROUND_STARTER, 'ignore', '0', pidFile, childScripts.LONG_LIVED),
       shellOptions({
         timeoutMs: 20000,
-        signal: noClock(),
+        signal: noClock(t),
         leftoverListingWaitMs: 200,
         snapshotCommand: [process.execPath, [childScripts.LONG_LIVED, join(scratch, 'stalled-listing-ps.pid')]],
       }),
@@ -311,7 +317,7 @@ test('runShell answers with the line a background process printed before it was 
   t.after(() => processProbe.endProcessIn(pidFile));
   const result = await exec.runShell(
     nodeCommand(t, childScripts.BACKGROUND_STARTER, 'inherit', '0', pidFile, childScripts.LONG_LIVED, 'A-LATE-LINE'),
-    shellOptions({ timeoutMs: 20000, signal: noClock() }),
+    shellOptions({ timeoutMs: 20000, signal: noClock(t) }),
   );
   assert.equal(result.code, 0);
   assert.match(result.output, /A-LATE-LINE/);
@@ -346,9 +352,11 @@ test('the result names the containment it used', CASE, async (t) => {
 // The case moves runShell's clock itself, and never past the timeout: a clock that waited for an abort the signal had
 // already given would never fire.
 test('runShell: a signal aborted before the call starts the timeout clock at the call', CASE, async (t) => {
+  const pidFile = join(scratch, 'aborted-early.pid');
+  t.after(() => processProbe.endProcessIn(pidFile));
   const timers = manualTimers.manualTimers();
   const running = exec.runShell(
-    nodeCommand(t, childScripts.LONG_LIVED, join(scratch, 'aborted-early.pid')),
+    nodeCommand(t, childScripts.LONG_LIVED, pidFile),
     shellOptions({ timeoutMs: 7000, signal: AbortSignal.abort(), timers }),
   );
   timers.tick(7000);

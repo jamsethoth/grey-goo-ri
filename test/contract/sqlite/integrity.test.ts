@@ -18,15 +18,19 @@ const ADAPTERS: [string, (t: TestContext) => stateDatabase.StateDatabase][] = [
   ['the failing wrapper', (t) => caseDatabase.caseDatabase(t)],
 ];
 
+// A case that waits for another process to exit: one that never does fails at this bound.
+const CASE = { timeout: 120_000 };
+
 for (const [name, databaseOf] of ADAPTERS)
-  test(`readActivity reads a record another process saved, through ${name}`, async (t) => {
+  test(`readActivity reads a record another process saved, through ${name}`, CASE, async (t) => {
     const root = tempDirectory.tempDirectory(t, 'gg-integrity-', (directory) => join(directory, 'own', '.git'));
     const commonDir = join(root, 'own', '.git');
     stateDatabase.create(commonDir);
     const other = join(root, 'other');
-    const exit = await childExit.exitOf(
-      spawn(process.execPath, [saver, commonDir, '2', '3', other], { stdio: ['ignore', 'ignore', 'pipe'] }),
-    );
+    const child = spawn(process.execPath, [saver, commonDir, '2', '3', other], { stdio: ['ignore', 'ignore', 'pipe'] });
+    // At the case's timeout, before the after hooks: removing the directory throws while the child holds it open.
+    t.signal.addEventListener('abort', () => child.kill());
+    const exit = await childExit.exitOf(child);
     assert.deepEqual(exit, { code: 0, err: '' });
     assert.ok(!existsSync(join(commonDir, 'gg', 'records')), 'records are rows, not files');
     assert.deepEqual(await integrity.readActivity(commonDir, other, databaseOf(t)), { busy: true, generation: 3 });

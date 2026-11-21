@@ -30,16 +30,17 @@ function withDb<Result>(commonDir: string, read: (db: DatabaseSync) => Result) {
   }
 }
 
-test('two processes save different records concurrently without loss', async (t) => {
+test('two processes save different records concurrently without loss', CASE, async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const exits = await Promise.all(
-    [1, 2].map((ticket) =>
-      childExit
-        .exitOf(
-          spawn(process.execPath, [saver, commonDir, String(ticket), '200'], { stdio: ['ignore', 'ignore', 'pipe'] }),
-        )
-        .then((exit) => ({ ticket, ...exit })),
-    ),
+    [1, 2].map((ticket) => {
+      const child = spawn(process.execPath, [saver, commonDir, String(ticket), '200'], {
+        stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      // At the case's timeout, before the after hooks: removing the directory throws while the child holds it open.
+      t.signal.addEventListener('abort', () => child.kill());
+      return childExit.exitOf(child).then((exit) => ({ ticket, ...exit }));
+    }),
   );
   assert.deepEqual(exits, [
     { ticket: 1, code: 0, err: '' },

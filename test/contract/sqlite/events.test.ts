@@ -24,14 +24,18 @@ function rows(commonDir: string) {
   }
 }
 
-test('two processes append to the same table without loss', async (t) => {
+// A case that waits for another process to exit: one that never does fails at this bound.
+const CASE = { timeout: 120_000 };
+
+test('two processes append to the same table without loss', CASE, async (t) => {
   const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-events-');
   const exits = await Promise.all(
-    ['a', 'b'].map((run) =>
-      childExit
-        .exitOf(spawn(process.execPath, [appender, directory, run, '200'], { stdio: ['ignore', 'ignore', 'pipe'] }))
-        .then((exit) => ({ run, ...exit })),
-    ),
+    ['a', 'b'].map((run) => {
+      const child = spawn(process.execPath, [appender, directory, run, '200'], { stdio: ['ignore', 'ignore', 'pipe'] });
+      // At the case's timeout, before the after hooks: removing the directory throws while the child holds it open.
+      t.signal.addEventListener('abort', () => child.kill());
+      return childExit.exitOf(child).then((exit) => ({ run, ...exit }));
+    }),
   );
   assert.deepEqual(exits, [
     { run: 'a', code: 0, err: '' },

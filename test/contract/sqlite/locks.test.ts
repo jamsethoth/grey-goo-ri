@@ -11,6 +11,8 @@ import * as tempDirectory from '../../support/temp-directory.ts';
 import * as childExit from '../../support/child-exit.ts';
 
 const contender = lockHolder.CONTENDER;
+// Cases that wait for another process to report or exit: one that never does fails at this bound.
+const CASE = { timeout: 120_000 };
 const locksModule = new URL('../../../lib/locks.ts', import.meta.url);
 
 test('tryAcquire returns null while the lock is held', async (t) => {
@@ -27,7 +29,7 @@ test('tryAcquire returns null while the lock is held', async (t) => {
   await locks.release(again);
 });
 
-test('tryAcquire returns null while another process holds the lock', async (t) => {
+test('tryAcquire returns null while another process holds the lock', CASE, async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
   const { child, exited, report } = await lockHolder.holdLock(t, commonDir, 'repo', 60_000);
   assert.ok(report.handle, 'the child holds the lock');
@@ -73,17 +75,18 @@ test('a killed holder frees the lock', { timeout: 120_000 }, async (t) => {
   await locks.release(handle);
 });
 
-// Runs an ES module script in a node child started with `flags`, resolving with its exit code, stdout and stderr.
-function runScript(flags: string[], script: string) {
-  return childExit
-    .exitOf(
-      spawn(process.execPath, [...flags, '--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'pipe'] }),
-    )
-    .then(({ stdout = '', ...exit }) => ({ ...exit, stdout }));
+// Runs an ES module script in a node child started with `flags`, resolving with its exit code, stdout and stderr. The
+// case's timeout kills the child before the after hooks, since removing the directory throws while it holds a lock.
+function runScript(t: TestContext, flags: string[], script: string) {
+  const child = spawn(process.execPath, [...flags, '--input-type=module', '-e', script], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.signal.addEventListener('abort', () => child.kill());
+  return childExit.exitOf(child).then(({ stdout = '', ...exit }) => ({ ...exit, stdout }));
 }
 
 // A lock whose connection only a local variable held would be freed by the first collection; gc() forces one now.
-test('a handle keeps the lock while it is referenced', async (t) => {
+test('a handle keeps the lock while it is referenced', CASE, async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
   const script = `import * as locks from ${JSON.stringify(locksModule.href)};
 const handle = await locks.tryAcquire(${JSON.stringify(commonDir)}, 'repo');
@@ -92,7 +95,7 @@ await new Promise((resolve) => setImmediate(resolve));
 const second = await locks.tryAcquire(${JSON.stringify(commonDir)}, 'repo');
 process.stdout.write(JSON.stringify({ owns: !!handle?.db, second }));
 await locks.release(handle);`;
-  const { code, stdout, err } = await runScript(['--expose-gc'], script);
+  const { code, stdout, err } = await runScript(t, ['--expose-gc'], script);
   assert.deepEqual({ code, err }, { code: 0, err: '' });
   assert.deepEqual(
     JSON.parse(stdout),
@@ -101,7 +104,7 @@ await locks.release(handle);`;
   );
 });
 
-test('the lock module needs no experimental flag for node:sqlite', async (t) => {
+test('the lock module needs no experimental flag for node:sqlite', CASE, async (t) => {
   const pkg = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8')) as {
     engines: { node: string };
   };
@@ -109,7 +112,7 @@ test('the lock module needs no experimental flag for node:sqlite', async (t) => 
   const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
   const script = `import * as locks from ${JSON.stringify(locksModule.href)};
 await locks.release(await locks.tryAcquire(${JSON.stringify(commonDir)}, 'repo'));`;
-  const { code, err } = await runScript([], script);
+  const { code, err } = await runScript(t, [], script);
   assert.deepEqual(
     { code, err },
     { code: 0, err: '' },

@@ -55,7 +55,7 @@ const LOCKED_VERBS = [
   'createRef',
 ] as const;
 
-test('every orchestrator git write waits for the repo lock', async (t) => {
+test('every orchestrator git write waits for the repo lock', { timeout: 120_000 }, async (t) => {
   const fixture = runFixture.fixture(t);
   const holder = await lockHolder.holdLock(t, fixture.commonDir, 'repo');
   const called: string[] = [];
@@ -84,7 +84,7 @@ test('every orchestrator git write waits for the repo lock', async (t) => {
   assert.deepEqual(called.sort(), [...LOCKED_VERBS].sort(), 'every write runs after release');
 });
 
-test('an integrity snapshot waits for the repo lock', async (t) => {
+test('an integrity snapshot waits for the repo lock', { timeout: 120_000 }, async (t) => {
   const fixture = runFixture.fixture(t, { git: 'real' });
   const holder = await lockHolder.holdLock(t, fixture.commonDir, 'repo');
   const state = { settled: false };
