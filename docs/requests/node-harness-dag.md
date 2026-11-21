@@ -5,7 +5,8 @@ Supersedes feature-flow (`C:\dev\projects\feature-flow`, main at 89e1d67). The n
 
 This document is organised by capability. Where it shows config or grammar, the shape is an illustration of what the
 capability must support, not a syntax decision. The planning session decides syntax, ticket by ticket. The authored
-graph is a bounded workflow graph: it has back edges, every one of them bounded. "DAG" in older notes means this.
+graph is a bounded workflow graph: every cycle contains an Edge or Vertex with a Bound, and exhausted Vertex
+targets cannot form a loop. "DAG" in older notes means this.
 
 ## 1. Target, in the owner's words
 
@@ -142,7 +143,7 @@ Claude launch profile, validated on 2026-10-15 against claude 2.1.300 on this ma
 - Explicit `--permission-mode` and `--permission-prompts none`. `--system-prompt-snapshot off` on every call, with
   the persona supplied from the visit's pinned snapshot (3.5), written to a file in the run directory, never from
   the live configuration directories. A resumed call therefore sees exactly the persona the visit entered with, the hash
-  recorded per action is the one the model ran, and a persona edit takes effect at the next vertex entry.
+  recorded per action is the one the model ran, and a persona edit takes effect at a later Run's next Vertex entry.
 - `--output-format stream-json --verbose`. The init event (first line) supplies `plugins`, `plugin_errors`,
   `mcp_servers`, `mcp_server_errors` and `capabilities`; a non-empty error array or a listed server not connected
   fails the action. The result event (last line) supplies usage, cost, turns, `structured_output`,
@@ -219,11 +220,10 @@ Procedure name takes the same form. Admission reports a name that breaks the rul
   of the ticket end event, and its text and Action Marker are posted on the ticket with the Terminal's label change,
   through the write-ahead log (a stop token's comment carries it rather than a second comment). It points to the
   deciding Action's event for the full Signals rather than copying them.
-- Edges: `route: { <outcome>: <vertex | {end} | {to, max, exhausted}> }`; a Flow's default `routes`, `"*"`
-  included, apply to every Vertex that does not route the Outcome itself. Every back edge has `max` and
-  `exhausted`. A vertex may have its own `max` and `exhausted`, counting its visits; every cycle contains an edge or
-  a vertex with `max`, and every ticket has an action cap, which does not count as a cycle's bound. Loops exist
-  only as bounded back edges.
+- Edges: `route: { <outcome>: <vertex | {end} | {to, max, exhausted}> }`; a Flow's default `routes`, `"*"` included,
+  apply to every Vertex that does not route the Outcome itself. An Edge or Vertex may have `max` and `exhausted`,
+  counting Edge traversals or Vertex Visits respectively. Every cycle contains an Edge or Vertex with `max`; the
+  Ticket's Action Cap does not count as a cycle's Bound. Bounded Vertices' `exhausted` targets must not form a loop.
 - Counting semantics, so tests are deterministic: an edge `max` counts traversals of that edge per ticket; a vertex
   `max` counts entries per ticket; recovery passes (`recover`) and Attempt retries count
   toward the ticket action cap but not toward edge or vertex counts; when an edge and a vertex exhaust on the same
@@ -261,14 +261,14 @@ Flow shadows another. A key left out is optional or required, never inherited, a
 validator reports it, `null-value`; grey-goo-ri issue #298); each Problem names the `gg.json` it is in. Every run
 writes the fully resolved flow (after `use` expansion) to the run directory and hashes that file.
 
-Validation before any ticket starts: unknown agents or harnesses; unreachable vertices; back edges without bounds;
-route keys that are not Outcomes the Procedure can produce; Outcomes with no route on the Vertex or in the Flow's
-defaults; Check commands not declared; the Procedure and graph checks of ADR 0014 (rule tables, inputs on every path,
-a commit on every passing path, bounded cycles); approval decisions without a route; resume across
-different vertices or harnesses; listed fields the harness declares unsupported; permission intents the harness
-cannot enforce on every surface the agent uses; strict-schema lint for Codex agents; literal secrets in `mcp.env`;
-retries on an agent whose harness options disable session persistence; labels the flow references missing in the
-repo; `end: ready-for-qa` reachable without `pr-ready`; a warning when reviewer and implementer share a model.
+Validation before any ticket starts: unknown agents or harnesses; unreachable vertices; cycles without an Edge or Vertex
+Bound; loops of exhausted Vertex targets; route keys that are not Outcomes the Procedure can produce; Outcomes with no
+route on the Vertex or in the Flow's defaults; Check commands not declared; the Procedure and graph checks of ADR 0014
+(rule tables, inputs on every path, a commit on every passing path, bounded cycles); approval decisions without a route;
+resume across different vertices or harnesses; listed fields the harness declares unsupported; permission intents the
+harness cannot enforce on every surface the agent uses; strict-schema lint for Codex agents; literal secrets in
+`mcp.env`; retries on an agent whose harness options disable session persistence; `end: ready-for-qa` reachable without
+`pr-ready`; a warning when reviewer and implementer share a model.
 
 ### 3.4 Procedures, outcomes and resolution
 
@@ -280,8 +280,11 @@ Procedure has at most one agent Action. It declares its Claim tokens, each `{ re
 and its `passed`, `failed` and `stopped` rule tables with `otherwise`. Multi-step work is composed from Vertices, and
 Sessions never cross Vertices. gg ships no Procedure; the example `gg init` writes does today's work:
 
-- `tests-fail` (red): red brief, the `tests-fail` Check (expected fail, verified), commit tests. Recovery resumes the
-  red Session when the named tests unexpectedly pass.
+- `tests-fail` (red): red brief, the `tests-fail` Check (expected fail, verified), commit tests. Within the
+  Procedure's recovery budget, recovery resumes the red Session when a required Check fails recoverably: the named
+  tests unexpectedly pass, the output does not mention the named tests, or no file under `testPaths` changed since
+  the Visit's baseline. A Check may opt out with `recoverable: false`; a timeout, a runner that could not start or
+  gave no exit code, and a named test reported only as TODO or SKIP are not recoverable.
 - `implement` (green): a fresh Session with the full context (ticket, branch, commands, rules, committed test list,
   failing output, the last two through `inputs`), the `test` command Check, commit, push, draft PR. Recovery resumes
   the green Session when the test command fails.
@@ -352,19 +355,27 @@ that ran no command (a reused pass, or `tests-fail` with no test changed). A `<v
 Validation prints each Vertex's effective Procedure, Checks, rule tables and Outcomes, so nothing a Procedure
 verifies is hidden in code.
 
-Three layers that never mix: the agent's claim (one dedicated structured-output field holding exactly one enum
-token, no free-text marker fallback), the harness result (completed, failed with class, timed out, killed), and the
-orchestrator's deterministic checks (the Procedure's Checks and gg's integrity assertions). Integrity assertions (3.6) run
-after every terminated attempt, whatever the harness result, before the table is consulted; a violation takes the
-integrity row even when the attempt timed out or returned nothing, so a prohibited change never survives into a
-retry. Checks other than integrity run only on a completed attempt with a valid claim. One transition table of fixed rows, obeyed by every harness
-and Procedure, derives the outcome; its last rows hand over to the Procedure's rule tables. It lives in exactly one interpreter module that takes the harness result, the
-validated claim, the check results and the agent's retry budgets and returns the outcome, its direction and the
-row that fired; harnesses and procedures never decide outcomes. The rows are data-shaped in code so they are tested
-row by row, and `gg doctor` prints a vertex's effective table next to its effective check list:
+Three layers that never mix: the agent's claim (one dedicated structured-output field holding exactly one enum token, no
+free-text marker fallback), the harness result (completed, failed with class, timed out, killed), and the orchestrator's
+deterministic checks (the Procedure's Checks and gg's integrity assertions). Unconfirmed cleanup takes precedence over
+every other row and suspends the Action's completion. Integrity assertions (3.6) run after every terminated attempt
+whose cleanup is confirmed, whatever the harness result, against its original baseline, before any Check, retry,
+rollback or routing; a violation takes the integrity row even when the attempt timed out or returned nothing, so a
+prohibited change never survives into a retry. A later Run confirms a held Action's cleanup afresh under its recorded
+containment and runs the assertions against the original baseline; a violation then holds the Ticket and keeps the work,
+since a human may have made it. Otherwise the suspended Action completes from its recorded result and the Claim
+validated before the hold, applying the harness, parse, hand-off and retry rows before any Check; a held Check's result
+stands on an unchanged tree, and a changed tree the assertions permit re-runs the Visit's Checks. Checks other than
+integrity run only on a completed attempt with a valid claim. One transition table of fixed rows, obeyed by every
+harness and Procedure, derives the outcome; its last rows hand over to the Procedure's rule tables. It lives in exactly
+one interpreter module that takes the harness result, the validated claim, the check results and the agent's retry
+budgets and returns the outcome, its direction and the row that fired; harnesses and procedures never decide outcomes.
+The rows are data-shaped in code so they are tested row by row, and `gg doctor` prints a vertex's effective table next
+to its effective check list:
 
 | Harness result | Claim | Checks | Transition |
 |---|---|---|---|
+| any | any | cleanup unconfirmed | stop: `cleanup-unconfirmed`; Pending cleanup hold (`gg:await:cleanup`), with no retry, rollback or routing until cleanup is confirmed |
 | any | any | integrity violation | stop: discard the agent's changes, needs-human |
 | failed, class transient or rate-limited | none | integrity only | retry the attempt within the class budget, honouring `retryAfterMs`; exhausted: `harness-transient` |
 | failed, class auth, quota or budget | none | integrity only | stop the whole run: every active ticket to needs-human, class on the run end event; a Pending one (an Approval Request made, or a cleanup hold) is left Pending as it was |
@@ -463,7 +474,10 @@ State label says needs-human and record says mid-action: label wins, record mark
 with no record: stuck, reset path. Configuration is pinned per vertex visit: the record stores the resolved
 configuration snapshot a vertex entered with, persona contents included as bytes, not as a path; the current vertex
 finishes on that snapshot even if the config hash or a persona file has changed, every call in the visit is supplied
-from the snapshot, and the new configuration takes effect at the next vertex entry, logged as a change. A test edits
+from the snapshot, and a later Run's configuration takes effect at the next Vertex entry, logged as a change.
+Reconciliation instead holds a resumed Visit in progress, running and discarding nothing, when its snapshotted
+Procedure's hash differs from the current definition, including when that Procedure is missing, or when its Agent's
+Harness's current Launch Profile or Confinement differs from the entry its Pinned Configuration recorded. A test edits
 a persona between a green call and its recovery pass and asserts the recovery ran the old bytes. If the current
 vertex no longer exists in the new flow, the ticket is held for a human. Transcript missing for a session the record
 wants to resume: that Action starts fresh with the full brief. Corrupt record: held for a human, never auto-discarded.
@@ -483,8 +497,8 @@ repo-level lock around every orchestrator git write, so two gg processes on one 
 is a `node:sqlite` `BEGIN EXCLUSIVE` transaction held open on `<git common dir>/gg/locks/<name>.db`; the OS releases
 it when the holder dies, so there is no stale takeover (ADR 0008). The
 in-process mutex alone is not enough and the document says so. Retry on index lock with backoff. Stall timeout when
-the output stream and transcript stop growing (default about 10 min) and a wall clock per agent action (default about
-60 min), per agent overridable; expiry kills the process tree through the job object and records a typed timeout
+the output stream and transcript stop growing (default 15 min) and a wall clock per agent action (default
+120 min), per agent overridable; expiry kills the process tree through the job object and records a typed timeout
 outcome. GitHub writes are idempotent by action identity: PR found by head branch before create, one marked comment
 updated in place, label adds that tolerate presence.
 
@@ -503,9 +517,12 @@ Labels are namespaced; the prefix is the repository's required `labelPrefix`, wh
 | Approval request | `gg:await:<vertex>` | gg only | `gg:await:plan`, `gg:await:qa-approval` |
 | Human decision | `gg:decide:<vertex>:<outcome>` | humans only | `gg:decide:plan:approved`, `gg:decide:qa-approval:needs-changes` |
 
-`gg init` creates the labels a resolved flow references; doctor reports missing ones. A human touching a state or
-await label is an external intervention and reconciles as above. gg never reads or writes ff's unprefixed labels;
-ff and gg are never run on the same repository at the same time, and ff goes unused once gg is accepted.
+`gg run` ensures gg's State Labels, the cleanup Await Label and the Await and Decide Labels of every Flow it can run
+immediately before its first label addition, retrying setup after a failure; a user's Flow that names a command this
+repository does not declare cannot run here, so its labels are left out. `gg init` creates no GitHub labels; `gg doctor`
+warns about missing approval Await and Decide Labels. A human touching a state or await label is an external
+intervention and reconciles as above. gg never reads or writes ff's unprefixed labels; ff and gg are never run on the
+same repository at the same time, and ff goes unused once gg is accepted.
 
 Approval flow, the only one. When a run reaches an approval vertex, or `gg publish` finishes a plan:
 
@@ -565,26 +582,27 @@ branches and PRs finish under ff; cutover (section 6) archives ff after a real-h
 - Quality gates are `command` Checks a Procedure declares, naming Declared Commands (ADR 0014). Pass or fail by exit
   code in v1; thresholds come from the tool's own flags. Output captured, fed back in the recovery brief, recorded
   with the Check signal. Results reach the reviewer's brief through `inputs`.
-- Test Immutability: test paths are the repository's required `testPaths` (ADR 0014; `gg init` writes today's globs)
-  and include additions, renames and shared fixtures. It runs after every agent Attempt, as an integrity assertion.
-  Its baseline is the last commit gg made in the Execution, or the Execution's base before any; every gg commit either
-  passed it or came from a Procedure allowed to change tests (`tests: named` or `write`). A violation is an integrity
-  stop, not a retry.
-- Git ownership, after every agent action: HEAD and index of the agent's worktree unchanged by the agent; no change to
-  protected files; for read-only actions the tree unchanged as well, untracked files included. Other worktrees are
-  checked only over intervals in which they are proven idle: every worktree carries in the record a busy flag and
-  an activity generation. The flag is set before any process gg launches in that worktree starts (agent actions,
-  gate and declared commands, git operations) and cleared only after that process and its descendants have
-  terminated, with the generation bumped at every transition. A snapshot is three fingerprints: HEAD, the index
-  (`git write-tree` of the index) and the working tree including untracked files. At action start gg reads
-  generation, takes the snapshot and the busy flag, and reads generation again, keeping the snapshot only if both
-  reads match and the flag was idle. At action end it repeats the read, and asserts unchanged only a worktree that was idle at both snapshots
-  with the same generation at both. Activity that encloses the action (busy at start) and activity enclosed by it
-  (generation moved) are both skipped, not misattributed; tests cover both shapes, a concurrent format quality gate in the
-  other worktree, and an index-only mutation in an idle one. A violation discards the agent's changes and stops the
-  ticket. These assertions observe the checked surfaces only: worktree HEAD, index, tree and
-  protected files. Writes elsewhere on the machine and network effects of commands are not observed, which is the
-  stated weakness of the trusted-command mode in 3.2.
+- Test Immutability: test paths are the repository's required `testPaths` (ADR 0014; `gg init` writes today's globs) and
+  include additions, renames and shared fixtures. It runs after every agent Attempt once its cleanup is confirmed, as an
+  integrity assertion. Its baseline is the last commit gg made in the Execution, or the Execution's base before any;
+  every gg commit either passed it or came from a Procedure allowed to change tests (`tests: named` or `write`). A
+  violation is an integrity stop, not a retry.
+- Git ownership, after every agent Attempt once its cleanup is confirmed: HEAD and index of the agent's worktree
+  unchanged by the agent; no change to protected files; for read-only actions the tree unchanged as well, untracked
+  files included. Other worktrees are checked only over intervals in which they are proven idle: every worktree carries
+  in the record a busy flag and an activity generation. The flag is set before any process gg launches in that worktree
+  starts (agent actions, gate and declared commands, git operations) and cleared only after that process and its
+  descendants have terminated, with the generation bumped at every transition. A snapshot is three fingerprints: HEAD,
+  the index (`git write-tree` of the index) and the working tree including untracked files. At action start gg reads
+  generation, takes the snapshot and the busy flag, and reads generation again, keeping the snapshot only if both reads
+  match and the flag was idle. Once the action's cleanup is confirmed it repeats the read, and asserts unchanged only a
+  worktree that was idle at both snapshots with the same generation at both. Activity that encloses the action (busy at
+  start) and activity enclosed by it (generation moved) are both skipped, not misattributed; tests cover both shapes, a
+  concurrent format quality gate in the other worktree, and an index-only mutation in an idle one. A violation stops the
+  ticket and discards the agent's changes, except one found when a later Run completes a cleanup hold, which keeps them.
+  These assertions observe the checked surfaces only: worktree HEAD, index, tree and protected files. Writes elsewhere
+  on the machine and network effects of commands are not observed, which is the stated weakness of the trusted-command
+  mode in 3.2.
 - Protected files: agent diffs touching gg's own paths, `.agents/`, `.github/workflows/` or `.github/actions/` (the
   last two added by decision L3), or any path a shipped Harness declares in its `protectedPaths` (3.2) are rejected.
   The union covers every shipped Harness, not only those the Agents use: an agent on one Harness must not change the
@@ -733,8 +751,8 @@ Deliberate changes, each with its own regression case:
 - Fresh green session with the full brief (ff resumes red).
 - Review `ok` requires the `review-pass` Check: `definitionOfDoneMet`, `redGreenEvidenceOk` and no blocker or major findings (ff
   advances on the verdict alone).
-- Test immutability over `testPaths` after every agent Attempt, the baseline moving only through a Procedure allowed
-  to change tests.
+- Test immutability over `testPaths` after every agent Attempt once its cleanup is confirmed, the baseline moving only
+  through a Procedure allowed to change tests.
 - A stop token honoured after recovery Attempts too.
 - Red check requires per-test failure where the runner reports it.
 - Approvals bound to a digest and read from label events, not from a label's presence.
