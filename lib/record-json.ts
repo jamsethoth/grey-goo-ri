@@ -21,13 +21,13 @@ export class RecordCorruptError extends Error {
   declare recordNumber: number;
   declare reason: string;
   declare field: string | undefined;
-  constructor(file: string, raw: string, refused: { recordNumber: number; reason: string; field?: string }) {
-    super(`corrupt record ${file}: ${refused.reason}`);
+  constructor(file: string, reason: string, raw: string, refused: { recordNumber: number; field?: string }) {
+    super(`corrupt record ${file}: ${reason}`);
     this.name = 'RecordCorruptError';
     this.file = file;
     this.raw = raw;
     this.recordNumber = refused.recordNumber;
-    this.reason = refused.reason;
+    this.reason = reason;
     this.field = refused.field;
   }
 }
@@ -103,7 +103,7 @@ export function parseRow(
 ): record.ExecutionRecord | record.EpicRecord {
   const file = `${paths.stateDatabaseFile(commonDir)}#${kind}-${recordNumber}`;
   const corrupt = (reason: string, field?: string) =>
-    new RecordCorruptError(file, json, { recordNumber, reason, ...(field !== undefined && { field }) });
+    new RecordCorruptError(file, reason, json, { recordNumber, ...(field !== undefined && { field }) });
   let data: unknown;
   try {
     data = JSON.parse(json);
