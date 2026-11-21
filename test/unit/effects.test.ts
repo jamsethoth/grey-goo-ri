@@ -201,7 +201,7 @@ test("every Effect's reader reads its own intent's payload and refuses every oth
 });
 
 // Each `as` cast of a payload in a module's source, as `path:line`: a payload named alone or as a property, through
-// any parentheses, `!` or `?.` around it.
+// any parentheses, `!` or `?.` around it, or any value cast to a payload type, bare or qualified, whatever it is named.
 function payloadCasts(path: string, text: string): string[] {
   const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
   const sites: string[] = [];
@@ -210,8 +210,16 @@ function payloadCasts(path: string, text: string): string[] {
     if (ts.isIdentifier(node)) return node.text === 'payload';
     return ts.isPropertyAccessExpression(node) && node.name.text === 'payload';
   };
+  const isPayloadType = (type: ts.TypeNode): boolean => {
+    if (!ts.isTypeReferenceNode(type)) return false;
+    const name = ts.isQualifiedName(type.typeName) ? type.typeName.right : type.typeName;
+    return ['Payload', 'CallPayload', 'Consumption'].includes(name.text);
+  };
   const visit = (node: ts.Node) => {
-    if ((ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) && isPayload(node.expression))
+    if (
+      (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) &&
+      (isPayload(node.expression) || isPayloadType(node.type))
+    )
       sites.push(`${path}:${source.getLineAndCharacterOfPosition(node.getStart()).line + 1}`);
     ts.forEachChild(node, visit);
   };
@@ -229,9 +237,22 @@ test("no module in lib/ casts an intent's payload: each reads it through its eff
         'const c = find()?.payload as',
         '  P;',
         'const d = <P>x.payload;',
+        'const g = p as Payload;',
+        'const h = value as push.Payload;',
+        'const i = <writeAhead.CallPayload>entry;',
+        'const j = decision as Consumption;',
       ].join('\n'),
     ),
-    ['lib/sample.ts:1', 'lib/sample.ts:2', 'lib/sample.ts:3', 'lib/sample.ts:5'],
+    [
+      'lib/sample.ts:1',
+      'lib/sample.ts:2',
+      'lib/sample.ts:3',
+      'lib/sample.ts:5',
+      'lib/sample.ts:6',
+      'lib/sample.ts:7',
+      'lib/sample.ts:8',
+      'lib/sample.ts:9',
+    ],
   );
   assert.deepEqual(payloadCasts('lib/sample.ts', 'const e = evidence as E;\nconst f = readPayload(payload);'), []);
   const modules = readdirSync(`${root}lib`, { recursive: true, encoding: 'utf8' })
