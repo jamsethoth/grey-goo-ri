@@ -61,6 +61,26 @@ test('the params a code takes are checked at type-check time, from the one map b
   assert.equal(problems.errors.length + problems.warnings.length, 3);
 });
 
+// A Finding is made away from the report, so the severity of its code is checked as it is reported (#434).
+test('errorOf refuses a warning code, warnOf an error code, and each takes a code of either severity', () => {
+  const problems = report.newReport();
+  const unused: report.Finding = { code: 'unused-agent', message: 'unused', params: { agent: 'spare' } };
+  const unsure: report.Finding = {
+    code: 'required-input-unsure',
+    message: 'unsure',
+    params: { input: 'plan', vertex: 'build' },
+  };
+  const undeclared: report.Finding = { code: 'undeclared-command', message: 'undeclared', params: { command: 'lint' } };
+  assert.throws(() => report.errorOf(problems, 'agents.spare', unused), /unused-agent/);
+  assert.throws(() => report.warnOf(problems, `${VERTICES}.build.inputs.plan`, unsure), /required-input-unsure/);
+  report.errorOf(problems, 'flows.default', undeclared);
+  report.warnOf(problems, 'flows.default', undeclared);
+  assert.deepEqual(problems, {
+    errors: [{ at: 'flows.default', ...undeclared }],
+    warnings: [{ at: 'flows.default', ...undeclared }],
+  });
+});
+
 const LEFT_OUT = 'required-key-missing' as const;
 // Each required key left out, with what it reports. The sentence is the behaviour here: it says what to add, and never
 // prints "undefined" as though that were a value. Its params name the key left out, as Ajv's missingProperty does.

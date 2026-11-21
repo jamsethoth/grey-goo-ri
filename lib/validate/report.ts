@@ -123,6 +123,9 @@ export const PROBLEM_CODES = [
   'unknown-flow',
 ] as const;
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
+// The codes gg reports only as a warning, and those it reports at either severity by where; every other is an error.
+export const WARNING_CODES: readonly ProblemCode[] = [];
+export const EITHER_CODES: readonly ProblemCode[] = [];
 
 // A Procedure's problem found while typing it at a Vertex: the Flow and Vertex whose inputs exposed it.
 interface AtVertex {
