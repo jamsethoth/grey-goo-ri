@@ -5,6 +5,7 @@ import type * as approvalAction from './approval-action.ts';
 import type * as effects from './effects/index.ts';
 import type * as integrity from './integrity.ts';
 import type * as events from './events.ts';
+import * as jsonValue from './json-value.ts';
 import type * as record from './record.ts';
 import * as recordReadNode from './record-read-node.ts';
 import * as recordReadVisit from './record-read-visit.ts';
@@ -56,9 +57,10 @@ export const entryOf = (
 });
 
 // An entry's payload as the reader of its effect gives it, so its reader holds it typed by that effect, never cast
-// (#384).
+// (#384). The reader reads the payload as a save writes it: in memory an absent optional key can be an own key holding
+// undefined, which the reader, built for parsed JSON, would take as present.
 export const payloadOf = <Value>(entry: Pick<WriteAheadEntry, 'payload'>, read: recordReadNode.Read<Value>): Value =>
-  read({ value: entry.payload, path: 'payload' });
+  read({ value: jsonValue.checked(entry.payload, 'payload'), path: 'payload' });
 
 // A marker's first entry at a step.
 export const findEntry = (
