@@ -66,7 +66,8 @@ absent, and `pick` projects a list of objects to one field. Everything one Verte
 _Avoid_: parameter, dependency, upstream output
 
 **Edge**:
-A route from a Vertex to a Vertex or an end state, selected by an Outcome. A back edge carries a Bound.
+A route from a Vertex to a Vertex or an end state, selected by an Outcome. Every cycle contains an Edge or Vertex
+with a Bound.
 _Avoid_: transition, link
 
 **Bound**:
