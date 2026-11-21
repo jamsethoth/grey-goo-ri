@@ -22,7 +22,7 @@ export const OLD_VERSION = '2.1.327';
 // How a case changes the CLI that answers: an executable that cannot start, the version --version prints, the
 // logged-out recording for auth status, a change to --help's text, a change to the stream a model call replays,
 // the launch profile's, the --bare one's or the --fork-session one's, and the first argument of a command that times
-// out printing nothing, or that exits 1 printing nothing.
+// out printing nothing, that exits 1 printing nothing, or that a signal ends printing nothing (code null, as on POSIX).
 export interface CliState {
   missing?: boolean;
   version?: string;
@@ -33,6 +33,7 @@ export interface CliState {
   fork?: (stream: string) => string;
   hangs?: string;
   fails?: string;
+  killed?: string;
 }
 
 const sameArgv = (left: readonly string[], right: readonly string[]) =>
@@ -136,6 +137,8 @@ export function recordedCli(state: CliState = {}) {
       return { code: null, signal: null, timedOut: 'wall', cancelled: false, stderrTail: '', cleanup };
     if (state.fails !== undefined && state.fails === options.args[0])
       return { code: 1, signal: null, timedOut: null, cancelled: false, stderrTail: '', cleanup };
+    if (state.killed !== undefined && state.killed === options.args[0])
+      return { code: null, signal: 'SIGKILL', timedOut: null, cancelled: false, stderrTail: '', cleanup };
     const { stdout, exitCode } = answer(options.args, state);
     const lines = stdout.split('\n');
     if (lines.at(-1) === '') lines.pop();
