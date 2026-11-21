@@ -418,7 +418,6 @@ test('a payload that fits no write-ahead payload is a corrupt row naming it', ()
   refused('ticket', broken, /: its writeAheadLog\[3\]\.payload is not /, 'a push payload with no sha');
 });
 
-// Each form the constructor takes, the three arguments it took before #439 among them, builds the whole error (#439).
 test('RecordCorruptError builds from each argument form it takes, the base three-argument one included', () => {
   const base = ['rows#ticket-7', 'its flow is not a string', '{}'] as const;
   const forms: [string, () => recordJson.RecordCorruptError, number, string | undefined][] = [

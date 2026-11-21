@@ -120,12 +120,18 @@ test('gg work abandon forgets a corrupt Execution Record', async (t) => {
 
 // The State Labels go before the row, so a corrupt row whose labels stay is kept, as a readable one is.
 test('gg work abandon keeps a corrupt record when its State Labels cannot be removed', async (t) => {
-  const { commonDir, fake, options } = abandonableTicket.seed(t);
-  corruptRecords.plant(commonDir, TICKET, corruptRecords.CORRUPTIONS[0]!);
-  fake.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'edit', status: 502 });
-  await assert.rejects(work.abandon(options), /label update .* failed: .*; Execution Record ticket-7 is kept$/);
-  assert.throws(() => record.load(commonDir, 'ticket', TICKET), record.RecordCorruptError, 'the row is kept');
-  assert.ok(fake.labels.has(IN_PROGRESS), 'the label is kept');
+  for (const corruption of corruptRecords.CORRUPTIONS) {
+    const { commonDir, fake, options } = abandonableTicket.seed(t);
+    corruptRecords.plant(commonDir, TICKET, corruption);
+    fake.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'edit', status: 502 });
+    await assert.rejects(work.abandon(options), /label update .* failed: .*; Execution Record ticket-7 is kept$/);
+    assert.throws(
+      () => record.load(commonDir, 'ticket', TICKET),
+      record.RecordCorruptError,
+      `${corruption.name}: the row is kept`,
+    );
+    assert.ok(fake.labels.has(IN_PROGRESS), `${corruption.name}: the label is kept`);
+  }
 });
 
 // gg work done is handed a database, so its check that the State Database is there, before the ticket lock, goes
