@@ -125,7 +125,9 @@ invalid-glob
 unknown-flow
 ```
 
-The rule each code names:
+The rule each code names, and its severity: an error unless the row says "(warning)", or "(error; a warning when
+...)" for a code gg reports at both. `WARNING_CODES` and `EITHER_CODES` beside `PROBLEM_CODES` hold the same, and
+`freeze.test.ts` holds the two to each other:
 
 | Code | The rule it names |
 | --- | --- |
@@ -184,7 +186,7 @@ The rule each code names:
 | `repeated-decision` | a Decision is repeated |
 | `second-agent-action` | a Procedure declares a second agent Action |
 | `undeclared-check` | a Claim token requires a Check its Procedure does not declare |
-| `undeclared-command` | a Check names a command the repository does not declare |
+| `undeclared-command` | a Check names a command the repository does not declare (error; a warning when gg doctor finds it in a user Flow that does not fit the repository) |
 | `unknown-action-kind` | an Action's `do` is not an Action kind |
 | `unknown-check-kind` | a Check's `kind` is not a Check kind |
 | `schema-not-strict` | a response schema is outside gg's strict subset |
@@ -205,18 +207,18 @@ The rule each code names:
 | `invalid-rule-condition` | a Rule Table condition is not one its field can take |
 | `invalid-rule-field` | a Rule Table names a field of a type a rule cannot test |
 | `malformed-row` | a Rule Table row is not `{ when, outcome }` |
-| `never-firing-row` | a Rule Table row can never fire (warning) |
+| `never-firing-row` | a Rule Table row can never fire |
 | `overlapping-rows` | earlier rows partly take a Rule Table row (warning) |
 | `rule-condition-mismatch` | a Rule Table condition does not fit its field's type |
 | `rule-table-too-large` | a Rule Table's analysis passes the work limit |
-| `table-never-applies` | a Rule Table never applies, since no Claim token reaches it (warning) |
+| `table-never-applies` | a Rule Table never applies, since no Claim token reaches it |
 | `undeclared-rule-field` | a Rule Table names a field its Procedure does not declare |
 | `unreachable-row` | a Rule Table row is unreachable |
 | `commit-without-check` | a writing Vertex's committing Claim token requires no Check |
 | `exhausted-loop` | `exhausted` targets form a loop no Vertex leaves |
 | `optional-input-unsure` | no route is sure to produce an optional input's sources (warning) |
 | `pr-ready-skippable` | an Outcome reaches `ready-for-qa` on a route that may skip `pr-ready` |
-| `required-input-unsure` | a route may not produce a required input's sources (warning) |
+| `required-input-unsure` | a route may not produce a required input's sources |
 | `unbounded-cycle` | a cycle has no Edge or Vertex with `max` |
 | `unreachable-vertex` | a Vertex is not reachable from the entry (warning) |
 | `unrouted-outcome` | an Outcome is routed by neither its Vertex nor the Flow |
@@ -224,7 +226,7 @@ The rule each code names:
 | `repository-labels-missing` | the repository lacks labels the Flows can request (warning) |
 | `repository-labels-unread` | the repository's labels could not be read (warning) |
 | `harness-preflight-failed` | a Vertex's Harness failed its preflight |
-| `harness-doctor-failed` | a check of a Harness's doctor failed, once for the Harness however many Vertices use it |
+| `harness-doctor-failed` | a check of a Harness's doctor failed, once for the Harness however many Vertices use it (error; a warning when the Harness's check is a warning) |
 | `repository-unread` | the repository's GitHub `owner/name` could not be read |
 | `state-database-missing` | the repository has no State Database: run `gg init` |
 | `invalid-command-line` | a Declared Command is not a valid command line |

@@ -57,8 +57,28 @@ test('the params a code takes are checked at type-check time, from the one map b
   // @ts-expect-error -- unknown-key's sentence names its key, so its params are required
   report.error(problems, 'agents', 'unknown-key', 'unknown key "x"');
   // @ts-expect-error -- no-flow-declared's sentence names no value, so it takes no params
-  report.warn(problems, 'flows', 'no-flow-declared', 'no Flow', { key: 'flows' });
+  report.error(problems, 'flows', 'no-flow-declared', 'no Flow', { key: 'flows' });
   assert.equal(problems.errors.length + problems.warnings.length, 3);
+});
+
+// A Finding is made away from the report, so the severity of its code is checked as it is reported (#434).
+test('errorOf refuses a warning code, warnOf an error code, and each takes a code of either severity', () => {
+  const problems = report.newReport();
+  const unused: report.Finding = { code: 'unused-agent', message: 'unused', params: { agent: 'spare' } };
+  const unsure: report.Finding = {
+    code: 'required-input-unsure',
+    message: 'unsure',
+    params: { input: 'plan', vertex: 'build' },
+  };
+  const undeclared: report.Finding = { code: 'undeclared-command', message: 'undeclared', params: { command: 'lint' } };
+  assert.throws(() => report.errorOf(problems, 'agents.spare', unused), /unused-agent/);
+  assert.throws(() => report.warnOf(problems, `${VERTICES}.build.inputs.plan`, unsure), /required-input-unsure/);
+  report.errorOf(problems, 'flows.default', undeclared);
+  report.warnOf(problems, 'flows.default', undeclared);
+  assert.deepEqual(problems, {
+    errors: [{ at: 'flows.default', ...undeclared }],
+    warnings: [{ at: 'flows.default', ...undeclared }],
+  });
 });
 
 const LEFT_OUT = 'required-key-missing' as const;
