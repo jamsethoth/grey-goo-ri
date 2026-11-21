@@ -290,6 +290,14 @@ async function probeChecks(state: recordedCli.CliState) {
   return { ...checked, launches: cli.launches, settings };
 }
 
+// #460: a model call keeps the name claude -p when it fails, whatever its argv holds after -p.
+test('gg doctor --probe names a timed-out model call claude -p', async (t) => {
+  caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
+  const { bare, profile, handoff } = await probeChecks({ hangs: '-p' });
+  for (const check of [bare, profile, handoff])
+    assert.ok(check?.message.endsWith('claude -p timed out'), check?.message ?? 'no check');
+});
+
 type StreamLine = Record<string, unknown>;
 
 // A stream recording with each line changed by `edit`, which drops a line by giving null.
