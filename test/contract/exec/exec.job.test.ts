@@ -78,12 +78,14 @@ test(
     t.after(() => members.forEach(processProbe.endProcess));
     const pidFile = join(scratch, 'held-pipes.pid');
     const clock = new AbortController();
-    const result = await exec
-      .createExec({ kernel32 })
-      .runShell(
-        nodeCommand(t, childScripts.DETACHED_CHILD, 'inherit', pidFile),
-        timedOutShell.shellOptions({ timeoutMs: 200, signal: clock.signal, onExit: () => clock.abort() }),
-      );
+    const result = await exec.createExec({ kernel32 }).runShell(
+      nodeCommand(t, childScripts.DETACHED_CHILD, 'inherit', pidFile),
+      timedOutShell.shellOptions({
+        timeoutMs: 200,
+        signal: AbortSignal.any([clock.signal, t.signal]),
+        onExit: () => clock.abort(),
+      }),
+    );
     assert.equal(result.code, 0, result.output);
     assert.equal(result.timedOut, undefined);
     assert.equal(result.cleanup.confirmed, false);
@@ -118,12 +120,14 @@ test(
     const pidFile = join(scratch, 'uncontained-left.pid');
     t.after(() => processProbe.endProcessIn(pidFile));
     const clock = new AbortController();
-    const result = await exec
-      .createExec({ kernel32: noJob() })
-      .runShell(
-        `start "" /b ${nodeCommand(t, childScripts.LONG_LIVED, pidFile)}`,
-        timedOutShell.shellOptions({ timeoutMs: 200, signal: clock.signal, onExit: () => clock.abort() }),
-      );
+    const result = await exec.createExec({ kernel32: noJob() }).runShell(
+      `start "" /b ${nodeCommand(t, childScripts.LONG_LIVED, pidFile)}`,
+      timedOutShell.shellOptions({
+        timeoutMs: 200,
+        signal: AbortSignal.any([clock.signal, t.signal]),
+        onExit: () => clock.abort(),
+      }),
+    );
     assert.equal(result.code, 0, result.output);
     assert.equal(result.timedOut, undefined);
     assert.equal(result.leftovers, undefined, JSON.stringify(result.leftovers));
