@@ -5,6 +5,7 @@ import type * as events from '../../lib/events.ts';
 import * as claude from '../../lib/harnesses/claude.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
+import * as outcome from '../../lib/outcome.ts';
 import type * as referencePaths from '../../lib/reference-paths.ts';
 import { attemptsOf, loadTicket } from '../support/execution-reads.ts';
 import type * as fakeHarness from '../support/fake-harness.ts';
@@ -168,6 +169,71 @@ test('every call of an Agent with a contextBudget is sent the hand-off Claim, an
     ['red/0/1', 'green/0/1', 'green/0/2', 'green/1/1'],
     "red's call, then green's first Attempt, its parse retry and its recovery pass",
   );
+});
+
+// An Agent's resolutionPolicy is the budgets its Attempts spend, each it leaves out keeping its shipped value (#435).
+const RED = { vertex: 'red', visit: 1, action: 'red' };
+const TRANSIENT: fakeHarness.ScriptedResponse = {
+  files: {},
+  response: null,
+  failure: { failureClass: 'transient', retryAfterMs: 0 },
+};
+
+test("an Agent's transient budget of 0 fails on the first transient failure", async (t) => {
+  const fixture = await golden.fixture(t, { responses: { [keys.responseKey(RED)]: TRANSIENT } });
+  golden.configure(fixture, (configured) => {
+    Object.assign(configured.agents.implementer!, { resolutionPolicy: { transient: 0 } });
+  });
+  const result = await interpreter.runExecution(fixture.options);
+
+  assert.deepEqual(
+    attemptsOf(fixture, 'red', 'red').map((event) => [event.attempt, event.rule.row]),
+    [[1, 'transient-exhausted']],
+  );
+  assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
+  assert.equal(fixture.harness.calls.length, 1, 'never retried');
+});
+
+// For each budget, a first Attempt that spends it and the rows it fires within the budget and past it.
+const SPENDS: Record<string, { response: fakeHarness.ScriptedResponse; within: string; past: string }> = {
+  transient: { response: TRANSIENT, within: 'transient-retry', past: 'transient-exhausted' },
+  rateLimited: {
+    response: { ...TRANSIENT, failure: { failureClass: 'rate-limited', retryAfterMs: 0 } },
+    within: 'transient-retry',
+    past: 'transient-exhausted',
+  },
+  timeout: {
+    response: { ...finishing(RIGHT_ADD), result: { status: 'timed-out' } },
+    within: 'timeout-retry',
+    past: 'timeout-exhausted',
+  },
+  parse: { response: { files: {}, response: null }, within: 'parse-retry', past: 'parse-exhausted' },
+  handoff: { response: handOff(NOTE), within: 'handed-off', past: 'handoff-exhausted' },
+};
+
+test('the budgets spent are every budget of the shipped Resolution Policy', () => {
+  assert.deepEqual(Object.keys(SPENDS).sort(), Object.keys(outcome.DEFAULT_RESOLUTION_POLICY).sort());
+});
+
+// Each budget set to 0 ends the Action on its first spend; each left out, beside every other set to 0, still retries.
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test("each budget an Agent's resolutionPolicy sets is spent, and each it leaves out keeps its shipped value", async (t) => {
+  const wrong: string[] = [];
+  for (const [budget, { response, within, past }] of Object.entries(SPENDS))
+    for (const sets of [true, false]) {
+      const others = Object.keys(SPENDS).filter((other) => other !== budget);
+      const policy = Object.fromEntries((sets ? [budget] : others).map((key) => [key, 0]));
+      const fixture = await budgetedFixture(t, { [greenAt(1)]: response, [greenAt(2)]: finishing(RIGHT_ADD) });
+      golden.configure(fixture, (configured) => {
+        Object.assign(configured.agents.budgeted!, { resolutionPolicy: policy });
+      });
+      await interpreter.runExecution(fixture.options);
+      const first = rowsOf(fixture)[0];
+      const expected = JSON.stringify([1, sets ? past : within]);
+      if (JSON.stringify(first) !== expected)
+        wrong.push(`${budget} ${sets ? 'set to 0' : 'left out'}: ${JSON.stringify(first)}, expected ${expected}`);
+    }
+  assert.deepEqual(wrong, []);
 });
 
 // Q1 A: the new agent asks the handed-off Session through gg ask-session, which its Brief names with the Session and
