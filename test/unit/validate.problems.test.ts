@@ -57,7 +57,7 @@ test('the params a code takes are checked at type-check time, from the one map b
   // @ts-expect-error -- unknown-key's sentence names its key, so its params are required
   report.error(problems, 'agents', 'unknown-key', 'unknown key "x"');
   // @ts-expect-error -- no-flow-declared's sentence names no value, so it takes no params
-  report.warn(problems, 'flows', 'no-flow-declared', 'no Flow', { key: 'flows' });
+  report.error(problems, 'flows', 'no-flow-declared', 'no Flow', { key: 'flows' });
   assert.equal(problems.errors.length + problems.warnings.length, 3);
 });
 
