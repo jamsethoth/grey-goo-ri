@@ -52,12 +52,13 @@ const ROUTE_MAP_CASES: Record<string, (config: Source) => void> = {
   'commit-without-check': (config) => {
     config.procedures.fix.claimTokens.ok.requires = [];
   },
-  'unbounded-cycle': (config) => {
-    exampleSource.putAt(exampleTicket(config).vertices.reviewer.route, ['changes'], 'implementer-fix');
-  },
+  'unbounded-cycle': (config) =>
+    exampleSource.putAt(exampleTicket(config).vertices.reviewer.route, ['changes'], 'implementer-fix'),
   'exhausted-loop': (config) => {
-    Object.assign(exampleTicket(config).vertices.red, { max: 1, exhausted: 'green' });
-    Object.assign(exampleTicket(config).vertices.green, { max: 1, exhausted: 'red' });
+    exampleSource.putAt(exampleTicket(config).vertices.red, ['max'], 1);
+    exampleSource.putAt(exampleTicket(config).vertices.red, ['exhausted'], 'green');
+    exampleSource.putAt(exampleTicket(config).vertices.green, ['max'], 1);
+    exampleSource.putAt(exampleTicket(config).vertices.green, ['exhausted'], 'red');
   },
   'pr-ready-skippable': (config) => {
     exampleSource.putAt(exampleTicket(config).vertices.reviewer.route, ['ok'], { end: 'ready-for-qa' });
@@ -301,8 +302,7 @@ test('a null on an Agent outside a cycle holds none of its checks', () => {
 // the loop (#454, Q3 A).
 test('a null Agent model holds the loop through its Vertex', () => {
   const config = exampleSource.config();
-  Object.assign(exampleTicket(config).vertices.red, { max: 1, exhausted: 'green' });
-  Object.assign(exampleTicket(config).vertices.green, { max: 1, exhausted: 'red' });
+  ROUTE_MAP_CASES['exhausted-loop']!(config);
   exampleSource.putAt(config.agents.implementer, ['model'], null);
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     { at: 'agents.implementer.model', code: 'null-value' },
@@ -635,7 +635,7 @@ test('an Agent with a null at any key is refused by its own check', () => {
 });
 
 // The example's Procedure implement, changed, as its own check gives it.
-function checkedImplement(change: (implement: Record<string, unknown>) => void) {
+function checkedImplement(change: (implement: exampleSource.Source['procedures']['implement']) => void) {
   const config = exampleSource.config();
   change(config.procedures.implement);
   const schemas = exampleSource.schemas();
@@ -655,7 +655,7 @@ test('a sound Procedure is not refused', () => {
 test('a Procedure with an unknown key or a null at any key is refused by its own check', () => {
   const notRefused = ['colour', ...procedureChecks.PROCEDURE_KEYS].filter((key) => {
     const procedure = checkedImplement((implement) => {
-      implement[key] = key === 'colour' ? 'blue' : null;
+      exampleSource.putAt(implement, [key], key === 'colour' ? 'blue' : null);
     });
     return !report.isReported(procedure?.refused);
   });

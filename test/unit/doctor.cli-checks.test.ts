@@ -26,11 +26,11 @@ const DEPS = { gh: github.createGh(fakeGh.fakeGh({ branch: 'b', ticket: 1 }).gh)
 const file = (bytes: string) => ({ bytes, hash: config.sha256(bytes) });
 
 // `repository` as the repository's source, beside a user source that holds only the machine settings; the files it
-// names move beside it.
-const sources = ({
+// names move beside it. A type parameter, so the example passes as its own type and is not widened to a Source.
+const sources = <Repository extends config.Source & { files?: config.SourceFiles }>({
   files = {},
   ...repository
-}: config.Source & { files?: config.SourceFiles }): config.Configuration => ({
+}: Repository): config.Configuration => ({
   repository,
   user: { maxParallel: 2, worktreeRoot: '~/worktrees' },
   repositoryFile: '/repo/.agents/gg/gg.json',
@@ -52,7 +52,7 @@ function claudeExample() {
       ]),
     ),
   );
-  for (const agent of Object.values<Record<string, unknown>>(source.agents)) agent.harness = 'claude';
+  for (const agent of Object.values(source.agents)) agent.harness = 'claude';
   return source;
 }
 

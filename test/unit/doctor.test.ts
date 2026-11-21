@@ -339,7 +339,7 @@ test('gg doctor lists an Execution Record whose Flow is no longer declared as an
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
 test("gg doctor reports harness-preflight-failed for each Vertex on a stub Harness, as gg run's preflight does", async () => {
   const source = example();
-  for (const agent of Object.values<Record<string, unknown>>(source.agents)) agent.harness = 'claude';
+  for (const agent of Object.values(source.agents)) agent.harness = 'claude';
   const claude = await import('../../lib/harnesses/claude.ts');
   const { text, exitCode } = await doctor.doctor({ config: sources(source), ...DEPS, harnesses: { claude } });
   assert.equal(exitCode, 1, text);

@@ -5,17 +5,17 @@ import ts from 'typescript';
 import * as typeShape from '../support/type-shape.ts';
 
 // The example configuration a case edits is typed by its own file, so tsc checks every read and refuses every edit out
-// of its shape that does not go through putAt; no test reaches it through an `any` or a cast (#358, Q1 A).
+// of its shape that does not go through putAt; no test reaches it through an `any`, a cast, an Object.assign or a
+// place typed to take any key (#358, Q1 A).
 const { root, configured } = typeShape;
 const EXAMPLE_JSON = `${root}test/fixtures/example/gg.json`;
 const EXAMPLE_MODULE = `${root}test/support/example-source.ts`;
 // The one file whose subject is how a type treats an `any` (JsonValue's refusal of it), so its samples write one.
 const WRITES_ANY = `${root}test/unit/json-value.test.ts`;
 
-// In `files` of `program`: every call of exampleSource.config(), and each place a test reaches the example through an
-// `any` or a cast: a config() not typed by the example file, a cast of a value read from it, an `any` written.
-function census(program: ts.Program, files: (sourceFile: ts.SourceFile) => boolean) {
-  const checker = program.getTypeChecker();
+// What the census asks of a node, over `checker`: whether a type, a call or a value is the example's, and whether a
+// place a value is handed to has stopped checking it.
+function exampleReads(checker: ts.TypeChecker) {
   // A type that holds itself, such as JsonValue, is walked once.
   const fromExample = (type: ts.Type, walking = new Set<ts.Type>()): boolean => {
     if (walking.has(type)) return false;
@@ -49,8 +49,56 @@ function census(program: ts.Program, files: (sourceFile: ts.SourceFile) => boole
       ts.isParenthesizedExpression(node) ||
       ts.isNonNullExpression(node)) &&
       reaches(node.expression));
-  const isCast = (node: ts.Node): node is ts.AsExpression | ts.TypeAssertion =>
-    (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) && !ts.isConstTypeReference(node.type);
+  // A place that takes any key with an `unknown` or `any` value, such as Record<string, unknown>, and is not the
+  // example's: a value handed to it can be written or deleted at any key with nothing checked.
+  const widened = (type: ts.Type | undefined) =>
+    type !== undefined &&
+    !fromExample(type) &&
+    (type.isUnion() ? type.types : [type]).some(
+      (member) => ((member.getStringIndexType()?.flags ?? 0) & (ts.TypeFlags.Unknown | ts.TypeFlags.Any)) !== 0,
+    );
+  // gg's own code reads what a case gives it, so an argument to a function declared outside test/ widens nothing.
+  const handedToGg = (node: ts.Node) =>
+    ts.isCallExpression(node.parent) &&
+    node.parent.arguments.includes(node as ts.Expression) &&
+    !(checker.getResolvedSignature(node.parent)?.declaration?.getSourceFile().fileName ?? '').startsWith(
+      `${root}test/`,
+    );
+  const isExample = (expression: ts.Expression) => fromExample(checker.getTypeAtLocation(expression));
+  return { fromExample, isConfigCall, reaches, widened, handedToGg, isExample };
+}
+
+// What `node` does to the example that tsc does not check: a cast of it, an `any`, an Object.assign onto it, or the
+// example handed to a place that no longer checks it, directly or through a type argument.
+function escapes(node: ts.Node, checker: ts.TypeChecker, reads: ReturnType<typeof exampleReads>) {
+  const { reaches, widened, handedToGg, isExample } = reads;
+  const found = ts.isCallExpression(node) ? callEscapes(node, checker, reads) : [];
+  if (isCast(node) && reaches(node.expression)) found.push('a cast of the example');
+  if (node.kind === ts.SyntaxKind.AnyKeyword && node.getSourceFile().fileName !== WRITES_ANY) found.push('an any');
+  // The contextual type is asked first: most expressions have none, and it is cheaper than the type of each.
+  if (ts.isExpression(node) && widened(checker.getContextualType(node)) && isExample(node) && !handedToGg(node))
+    found.push('the example widened to an index signature');
+  return found;
+}
+
+function callEscapes(call: ts.CallExpression, checker: ts.TypeChecker, reads: ReturnType<typeof exampleReads>) {
+  const { widened, isExample } = reads;
+  const found: string[] = [];
+  if (call.expression.getText() === 'Object.assign' && call.arguments[0] && isExample(call.arguments[0]))
+    found.push('an Object.assign onto the example');
+  const widening = call.typeArguments?.some((argument) => widened(checker.getTypeFromTypeNode(argument)));
+  if (widening && call.arguments.some(isExample)) found.push('the example widened by a type argument');
+  return found;
+}
+
+const isCast = (node: ts.Node): node is ts.AsExpression | ts.TypeAssertion =>
+  (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) && !ts.isConstTypeReference(node.type);
+
+// In `files` of `program`: every call of exampleSource.config(), and each place a test reaches the example around its
+// type: a config() not typed by the example file, and each escape `escapes` names.
+function census(program: ts.Program, files: (sourceFile: ts.SourceFile) => boolean) {
+  const checker = program.getTypeChecker();
+  const reads = exampleReads(checker);
   let configCalls = 0;
   const found: string[] = [];
   for (const sourceFile of program.getSourceFiles().filter(files)) {
@@ -59,14 +107,12 @@ function census(program: ts.Program, files: (sourceFile: ts.SourceFile) => boole
       return `${sourceFile.fileName.slice(root.length)}:${line + 1}`;
     };
     const visit = (node: ts.Node): void => {
-      if (isConfigCall(node)) {
+      if (reads.isConfigCall(node)) {
         configCalls += 1;
-        if (!fromExample(checker.getTypeAtLocation(node)))
+        if (!reads.fromExample(checker.getTypeAtLocation(node)))
           found.push(`${where(node)}: config() is not the example's type`);
       }
-      if (isCast(node) && reaches(node.expression)) found.push(`${where(node)}: a cast of the example`);
-      if (node.kind === ts.SyntaxKind.AnyKeyword && sourceFile.fileName !== WRITES_ANY)
-        found.push(`${where(node)}: an any`);
+      for (const escape of escapes(node, checker, reads)) found.push(`${where(node)}: ${escape}`);
       ts.forEachChild(node, visit);
     };
     visit(sourceFile);
@@ -88,7 +134,7 @@ function plantedProgram(lines: string[]) {
 }
 const HEADER = ["import * as exampleSource from './example-source.ts';", 'const config = exampleSource.config();'];
 
-test("every exampleSource.config() under test/ is the example's type, reached through no any or cast", () => {
+test("every exampleSource.config() under test/ is the example's type, edited around it nowhere", () => {
   const program = ts.createProgram(configured.fileNames, configured.options);
   const { configCalls, found } = census(
     program,
@@ -98,7 +144,9 @@ test("every exampleSource.config() under test/ is the example's type, reached th
   assert.deepEqual(found, [], 'read the example as its type, and edit it out of its shape through putAt');
 });
 
-test('the census finds a config() not typed by the example, each cast of a value read from it, and each any', () => {
+const WIDENED = 'the example widened to an index signature';
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('the census finds a config() not typed by the example, each cast of it, each any, and each edit around its type', () => {
   const samples: [string, string | null][] = [
     ['export const cast = config.flows as unknown;', 'a cast of the example'],
     ['export const angled = <never>config.flows.default;', 'a cast of the example'],
@@ -106,7 +154,15 @@ test('the census finds a config() not typed by the example, each cast of a value
     ['export const parenthesized = (config.agents) as object;', 'a cast of the example'],
     ['export const loose: any = config;', 'an any'],
     ['export const entries = Object.entries<any>(config.flows);', 'an any'],
+    ['Object.assign(config.agents.implementer, { mcp: [] });', 'an Object.assign onto the example'],
+    ['export const site: Record<string, unknown> = config.agents.implementer;', WIDENED],
+    ['((value: Record<string, unknown>) => value)(config.procedures.implement);', WIDENED],
+    [
+      'export const each = Object.values<Record<string, unknown>>(config.agents);',
+      'the example widened by a type argument',
+    ],
     ['export const read = config.flows.default.actionCap;', null],
+    ['export const values = Object.values(config.agents);', null],
     ["exampleSource.putAt(config, ['labelPrefix'], null);", null],
     ["export const constant = 'x' as const;", null],
     ["export const parsed = JSON.parse('{}') as typeof config;", null],

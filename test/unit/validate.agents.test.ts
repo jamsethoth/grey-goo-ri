@@ -20,16 +20,16 @@ const AGENT_KEY_ERRORS: Record<string, { under: boolean; code: string }> = {
   effort: { under: true, code: 'not-a-string' },
   network: { under: true, code: 'not-a-boolean' },
 };
-const AGENT_SITES: Record<string, (config: exampleSource.Source) => { site: Record<string, unknown>; at: string }> = {
-  'a declared Agent': (config) => ({ site: config.agents.implementer, at: 'agents.implementer' }),
-  "a Vertex's override of its Agent": (config) => ({
+const AGENT_SITES = {
+  'a declared Agent': (config: exampleSource.Source) => ({ site: config.agents.implementer, at: 'agents.implementer' }),
+  "a Vertex's override of its Agent": (config: exampleSource.Source) => ({
     site: config.flows.default.ticket.vertices.red,
     at: `${VERTICES}.red`,
   }),
-  'an inline Vertex Agent': (config) => {
+  'an inline Vertex Agent': (config: exampleSource.Source) => {
     const red = config.flows.default.ticket.vertices.red;
     exampleSource.putAt(red, ['use']);
-    Object.assign(red, config.agents.implementer);
+    for (const [key, value] of Object.entries(config.agents.implementer)) exampleSource.putAt(red, [key], value);
     return { site: red, at: `${VERTICES}.red` };
   },
 };
@@ -43,7 +43,7 @@ for (const key of Object.keys(agentChecks.AGENT_FIELDS))
     test(`an Agent's ${key} of the wrong type at ${where} is an error there, and the Flow does not resolve`, () => {
       const config = exampleSource.config();
       const { site, at } = place(config);
-      site[key] = { wrong: true };
+      exampleSource.putAt(site, [key], { wrong: true });
       const { under, code } = AGENT_KEY_ERRORS[key]!;
       const { errors, flows } = exampleSource.check(config);
       assert.deepEqual(exampleSource.firedRules(errors), [{ at: under ? `${at}.${key}` : at, code }]);
@@ -68,7 +68,8 @@ test('an inline Vertex Agent with no persona is an error at the Vertex', () => {
   const config = exampleSource.config();
   const red = config.flows.default.ticket.vertices.red;
   exampleSource.putAt(red, ['use']);
-  Object.assign(red, { harness: 'fake', access: 'workspace-write' });
+  exampleSource.putAt(red, ['harness'], 'fake');
+  exampleSource.putAt(red, ['access'], 'workspace-write');
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     { at: `${VERTICES}.red`, code: 'required-key-missing' },
   ]);
@@ -148,7 +149,7 @@ for (const { form, timeouts, under, code } of TIMEOUTS_FORMS)
     test(`timeouts of ${form} is an error at ${where}`, () => {
       const config = exampleSource.config();
       const { site, at } = place(config);
-      site.timeouts = timeouts;
+      exampleSource.putAt(site, ['timeouts'], timeouts);
       const { errors, flows } = exampleSource.check(config);
       assert.deepEqual(exampleSource.firedRules(errors), [{ at: `${at}.timeouts${under}`, code }]);
       assert.equal(flows.default, undefined);
@@ -180,7 +181,7 @@ for (const { form, policy, under, code } of POLICY_FORMS)
     test(`a resolutionPolicy of ${form} is an error at ${where}`, () => {
       const config = exampleSource.config();
       const { site, at } = place(config);
-      site.resolutionPolicy = policy;
+      exampleSource.putAt(site, ['resolutionPolicy'], policy);
       const { errors, flows } = exampleSource.check(config);
       assert.deepEqual(exampleSource.firedRules(errors), [{ at: `${at}.resolutionPolicy${under}`, code }]);
       assert.equal(flows.default, undefined);
@@ -195,7 +196,7 @@ test('every retry budget the Transition Table spends is a budget a resolutionPol
       for (const value of [0, -1]) {
         const config = exampleSource.config();
         const { site, at } = place(config);
-        site.resolutionPolicy = { [budget]: value };
+        exampleSource.putAt(site, ['resolutionPolicy'], { [budget]: value });
         const { errors, flows } = exampleSource.check(config);
         const fired = JSON.stringify(exampleSource.firedRules(errors));
         const refused = [{ at: `${at}.resolutionPolicy.${budget}`, code: 'not-a-non-negative-integer' }];
@@ -235,7 +236,8 @@ function capabilityErrors(intents: boolean) {
       for (const [where, place] of Object.entries(AGENT_SITES)) {
         const config = exampleSource.config();
         const { site, at } = place(config);
-        Object.assign(site, { harness: 'limited', [field]: ASKING[field] });
+        exampleSource.putAt(site, ['harness'], 'limited');
+        exampleSource.putAt(site, [field], ASKING[field]);
         const limited = { capabilities: { ...EXACT, [field]: level } };
         const { errors } = exampleSource.checkOn(config, { fake: {}, limited });
         const refused = intents ? level !== 'exact' : level === 'unsupported';
@@ -257,7 +259,8 @@ test('a permission intent its Harness cannot enforce is an error', () => {
 
 test('a read-only Claude Agent listing MCP servers is an error', () => {
   const config = exampleSource.config();
-  Object.assign(config.agents.reviewer, { harness: 'claude', mcp: ['github'] });
+  exampleSource.putAt(config.agents.reviewer, ['harness'], 'claude');
+  exampleSource.putAt(config.agents.reviewer, ['mcp'], ['github']);
   const { errors } = exampleSource.checkOn(config, { fake: {}, claude });
   assert.deepEqual(exampleSource.firedRules(errors), [{ at: 'agents.reviewer.mcp', code: 'unsupported-agent-field' }]);
   assert.deepEqual(errors[0]!.params, { field: 'mcp', harness: 'claude' });

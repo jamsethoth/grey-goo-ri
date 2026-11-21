@@ -65,10 +65,15 @@ const FORMS: Record<string, Edit> = {
   'a Vertex whose own Agent keys name its Agent': (source) => {
     const { red } = source.flows.default.ticket.vertices;
     exampleSource.putAt(red, ['use']);
-    Object.assign(red, { harness: 'fake', persona: 'implementer.md', access: 'workspace-write' });
+    exampleSource.putAt(red, ['harness'], 'fake');
+    exampleSource.putAt(red, ['persona'], 'implementer.md');
+    exampleSource.putAt(red, ['access'], 'workspace-write');
   },
-  'an Agent that names its model, effort and network': (source) =>
-    Object.assign(source.agents.implementer, { model: 'a-model', effort: 'high', network: false }),
+  'an Agent that names its model, effort and network': (source) => {
+    exampleSource.putAt(source.agents.implementer, ['model'], 'a-model');
+    exampleSource.putAt(source.agents.implementer, ['effort'], 'high');
+    exampleSource.putAt(source.agents.implementer, ['network'], false);
+  },
   'a stop Claim token with no comment': (source) =>
     exampleSource.putAt(source.procedures['tests-fail'].claimTokens.blocked, ['comment']),
   'an await-approval Action': (source) => {

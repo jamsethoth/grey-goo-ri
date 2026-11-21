@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as referencePaths from '../../lib/reference-paths.ts';
 import * as validate from '../../lib/validate/index.ts';
 import * as report from '../../lib/validate/report.ts';
 import * as exampleSource from '../support/example-source.ts';
@@ -505,9 +506,10 @@ test("a Vertex's maxVisits is an unknown key: its Bound is max, as on an edge", 
 });
 
 // The configuration keys #229 renamed: a Source still written with an old key fails admission as any unknown key does.
-const oldKeyOf = (action: Record<string, unknown>, oldKey: string, newKey: string) => {
-  action[oldKey] = action[newKey] ?? action[oldKey];
-  delete action[newKey];
+const oldKeyOf = (action: unknown, oldKey: string, newKey: string) => {
+  assert.ok(referencePaths.isRecord(action));
+  exampleSource.putAt(action, [oldKey], action[newKey] ?? action[oldKey]);
+  exampleSource.putAt(action, [newKey]);
 };
 const RENAMED_KEYS: [string, (config: exampleSource.Source) => unknown, string][] = [
   [
