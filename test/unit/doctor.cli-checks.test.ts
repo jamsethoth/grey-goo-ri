@@ -217,6 +217,34 @@ test('gg doctor names the exit of a claude --version or --help that fails having
   assert.ok(help.message.endsWith('claude --help exited 1') && !help.message.includes('no longer'), help.message);
 });
 
+// Each way a command ends printing nothing, and the reason its check names.
+const SILENT_ENDINGS: ['hangs' | 'fails' | 'killed', string][] = [
+  ['hangs', 'timed out'],
+  ['fails', 'exited 1'],
+  ['killed', 'ended by SIGKILL'],
+];
+
+// #460: a cheap command is named by its whole argv, and a POSIX crash names its signal, over every cheap argv and
+// every silent ending; a failed --help claims no change to its --bare line.
+test('gg doctor names a failed claude auth status whole and a cheap command ended by a signal', async () => {
+  const unnamed: string[] = [];
+  for (const argv of recordedCli.CHEAP_ARGVS)
+    for (const [ending, reason] of SILENT_ENDINGS) {
+      const { checks } = await claude
+        .createCli(recordedCli.recordedCli({ [ending]: argv[0] }))
+        .doctor({ probe: false });
+      const expected = `claude ${argv.join(' ')} ${reason}`;
+      if (!checks.some(({ message }) => message.endsWith(expected) && !message.includes('no longer')))
+        unnamed.push(expected);
+    }
+  assert.deepEqual(unnamed, []);
+});
+
+// D7 A of #427: the recorded CLI's hangs and fails match only when a case sets them.
+test('the recorded CLI has no answer for an empty argv when no case sets hangs or fails', async () => {
+  await assert.rejects(recordedCli.recordedCli().launch({ command: 'claude', args: [] }), /has no answer/);
+});
+
 // V1, ADR 0014: each state of the CLI a cheap check fails, by what fails.
 const FAILING_CLI = CLI_STATES.filter(([, state]) => Boolean(state.missing || state.loggedOut || state.version));
 
