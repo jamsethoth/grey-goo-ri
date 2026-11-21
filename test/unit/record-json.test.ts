@@ -516,6 +516,11 @@ test('an intent naming an effect gg does not know still loads, holding any form 
     loads('ticket', withPayload(index, payload, 'teleport'), `an unknown effect holding ${effect}'s payload`);
 });
 
+test('an intent naming an effect gg does not know, with no payload, is a corrupt row naming its payload', () => {
+  const [{ index }] = INTENTS;
+  assert.equal(outcomeOf(withPayload(index, null, 'teleport')), `its writeAheadLog[${index}].payload is not an object`);
+});
+
 test('RecordCorruptError builds from each argument form it takes, the base three-argument one included', () => {
   const base = ['rows#ticket-7', 'its flow is not a string', '{}'] as const;
   const forms: [string, () => recordJson.RecordCorruptError, number, string | undefined][] = [

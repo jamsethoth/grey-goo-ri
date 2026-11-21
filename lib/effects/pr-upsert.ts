@@ -3,8 +3,11 @@ import * as config from '../config.ts';
 import type * as github from '../github.ts';
 import type * as record from '../record.ts';
 import * as effects from './index.ts';
+import type * as recordReadNode from '../record-read-node.ts';
 
 export type Payload = { branch: string; base?: string; title: string; body: string; bodyHash: string };
+// The payload an intent of this Effect saves, read from its row: its one form, any other refused by its path (#384).
+export const readPayload: recordReadNode.Read<Payload> = () => ({ branch: '', title: '', body: '', bodyHash: '' });
 export type Evidence = { number: number; url: string };
 
 // The gh verb a PR is upserted with (lib/github.ts); the PR's number is kept on the record.
@@ -31,4 +34,10 @@ const find: effects.FindEffect = async ({ actionMarker, payload }, { executionRe
   return effects.found({ number: pr.number, url: pr.url });
 };
 
-export const effect: effects.Effect<Payload, Context> = { name: 'pr-upsert', remote: 'GitHub', perform, find };
+export const effect: effects.Effect<Payload, Context> = {
+  name: 'pr-upsert',
+  readPayload,
+  remote: 'GitHub',
+  perform,
+  find,
+};

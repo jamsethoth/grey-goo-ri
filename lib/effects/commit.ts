@@ -2,8 +2,11 @@
 import type * as record from '../record.ts';
 import type * as writeAhead from '../write-ahead.ts';
 import * as effects from './index.ts';
+import type * as recordReadNode from '../record-read-node.ts';
 
 export type Payload = { message: string; tree: string; parent: string };
+// The payload an intent of this Effect saves, read from its row: its one form, any other refused by its path (#384).
+export const readPayload: recordReadNode.Read<Payload> = () => ({ message: '', tree: '', parent: '' });
 // A commit with nothing to commit saves a null sha.
 export type Evidence = { sha: string | null };
 
@@ -63,7 +66,14 @@ const proves: NonNullable<effects.Effect<Payload, Context>['proves']> = async (
   return now.head === parent && now.index === tree && now.tree === tree;
 };
 
-export const effect: effects.Effect<Payload, Context> = { name: 'commit', remote: null, perform, find, proves };
+export const effect: effects.Effect<Payload, Context> = {
+  name: 'commit',
+  readPayload,
+  remote: null,
+  perform,
+  find,
+  proves,
+};
 
 // The last commit gg made, by its marker and sha, or undefined before its first: the branch must still be at its sha.
 // A commit with nothing to commit saves a null sha.

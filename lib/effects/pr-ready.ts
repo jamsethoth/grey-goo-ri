@@ -6,8 +6,11 @@ import * as integrity from '../integrity.ts';
 import type * as locks from '../locks.ts';
 import type * as record from '../record.ts';
 import type * as effects from './index.ts';
+import type * as recordReadNode from '../record-read-node.ts';
 
 export type Payload = { number: number; sha: string | null; tree: string | null };
+// The payload an intent of this Effect saves, read from its row: its one form, any other refused by its path (#384).
+export const readPayload: recordReadNode.Read<Payload> = () => ({ number: 0, sha: null, tree: null });
 // Marking a PR ready leaves nothing of its own to find it by.
 export type Evidence = Record<string, never>;
 
@@ -60,6 +63,7 @@ const perform: effects.Effect<Payload, Context>['perform'] = async (context, pla
 
 export const effect: effects.Effect<Payload, Context> = {
   name: 'pr-ready',
+  readPayload,
   remote: 'GitHub',
   perform,
   repeatable: true,

@@ -5,6 +5,7 @@ import type * as record from '../record.ts';
 import * as marker from '../marker.ts';
 import * as writeAhead from '../write-ahead.ts';
 import * as effects from './index.ts';
+import type * as recordReadNode from '../record-read-node.ts';
 
 export type Evidence = { ref: string; commit: string };
 
@@ -17,6 +18,14 @@ export interface Payload {
   parent: string;
   left: integrity.WorktreeSnapshot;
 }
+// The payload an intent of this Effect saves, read from its row: its one form, any other refused by its path (#384).
+export const readPayload: recordReadNode.Read<Payload> = () => ({
+  ref: '',
+  commit: '',
+  tree: '',
+  parent: '',
+  left: { head: '', index: '', tree: '' },
+});
 
 // The git verbs a Rescue Ref is made with (lib/git.ts).
 export interface Context {
@@ -65,7 +74,14 @@ const proves: NonNullable<effects.Effect<Payload, Context>['proves']> = async (
   return now.head === left.head && now.index === left.index && now.tree === left.tree;
 };
 
-export const effect: effects.Effect<Payload, Context> = { name: 'rescue', remote: null, perform, find, proves };
+export const effect: effects.Effect<Payload, Context> = {
+  name: 'rescue',
+  readPayload,
+  remote: null,
+  perform,
+  find,
+  proves,
+};
 
 // The ref and commit an unfinished rescue intends. Its intent comes before its ref, so a caller that could run before
 // the ref was made asks git whether it holds that commit.

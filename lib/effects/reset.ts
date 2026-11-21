@@ -5,6 +5,7 @@ import type * as record from '../record.ts';
 import type * as visit from '../visit.ts';
 import type * as writeAhead from '../write-ahead.ts';
 import * as effects from './index.ts';
+import type * as recordReadNode from '../record-read-node.ts';
 
 export type Evidence = { head: string };
 
@@ -16,6 +17,11 @@ export interface Payload {
   untracked?: integrityModule.RollbackSet;
   left?: integrityModule.WorktreeSnapshot & { files?: integrityModule.UntrackedFiles };
 }
+// The payload an intent of this Effect saves, read from its row: its one form, any other refused by its path (#384).
+export const readPayload: recordReadNode.Read<Payload> = () => ({
+  baseline: '',
+  history: { kind: 'rescued', text: '' },
+});
 
 // The git verbs a reset is made with and its open intent's states are read with (lib/git.ts).
 export interface ResetGit {
@@ -112,7 +118,7 @@ const proves: NonNullable<effects.Effect<Payload, Context>['proves']> = async (
   { git, integrity },
 ) => (await resetState(worktree, payload as Payload, git, integrity)) !== null;
 
-export const effect: effects.Effect<Payload, Context> = { name: 'reset', remote: null, perform, proves };
+export const effect: effects.Effect<Payload, Context> = { name: 'reset', readPayload, remote: null, perform, proves };
 
 // The open reset intents of an Execution, which Reconciliation finishes before anything else.
 export const openResets = (

@@ -1,13 +1,22 @@
 // The label Effect: labels added to and removed from the Ticket's issue. setLabels never throws, so it is not remote:
 // a write that does not land is handled by one of two policies its caller chooses (keepOpen, recordAndGoOn).
+import type * as approvalAction from '../approval-action.ts';
 import type * as github from '../github.ts';
 import * as labels from '../labels.ts';
 import type * as record from '../record.ts';
+import type * as recordReadNode from '../record-read-node.ts';
 import * as effects from './index.ts';
 
 export type Payload = { ticket: number; add: string[]; remove: string[] };
 // Whether the write landed: { ok: false } proves nothing (writeAhead.evidenceOf).
 export type Evidence = { ok: boolean };
+// The payload a label intent saves, read from its row: its own form or a consumed Decision's, any other refused by its
+// path as 'a label payload' (#384).
+export const readPayload: recordReadNode.Read<Payload | approvalAction.Consumption> = () => ({
+  ticket: 0,
+  add: [],
+  remove: [],
+});
 
 // The gh verb labels are written with, and where it reports a write that failed (lib/github.ts).
 export interface Context {
@@ -17,7 +26,7 @@ export interface Context {
   events: github.LabelReport['ev'];
 }
 
-type LabelEffect = effects.Effect<Payload, Context>;
+type LabelEffect = effects.Effect<Payload, Context, Payload | approvalAction.Consumption>;
 
 // The labels the issue shows now, as Reconciliation read them.
 const find: effects.FindEffect = async ({ payload }, { issueLabels }) => {
@@ -31,6 +40,7 @@ const find: effects.FindEffect = async ({ payload }, { issueLabels }) => {
 // Writes the labels and reports whether the write landed; setLabels has logged a write that did not, with its Event.
 const labelEffect = (failed: ((payload: Payload) => Error) | null): LabelEffect => ({
   name: 'label',
+  readPayload,
   remote: null,
   find,
   perform: async ({ gh, cwd, log, events }, payload) => {

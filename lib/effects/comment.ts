@@ -1,8 +1,15 @@
 // The comment Effect: a comment on an issue or PR whose body carries its Action Marker.
 import type * as record from '../record.ts';
 import * as effects from './index.ts';
+import type * as recordReadNode from '../record-read-node.ts';
 
 export type Payload = { target: { kind: string; number: number }; body: string; bodyHash: string };
+// The payload an intent of this Effect saves, read from its row: its one form, any other refused by its path (#384).
+export const readPayload: recordReadNode.Read<Payload> = () => ({
+  target: { kind: '', number: 0 },
+  body: '',
+  bodyHash: '',
+});
 export type Evidence = { id: number };
 
 // The gh verb a comment is posted with (lib/github.ts).
@@ -23,7 +30,13 @@ const find: effects.FindEffect = async ({ actionMarker, payload }, { gh, cwd }) 
   return posted ? effects.found({ id: posted.id }) : effects.ABSENT;
 };
 
-export const effect: effects.Effect<Payload, Context> = { name: 'comment', remote: 'GitHub', perform, find };
+export const effect: effects.Effect<Payload, Context> = {
+  name: 'comment',
+  readPayload,
+  remote: 'GitHub',
+  perform,
+  find,
+};
 
 // The ids of the comments this Execution posted, as its write-ahead log recorded them.
 export function postedIds(executionRecord: Pick<record.ExecutionRecord, 'writeAheadLog'>): number[] {

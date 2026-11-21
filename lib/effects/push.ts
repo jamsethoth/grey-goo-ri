@@ -1,8 +1,11 @@
 // The push Effect: the commit the record proves checked, pushed to its branch on origin.
 import type * as record from '../record.ts';
 import * as effects from './index.ts';
+import type * as recordReadNode from '../record-read-node.ts';
 
 export type Payload = { branch: string; sha: string };
+// The payload an intent of this Effect saves, read from its row: its one form, any other refused by its path (#384).
+export const readPayload: recordReadNode.Read<Payload> = () => ({ branch: '', sha: '' });
 export type Evidence = { remoteSha: string };
 
 // The git verbs a push is made with (lib/git.ts).
@@ -35,4 +38,4 @@ const find: effects.FindEffect = async ({ actionMarker, payload }, { executionRe
   return effects.ABSENT;
 };
 
-export const effect: effects.Effect<Payload, Context> = { name: 'push', remote: 'origin', perform, find };
+export const effect: effects.Effect<Payload, Context> = { name: 'push', readPayload, remote: 'origin', perform, find };
