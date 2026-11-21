@@ -6,7 +6,8 @@ import type * as effects from './effects/index.ts';
 import type * as integrity from './integrity.ts';
 import type * as events from './events.ts';
 import type * as record from './record.ts';
-import type * as recordReadNode from './record-read-node.ts';
+import * as recordReadNode from './record-read-node.ts';
+import * as recordReadVisit from './record-read-visit.ts';
 import type * as visit from './visit.ts';
 
 // What an intent saves ahead of its effect: an Effect's payload (lib/effects/), a consumed Decision's, or an agent
@@ -16,9 +17,12 @@ export type CallPayload = { baseline: integrity.IntegrityBaseline; containment?:
 // or `none`, an open string (#128 adds `cgroup`). A call with none saved is uncontained (N1).
 export type CallContainment = { kind: string };
 // The payload an agent call's intent saves, read from its row: its baseline, any other form refused by its path (#384).
-export const readCallPayload: recordReadNode.Read<CallPayload> = () => ({
-  baseline: { head: '', own: { head: '', index: '', tree: '' }, idle: {}, untracked: {}, tests: {} },
-});
+export const readCallPayload: recordReadNode.Read<CallPayload> = recordReadNode.object((field, has) => ({
+  baseline: recordReadVisit.integrityBaseline(field('baseline')),
+  ...(has('containment') && {
+    containment: recordReadNode.object((kind) => ({ kind: recordReadNode.text(kind('kind')) }))(field('containment')),
+  }),
+}));
 export type Payload = effects.Payload | approvalAction.Consumption | CallPayload;
 
 // What a side effect leaves as Evidence: an Effect's own (effects.Evidence: a sha, an id, a url), or an agent call's
@@ -50,6 +54,11 @@ export const entryOf = (
   evidence,
   time: new Date().toISOString(),
 });
+
+// An entry's payload as the reader of its effect gives it, so its reader holds it typed by that effect, never cast
+// (#384).
+export const payloadOf = <Value>(entry: Pick<WriteAheadEntry, 'payload'>, read: recordReadNode.Read<Value>): Value =>
+  read({ value: entry.payload, path: 'payload' });
 
 // A marker's first entry at a step.
 export const findEntry = (

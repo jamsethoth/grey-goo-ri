@@ -1,15 +1,17 @@
 // The comment Effect: a comment on an issue or PR whose body carries its Action Marker.
 import type * as record from '../record.ts';
+import * as recordReadNode from '../record-read-node.ts';
+import * as writeAhead from '../write-ahead.ts';
 import * as effects from './index.ts';
-import type * as recordReadNode from '../record-read-node.ts';
 
 export type Payload = { target: { kind: string; number: number }; body: string; bodyHash: string };
 // The payload an intent of this Effect saves, read from its row: its one form, any other refused by its path (#384).
-export const readPayload: recordReadNode.Read<Payload> = () => ({
-  target: { kind: '', number: 0 },
-  body: '',
-  bodyHash: '',
-});
+const { text, count, object } = recordReadNode;
+export const readPayload: recordReadNode.Read<Payload> = object((field) => ({
+  target: object((target) => ({ kind: text(target('kind')), number: count(target('number')) }))(field('target')),
+  body: text(field('body')),
+  bodyHash: text(field('bodyHash')),
+}));
 export type Evidence = { id: number };
 
 // The gh verb a comment is posted with (lib/github.ts).
@@ -22,8 +24,9 @@ const perform: effects.Effect<Payload, Context>['perform'] = async ({ gh, cwd },
   id: (await gh.comment(target.number, body, cwd)).id,
 });
 
-const find: effects.FindEffect = async ({ actionMarker, payload }, { gh, cwd }) => {
-  const { target } = payload as Payload;
+const find: effects.FindEffect = async (entry, { gh, cwd }) => {
+  const { actionMarker } = entry;
+  const { target } = writeAhead.payloadOf(entry, readPayload);
   const posted = (await gh!.comments(target.number, cwd)).find((comment) =>
     effects.carries(comment.body, actionMarker),
   );

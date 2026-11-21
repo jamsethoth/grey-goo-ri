@@ -3,9 +3,10 @@
 import * as integrityModule from '../integrity.ts';
 import type * as record from '../record.ts';
 import type * as visit from '../visit.ts';
-import type * as writeAhead from '../write-ahead.ts';
+import * as recordReadNode from '../record-read-node.ts';
+import * as recordReadVisit from '../record-read-visit.ts';
+import * as writeAhead from '../write-ahead.ts';
 import * as effects from './index.ts';
-import type * as recordReadNode from '../record-read-node.ts';
 
 export type Evidence = { head: string };
 
@@ -18,10 +19,32 @@ export interface Payload {
   left?: integrityModule.WorktreeSnapshot & { files?: integrityModule.UntrackedFiles };
 }
 // The payload an intent of this Effect saves, read from its row: its one form, any other refused by its path (#384).
-export const readPayload: recordReadNode.Read<Payload> = () => ({
-  baseline: '',
-  history: { kind: 'rescued', text: '' },
-});
+const { text, list, object } = recordReadNode;
+const { historyItem, untrackedFiles } = recordReadVisit;
+const texts = list(text);
+const rollbackSet = object((field, has) => ({
+  files: untrackedFiles(field('files')),
+  ...(has('within') && {
+    within: object((within, hasKey) => ({
+      ...(hasKey('paths') && { paths: texts(within('paths')) }),
+      ...(hasKey('globs') && { globs: texts(within('globs')) }),
+      ...(hasKey('exclude') && { exclude: texts(within('exclude')) }),
+    }))(field('within')),
+  }),
+}));
+export const readPayload: recordReadNode.Read<Payload> = object((field, has) => ({
+  baseline: text(field('baseline')),
+  history: historyItem(field('history')),
+  ...(has('untracked') && { untracked: rollbackSet(field('untracked')) }),
+  ...(has('left') && {
+    left: object((left, hasKey) => ({
+      head: text(left('head')),
+      tree: text(left('tree')),
+      index: text(left('index')),
+      ...(hasKey('files') && { files: untrackedFiles(left('files')) }),
+    }))(field('left')),
+  }),
+}));
 
 // The git verbs a reset is made with and its open intent's states are read with (lib/git.ts).
 export interface ResetGit {
@@ -112,11 +135,8 @@ async function onlyRestored(
 }
 
 // The worktree in any state the open reset can be finished from.
-const proves: NonNullable<effects.Effect<Payload, Context>['proves']> = async (
-  { payload },
-  worktree,
-  { git, integrity },
-) => (await resetState(worktree, payload as Payload, git, integrity)) !== null;
+const proves: NonNullable<effects.Effect<Payload, Context>['proves']> = async (entry, worktree, { git, integrity }) =>
+  (await resetState(worktree, writeAhead.payloadOf(entry, readPayload), git, integrity)) !== null;
 
 export const effect: effects.Effect<Payload, Context> = { name: 'reset', readPayload, remote: null, perform, proves };
 
@@ -137,7 +157,7 @@ export async function finish(
     database,
   }: { git: ResetGit; integrity: Integrity; database: Pick<record.StateDatabase, 'evidence'> },
 ): Promise<'held' | 'finished'> {
-  const payload = entry.payload as Payload;
+  const payload = writeAhead.payloadOf(entry, readPayload);
   let state = await resetState(executionRecord.worktree, payload, git, integrity);
   if (state === 'left' || state === 'cleaning') {
     await git.resetTo(executionRecord.worktree, payload.baseline);

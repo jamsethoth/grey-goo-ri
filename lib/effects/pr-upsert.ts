@@ -2,12 +2,20 @@
 import * as config from '../config.ts';
 import type * as github from '../github.ts';
 import type * as record from '../record.ts';
+import * as recordReadNode from '../record-read-node.ts';
+import * as writeAhead from '../write-ahead.ts';
 import * as effects from './index.ts';
-import type * as recordReadNode from '../record-read-node.ts';
 
 export type Payload = { branch: string; base?: string; title: string; body: string; bodyHash: string };
 // The payload an intent of this Effect saves, read from its row: its one form, any other refused by its path (#384).
-export const readPayload: recordReadNode.Read<Payload> = () => ({ branch: '', title: '', body: '', bodyHash: '' });
+const { text, object } = recordReadNode;
+export const readPayload: recordReadNode.Read<Payload> = object((field, has) => ({
+  branch: text(field('branch')),
+  ...(has('base') && { base: text(field('base')) }),
+  title: text(field('title')),
+  body: text(field('body')),
+  bodyHash: text(field('bodyHash')),
+}));
 export type Evidence = { number: number; url: string };
 
 // The gh verb a PR is upserted with (lib/github.ts); the PR's number is kept on the record.
@@ -24,8 +32,9 @@ const perform: effects.Effect<Payload, Context>['perform'] = async ({ record: ex
 };
 
 // A PR whose body was edited since is upserted again, so a finder never conflicts.
-const find: effects.FindEffect = async ({ actionMarker, payload }, { executionRecord, gh, cwd }) => {
-  const { branch, bodyHash } = payload as Payload;
+const find: effects.FindEffect = async (entry, { executionRecord, gh, cwd }) => {
+  const { actionMarker } = entry;
+  const { branch, bodyHash } = writeAhead.payloadOf(entry, readPayload);
   const listed = await gh!.findPr(branch, cwd);
   if (!listed) return effects.ABSENT;
   const pr = await gh!.viewPr(listed.number, cwd);

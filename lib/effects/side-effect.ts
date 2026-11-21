@@ -85,7 +85,8 @@ export async function sideEffect<Payload extends writeAhead.Payload, Context>(
       context.database.complete(executionRecord, actionMarker);
     return found;
   }
-  const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as Payload | undefined;
+  const intent = writeAhead.findEntry(executionRecord, actionMarker, 'intent');
+  const intended = intent && writeAhead.payloadOf(intent, effect.readPayload);
   if (!intended) context.database.intent(executionRecord, actionMarker, effect.name, payload);
   effectErrors.crashPoint(context, actionMarker, 'before-effect');
   const launched = intended ?? payload;
