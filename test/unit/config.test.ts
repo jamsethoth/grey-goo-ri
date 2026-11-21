@@ -54,9 +54,8 @@ test("a PinnedFlow's configuration is a Pinned Configuration", () => {
 });
 
 test('configHash changes with persona, vertex, command and testPaths changes and ignores key order', () => {
-  const example = exampleSource.config();
   const base = {
-    flow: example.flows.default,
+    flow: exampleSource.check(exampleSource.config()).flows.default!,
     files: Object.fromEntries(
       exampleSource.PERSONA_NAMES.map((name) => [name, sourceFile(exampleSource.fixtureText(name))]),
     ),
@@ -76,7 +75,7 @@ test('configHash changes with persona, vertex, command and testPaths changes and
   assert.notEqual(config.configHash(persona), hash, 'a Persona byte changes the hash');
 
   const vertex = structuredClone(base);
-  vertex.flow.ticket.vertices.reviewer.route.changes.max = 3;
+  exampleSource.putAt(vertex.flow.ticket.vertices.reviewer.route, ['changes', 'max'], 3);
   assert.notEqual(config.configHash(vertex), hash, 'a Vertex field changes the hash');
 
   const command = structuredClone(base);

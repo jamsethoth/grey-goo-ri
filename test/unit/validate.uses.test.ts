@@ -25,7 +25,8 @@ const FILE_SITES: Record<string, (source: exampleSource.Source) => void> = {
   'claimToken.comment on a stop token': (source) =>
     (source.procedures['tests-fail'].claimTokens.blocked.comment = PROBE),
   'agent.persona on an Agent': (source) => (source.agents.reviewer.persona = PROBE),
-  'agent.persona on a Vertex': (source) => (source.flows.default.ticket.vertices.red.persona = PROBE),
+  'agent.persona on a Vertex': (source) =>
+    exampleSource.putAt(source.flows.default.ticket.vertices.red, ['persona'], PROBE),
 };
 
 // The example's schemas, and the probe schema as a copy of red's.
@@ -80,8 +81,10 @@ test("the example Flow uses each file it names once: its Personas, then its Proc
 // stays out of it. Moved from config.test.ts with config.usedFiles.
 test('a Flow uses only the files of the Agents and Procedures its Vertices use', () => {
   const source = exampleSource.config();
-  source.agents.spare = { harness: 'fake', persona: 'spare-persona.md' };
-  source.procedures.spare = { actions: [{ id: 'pr', do: 'pr-upsert', body: 'spare-body.md' }] };
+  exampleSource.putAt(source.agents, ['spare'], { harness: 'fake', persona: 'spare-persona.md' });
+  exampleSource.putAt(source.procedures, ['spare'], {
+    actions: [{ id: 'pr', do: 'pr-upsert', body: 'spare-body.md' }],
+  });
   const { errors, uses } = exampleSource.check(source);
   assert.deepEqual(exampleSource.firedRules(errors), []);
   assert.deepEqual(
@@ -93,7 +96,7 @@ test('a Flow uses only the files of the Agents and Procedures its Vertices use',
 
 test('a Flow uses each command its Checks run, once, in the order its Vertices first use them', () => {
   const source = exampleSource.config();
-  source.commands = { ...source.commands, lint: 'npm run lint' };
+  exampleSource.putAt(source, ['commands'], { ...source.commands, lint: 'npm run lint' });
   source.procedures.publish.actions[0].command = 'lint';
   const { errors, uses } = exampleSource.check(source);
   assert.deepEqual(exampleSource.firedRules(errors), []);
@@ -124,7 +127,7 @@ test('a Flow uses the files and commands of Procedures named "2" then "1" in the
 // A user Flow that names a command the repository lacks is a misfit (Q21), however its Action is written, as before.
 test('a Flow uses a command named on an Action of any kind, beside the unknown key it is', () => {
   const source = exampleSource.config();
-  source.procedures.review.actions[0].command = 'lint';
+  exampleSource.putAt(source.procedures.review.actions, ['0', 'command'], 'lint');
   const { errors, uses } = exampleSource.check(source);
   assert.ok(errors.some(({ at, code }) => at === 'procedures.review.actions[0]' && code === 'unknown-key'));
   assert.deepEqual(uses.default?.commands, ['test', 'lint']);
@@ -133,7 +136,7 @@ test('a Flow uses a command named on an Action of any kind, beside the unknown k
 // gg doctor prints a held Flow as written (#305), so it is declared beside the Flows that resolve (#364, Q1 A).
 test('a Flow with a field of the wrong type gets no Resolved Flow, and is declared as written', () => {
   const source = exampleSource.config();
-  source.flows.default.ticket.vertices.publish.procedure = ['publish'];
+  exampleSource.putAt(source.flows.default.ticket.vertices.publish, ['procedure'], ['publish']);
   const { errors, flows, declared } = exampleSource.check(source);
   assert.ok(errors.some(({ code }) => code === 'undeclared-procedure'));
   assert.equal(flows.default, undefined);
@@ -143,7 +146,9 @@ test('a Flow with a field of the wrong type gets no Resolved Flow, and is declar
 // gg run pins a user Flow when the only error is an unused Procedure's misfit command, which it filters out (Q21).
 test("a Flow whose fields all hold their types resolves beside another Procedure's error", () => {
   const source = exampleSource.config();
-  source.procedures.spare = { actions: [{ id: 'lint', do: 'check', kind: 'command', command: 'lint' }] };
+  exampleSource.putAt(source.procedures, ['spare'], {
+    actions: [{ id: 'lint', do: 'check', kind: 'command', command: 'lint' }],
+  });
   const { errors, flows, declared } = exampleSource.check(source);
   assert.deepEqual(exampleSource.firedRules(errors), [
     { at: 'procedures.spare.actions[0]', code: 'undeclared-command' },

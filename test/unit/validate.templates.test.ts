@@ -64,7 +64,13 @@ test('a template path that steps into a list of objects is an error, as renderin
 
 test('a comment of a Procedure with no agent Action may not name the Agent', () => {
   const config = exampleSource.config();
-  config.procedures['base-check'].actions.push({ id: 'note', do: 'comment', target: 'ticket', body: 'note.md' });
+  const { actions } = config.procedures['base-check'];
+  exampleSource.putAt(actions, [String(actions.length)], {
+    id: 'note',
+    do: 'comment',
+    target: 'ticket',
+    body: 'note.md',
+  });
   const { errors } = exampleSource.check(
     config,
     exampleSource.schemas(),

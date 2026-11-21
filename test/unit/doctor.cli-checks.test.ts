@@ -42,11 +42,15 @@ const sources = ({
 // writes it: seven Vertices on one CLI.
 function claudeExample() {
   const source = exampleSource.config();
-  source.files = Object.fromEntries(
-    exampleSource.WRITTEN_NAMES.filter((name) => name !== 'gg.json').map((name) => [
-      name,
-      file(exampleSource.fixtureText(name)),
-    ]),
+  exampleSource.putAt(
+    source,
+    ['files'],
+    Object.fromEntries(
+      exampleSource.WRITTEN_NAMES.filter((name) => name !== 'gg.json').map((name) => [
+        name,
+        file(exampleSource.fixtureText(name)),
+      ]),
+    ),
   );
   for (const agent of Object.values<Record<string, unknown>>(source.agents)) agent.harness = 'claude';
   return source;

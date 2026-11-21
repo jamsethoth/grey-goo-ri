@@ -29,48 +29,61 @@ const scoreRow =
   (condition: unknown): Edit =>
   (source, files) => {
     withScore(source, files);
-    source.procedures.review.passed.unshift({ when: { 'response.score': condition }, outcome: 'retest' });
+    const { review } = source.procedures;
+    exampleSource.putAt(
+      review,
+      ['passed'],
+      [{ when: { 'response.score': condition }, outcome: 'retest' }, ...review.passed],
+    );
   };
 
 // Each form a copied value's type allows that the example lacks, in a configuration with no error.
 const FORMS: Record<string, Edit> = {
-  'an Edge with no max': (source) => (source.flows.default.ticket.vertices.red.route.ok = { to: 'green' }),
+  'an Edge with no max': (source) =>
+    exampleSource.putAt(source.flows.default.ticket.vertices.red.route, ['ok'], { to: 'green' }),
   'an Edge to an end': (source) =>
-    (source.flows.default.ticket.vertices.red.route.ok = {
+    exampleSource.putAt(source.flows.default.ticket.vertices.red.route, ['ok'], {
       to: { end: 'needs-human' },
       max: 1,
       exhausted: { end: 'needs-human' },
     }),
-  'a Flow route that names a Vertex': (source) => (source.flows.default.ticket.routes.misscoped = 'senior-green'),
-  'a Vertex "*" route': (source) => (source.flows.default.ticket.vertices.red.route['*'] = { end: 'needs-human' }),
+  'a Flow route that names a Vertex': (source) =>
+    exampleSource.putAt(source.flows.default.ticket.routes, ['misscoped'], 'senior-green'),
+  'a Vertex "*" route': (source) =>
+    exampleSource.putAt(source.flows.default.ticket.vertices.red.route, ['*'], { end: 'needs-human' }),
   // Only blocked, of the Outcomes the Flow's "*" routes, is not an engine Outcome, so routing it leaves the engine's
   // own Outcomes to the engine default.
   'an engine default route': (source) => {
     const { routes } = source.flows.default.ticket;
-    delete routes['*'];
-    routes.blocked = { end: 'needs-human' };
+    exampleSource.putAt(routes, ['*']);
+    exampleSource.putAt(routes, ['blocked'], { end: 'needs-human' });
   },
   'a Vertex exhausted that names a Vertex': (source) =>
-    (source.flows.default.ticket.vertices['senior-red'].exhausted = 'publish'),
+    exampleSource.putAt(source.flows.default.ticket.vertices['senior-red'], ['exhausted'], 'publish'),
   'a Vertex that narrows the access of the Agent it uses': (source) =>
-    (source.flows.default.ticket.vertices.red.access = 'read-only'),
+    exampleSource.putAt(source.flows.default.ticket.vertices.red, ['access'], 'read-only'),
   'a Vertex whose own Agent keys name its Agent': (source) => {
     const { red } = source.flows.default.ticket.vertices;
-    delete red.use;
+    exampleSource.putAt(red, ['use']);
     Object.assign(red, { harness: 'fake', persona: 'implementer.md', access: 'workspace-write' });
   },
   'an Agent that names its model, effort and network': (source) =>
     Object.assign(source.agents.implementer, { model: 'a-model', effort: 'high', network: false }),
-  'a stop Claim token with no comment': (source) => delete source.procedures['tests-fail'].claimTokens.blocked.comment,
+  'a stop Claim token with no comment': (source) =>
+    exampleSource.putAt(source.procedures['tests-fail'].claimTokens.blocked, ['comment']),
   'an await-approval Action': (source) => {
-    source.procedures.approval = { actions: [{ id: 'ask', do: 'await-approval' }] };
-    source.flows.default.ticket.vertices.approve = {
+    exampleSource.putAt(source.procedures, ['approval'], { actions: [{ id: 'ask', do: 'await-approval' }] });
+    exampleSource.putAt(source.flows.default.ticket.vertices, ['approve'], {
       procedure: 'approval',
       route: { approved: { end: 'needs-human' }, rejected: { end: 'needs-replan' } },
-    };
+    });
   },
   'a failed table with a row': (source) =>
-    (source.procedures.implement.failed = [{ when: { 'response.reason': 'misscoped' }, outcome: 'bad-test' }]),
+    exampleSource.putAt(
+      source.procedures.implement,
+      ['failed'],
+      [{ when: { 'response.reason': 'misscoped' }, outcome: 'bad-test' }],
+    ),
   'an integer rule condition': scoreRow(3),
   ...Object.fromEntries(
     procedures.OPERATORS.map((operator) => [`a ${operator} rule condition`, scoreRow({ [operator]: 2 })]),
@@ -242,7 +255,8 @@ const REFUSED: Record<string, [Edit, exampleSource.FiredRule]> = {
     { at: 'flows.default.ticket.vertices.senior-green.route.bad-test', code: 'not-a-positive-integer' },
   ],
   'an Edge with max and no exhausted target': [
-    (source) => delete source.flows.default.ticket.vertices['senior-green'].route['bad-test'].exhausted,
+    (source) =>
+      exampleSource.putAt(source.flows.default.ticket.vertices['senior-green'].route['bad-test'], ['exhausted']),
     { at: 'flows.default.ticket.vertices.senior-green.route.bad-test', code: 'max-without-exhausted' },
   ],
   'a route to an undeclared Vertex': [
@@ -258,11 +272,11 @@ const REFUSED: Record<string, [Edit, exampleSource.FiredRule]> = {
     { at: 'procedures.review.passed[0]', code: 'invalid-rule-condition' },
   ],
   'a Vertex access that is not a Permission Intent': [
-    (source) => (source.flows.default.ticket.vertices.red.access = 'read-write'),
+    (source) => exampleSource.putAt(source.flows.default.ticket.vertices.red, ['access'], 'read-write'),
     { at: 'flows.default.ticket.vertices.red.access', code: 'unknown-permission-intent' },
   ],
   'an empty rule condition': [
-    (source) => (source.procedures['tests-fail'].stopped[0].when['response.reason'] = {}),
+    (source) => exampleSource.putAt(source.procedures['tests-fail'].stopped[0].when, ['response.reason'], {}),
     { at: 'procedures.tests-fail.stopped[0]', code: 'invalid-rule-condition' },
   ],
 };

@@ -13,7 +13,11 @@ const MALFORMED: [string, (config: exampleSource.Source) => void, exampleSource.
   [
     'a Decision a Decide Label cannot carry',
     (config) => {
-      config.procedures.publish.actions.push({ id: 'ask', do: 'await-approval', decisions: ['Approved', 'not ok'] });
+      exampleSource.putAt(config.procedures.publish.actions, ['3'], {
+        id: 'ask',
+        do: 'await-approval',
+        decisions: ['Approved', 'not ok'],
+      });
     },
     [
       { at: 'procedures.publish.actions[3]', code: 'invalid-name' },
@@ -23,7 +27,7 @@ const MALFORMED: [string, (config: exampleSource.Source) => void, exampleSource.
   [
     'a Decision the engine reserves',
     (config) => {
-      config.procedures.publish.actions.push({
+      exampleSource.putAt(config.procedures.publish.actions, ['3'], {
         id: 'ask',
         do: 'await-approval',
         decisions: ['failed', 'needs-human', 'harness-timeout'],
@@ -63,11 +67,11 @@ for (const [what, mutate, errors] of MALFORMED) {
 // The example with a Vertex that asks a human, through the Action `ask`.
 function askingConfig(ask: Record<string, unknown> = { id: 'ask', do: 'await-approval' }) {
   const config = exampleSource.config();
-  config.procedures.approval = { actions: [ask] };
-  config.flows.default.ticket.vertices.approve = {
+  exampleSource.putAt(config.procedures, ['approval'], { actions: [ask] });
+  exampleSource.putAt(config.flows.default.ticket.vertices, ['approve'], {
     procedure: 'approval',
     route: { approved: { end: 'needs-human' }, rejected: { end: 'needs-replan' } },
-  };
+  });
   return config;
 }
 
@@ -79,7 +83,7 @@ test("await-approval's decisions default to approved and rejected, and are the P
 
 test('a declared Decision that no route takes is an unrouted Outcome', () => {
   const config = askingConfig({ id: 'ask', do: 'await-approval', decisions: ['approved', 'deferred'] });
-  delete config.flows.default.ticket.routes['*'];
+  exampleSource.putAt(config.flows.default.ticket.routes, ['*']);
   const { errors } = exampleSource.check(config);
   assert.ok(
     errors.some(({ at, code }) => at === `${VERTICES}.approve` && code === 'unrouted-outcome'),
@@ -90,7 +94,7 @@ test('a declared Decision that no route takes is an unrouted Outcome', () => {
 // Both halves of a renamed Decision wait only on their own Vertex, so they show beside an unrelated error (#436, D3 C).
 test('a renamed Decision reports its dead key and its unrouted new name beside an unrelated error', () => {
   const config = askingConfig({ id: 'ask', do: 'await-approval', decisions: ['approved', 'deferred'] });
-  delete config.flows.default.ticket.routes['*'];
+  exampleSource.putAt(config.flows.default.ticket.routes, ['*']);
   config.flows.default.actionCap = -1;
   const { errors } = exampleSource.check(config);
   const fired = (at: string, code: string) => errors.some((problem) => problem.at === at && problem.code === code);
@@ -101,7 +105,14 @@ test('a renamed Decision reports its dead key and its unrouted new name beside a
 
 test('a failing Check before an await-approval gives failed beside the Decisions', () => {
   const config = askingConfig();
-  config.procedures.approval!.actions.unshift({ id: 'gate', do: 'check', kind: 'command', command: 'test' });
+  exampleSource.putAt(
+    config.procedures,
+    ['approval', 'actions'],
+    [
+      { id: 'gate', do: 'check', kind: 'command', command: 'test' },
+      { id: 'ask', do: 'await-approval' },
+    ],
+  );
   const { flows, errors } = exampleSource.check(config);
   assert.deepEqual(errors, []);
   assert.deepEqual(flows.default.ticket.vertices.approve.outcomes, ['approved', 'rejected', 'failed']);
@@ -124,14 +135,16 @@ test('the Resolved Flow names the Await and Decide Labels under the configured p
 
 test('a passed table beside an await-approval never applies: a Decision is the Outcome', () => {
   const config = askingConfig();
-  config.procedures.approval!.passed = [{ when: { pass: 1 }, outcome: 'never' }];
+  exampleSource.putAt(config.procedures, ['approval', 'passed'], [{ when: { pass: 1 }, outcome: 'never' }]);
   const found = exampleSource.check(config).errors.map(({ at, code }) => ({ at, code }));
   assert.deepEqual(found, [{ at: 'procedures.approval.passed', code: 'table-never-applies' }]);
 });
 
 test('a Decision named after an Object.prototype property is an Outcome like any other', () => {
   const config = askingConfig({ id: 'ask', do: 'await-approval', decisions: ['constructor', 'rejected'] });
-  config.flows.default.ticket.vertices.approve.route = { constructor: { end: 'needs-human' } };
+  exampleSource.putAt(config.flows.default.ticket.vertices, ['approve', 'route'], {
+    constructor: { end: 'needs-human' },
+  });
   const { flows, errors } = exampleSource.check(config);
   assert.deepEqual(errors, []);
   assert.deepEqual(flows.default.ticket.vertices.approve.outcomes, ['constructor', 'rejected']);
@@ -149,15 +162,22 @@ test('a repeated Decision is reported', () => {
 
 test('otherwise beside an await-approval with no Check before it is reported: nothing can fail', () => {
   const config = askingConfig();
-  config.procedures.approval!.otherwise = 'approved';
+  exampleSource.putAt(config.procedures, ['approval', 'otherwise'], 'approved');
   const found = exampleSource.check(config).errors.map(({ at, code }) => ({ at, code }));
   assert.deepEqual(found, [{ at: 'procedures.approval.otherwise', code: 'invalid-otherwise' }]);
 });
 
 test('otherwise beside an await-approval with a Check before it names the failed Outcome, and is kept', () => {
   const config = askingConfig();
-  config.procedures.approval!.actions.unshift({ id: 'gate', do: 'check', kind: 'command', command: 'test' });
-  config.procedures.approval!.otherwise = 'rejected';
+  exampleSource.putAt(
+    config.procedures,
+    ['approval', 'actions'],
+    [
+      { id: 'gate', do: 'check', kind: 'command', command: 'test' },
+      { id: 'ask', do: 'await-approval' },
+    ],
+  );
+  exampleSource.putAt(config.procedures, ['approval', 'otherwise'], 'rejected');
   const { flows, errors } = exampleSource.check(config);
   assert.deepEqual(errors, []);
   assert.deepEqual(flows.default.ticket.vertices.approve.outcomes, ['approved', 'rejected']);

@@ -28,7 +28,7 @@ const AGENT_SITES: Record<string, (config: exampleSource.Source) => { site: Reco
   }),
   'an inline Vertex Agent': (config) => {
     const red = config.flows.default.ticket.vertices.red;
-    delete red.use;
+    exampleSource.putAt(red, ['use']);
     Object.assign(red, config.agents.implementer);
     return { site: red, at: `${VERTICES}.red` };
   },
@@ -53,9 +53,9 @@ for (const key of Object.keys(agentChecks.AGENT_FIELDS))
 
 test("an Agent with no persona is one error at the Agent, used or not, which a Vertex's own does not excuse", () => {
   const config = exampleSource.config();
-  delete config.agents.reviewer.persona;
-  config.flows.default.ticket.vertices.reviewer.persona = 'reviewer.md';
-  config.agents.spare = { harness: 'fake' };
+  exampleSource.putAt(config.agents.reviewer, ['persona']);
+  exampleSource.putAt(config.flows.default.ticket.vertices.reviewer, ['persona'], 'reviewer.md');
+  exampleSource.putAt(config.agents, ['spare'], { harness: 'fake' });
   const { errors } = exampleSource.check(config);
   assert.deepEqual(exampleSource.firedRules(errors), [
     { at: 'agents.reviewer', code: 'required-key-missing' },
@@ -67,7 +67,7 @@ test("an Agent with no persona is one error at the Agent, used or not, which a V
 test('an inline Vertex Agent with no persona is an error at the Vertex', () => {
   const config = exampleSource.config();
   const red = config.flows.default.ticket.vertices.red;
-  delete red.use;
+  exampleSource.putAt(red, ['use']);
   Object.assign(red, { harness: 'fake', access: 'workspace-write' });
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     { at: `${VERTICES}.red`, code: 'required-key-missing' },
@@ -76,7 +76,7 @@ test('an inline Vertex Agent with no persona is an error at the Vertex', () => {
 
 test("a Vertex may override its Agent's persona with another file", () => {
   const config = exampleSource.config();
-  config.flows.default.ticket.vertices.red.persona = 'reviewer.md';
+  exampleSource.putAt(config.flows.default.ticket.vertices.red, ['persona'], 'reviewer.md');
   const { errors, flows } = exampleSource.check(config);
   assert.deepEqual(errors, []);
   assert.equal(flows.default!.ticket.vertices.red!.agent!.persona, 'reviewer.md');
@@ -85,7 +85,7 @@ test("a Vertex may override its Agent's persona with another file", () => {
 test('an empty persona names no file, and a null one is only a null', () => {
   const config = exampleSource.config();
   config.agents.reviewer.persona = ' ';
-  config.agents.senior.persona = null;
+  exampleSource.putAt(config.agents.senior, ['persona'], null);
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     { at: 'agents.senior.persona', code: 'null-value' },
     { at: 'agents.reviewer.persona', code: 'file-not-named' },
@@ -156,8 +156,8 @@ for (const { form, timeouts, under, code } of TIMEOUTS_FORMS)
 
 test('timeouts of { stallMs, wallMs }, either left out, resolve into the Agent', () => {
   const config = exampleSource.config();
-  config.agents.implementer.timeouts = { stallMs: 60000, wallMs: 3600000 };
-  config.flows.default.ticket.vertices.green.timeouts = { wallMs: 7200000 };
+  exampleSource.putAt(config.agents.implementer, ['timeouts'], { stallMs: 60000, wallMs: 3600000 });
+  exampleSource.putAt(config.flows.default.ticket.vertices.green, ['timeouts'], { wallMs: 7200000 });
   const { errors, flows } = exampleSource.check(config);
   assert.deepEqual(errors, []);
   const { vertices } = flows.default!.ticket;
@@ -266,8 +266,8 @@ test('a read-only Claude Agent listing MCP servers is an error', () => {
 // The field is the Agent's but the Harness the Vertex's own, so the Vertex is where the two meet.
 test('a field its Agent lists, unsupported by the Harness its Vertex sets, is an error at the Vertex', () => {
   const config = exampleSource.config();
-  config.agents.implementer.mcp = ['github'];
-  config.flows.default.ticket.vertices.red.harness = 'limited';
+  exampleSource.putAt(config.agents.implementer, ['mcp'], ['github']);
+  exampleSource.putAt(config.flows.default.ticket.vertices.red, ['harness'], 'limited');
   const limited = { capabilities: { ...EXACT, mcp: 'unsupported' } };
   const { errors } = exampleSource.checkOn(config, { fake: {}, limited });
   assert.deepEqual(exampleSource.firedRules(errors), [{ at: `${VERTICES}.red`, code: 'unsupported-agent-field' }]);
@@ -278,7 +278,7 @@ test('a field its Agent lists, unsupported by the Harness its Vertex sets, is an
 test('an Agent writing no access still asks for read-only, which a Harness that only hints access refuses', () => {
   const config = exampleSource.config();
   config.agents.reviewer.harness = 'limited';
-  delete config.agents.reviewer.access;
+  exampleSource.putAt(config.agents.reviewer, ['access']);
   const limited = { capabilities: { ...EXACT, access: 'hint', network: 'unsupported' } };
   const { errors } = exampleSource.checkOn(config, { fake: {}, limited });
   assert.deepEqual(exampleSource.firedRules(errors), [
@@ -296,15 +296,17 @@ test('a Vertex whose Procedure recovers, on a Harness that cannot resume a Sessi
     return exampleSource.firedRules(exampleSource.checkOn(exampleSource.config(), harnesses).errors);
   };
   const config = exampleSource.config();
-  const vertices = Object.entries<Record<string, unknown>>(config.flows.default.ticket.vertices);
-  const recovers = (vertex: Record<string, unknown>) =>
-    config.procedures[vertex.procedure as string].recover !== undefined;
+  const recoveringProcedures = new Set(
+    Object.entries(config.procedures).flatMap(([name, procedure]) => ('recover' in procedure ? [name] : [])),
+  );
+  const vertices = Object.entries(config.flows.default.ticket.vertices);
+  const recovers = (vertex: { procedure: string }) => recoveringProcedures.has(vertex.procedure);
   const recovering = vertices
     .filter(([, vertex]) => recovers(vertex))
     .map(([id]) => ({ at: `${VERTICES}.${id}`, code: 'session-resume-unsupported' }));
   // The rule is not vacuous: some Vertices recover, and some that run an Agent do not.
   assert.ok(recovering.length > 0);
-  assert.ok(vertices.some(([, vertex]) => vertex.use !== undefined && !recovers(vertex)));
+  assert.ok(vertices.some(([, vertex]) => 'use' in vertex && !recovers(vertex)));
   assert.deepEqual(fired(false), recovering);
   assert.deepEqual(fired(true), []);
 });
