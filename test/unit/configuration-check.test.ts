@@ -564,12 +564,12 @@ test('an Execution Record a Run would resume whose Flow is gone is a gone-Flow r
   const checked = await checkOf(sources(repository, user), { commonDir });
   assert.deepEqual(errorLines(checked), []);
   assert.deepEqual(
-    checked.goneFlowRecords().map((problem) => problem.at),
+    checked.recordProblems().map((problem) => problem.at),
     expected,
   );
-  assert.ok(!checked.goneFlowRecords().some((problem) => problem.at === `records.${declared.execution}`));
+  assert.ok(!checked.recordProblems().some((problem) => problem.at === `records.${declared.execution}`));
   assert.equal(
-    report.line('error', checked.goneFlowRecords()[0]!),
+    report.line('error', checked.recordProblems()[0]!),
     'error: records.ticket-1: Execution Record ticket-1 runs Flow gone, which is no longer declared; declare it ' +
       'again to resume it, or run gg work abandon 1 to start over [unknown-flow]',
   );
@@ -588,7 +588,7 @@ test('gg doctor reports a corrupt Execution Record', async (t) => {
   const checked = await checkOf(sources(repositorySource()), { commonDir });
   assert.deepEqual(errorLines(checked), []);
   assert.deepEqual(
-    checked.goneFlowRecords().map((problem) => [problem.at, problem.code, problem.params]),
+    checked.recordProblems().map((problem) => [problem.at, problem.code, problem.params]),
     [
       ...corruptRecords.CORRUPTIONS.map(({ field, reason }, index) => [
         `records.ticket-${index + 1}`,
@@ -599,7 +599,7 @@ test('gg doctor reports a corrupt Execution Record', async (t) => {
     ],
   );
   assert.equal(
-    report.line('error', checked.goneFlowRecords()[0]!),
+    report.line('error', checked.recordProblems()[0]!),
     'error: records.ticket-1: Execution Record ticket-1 cannot be read: its flow is not a string; gg run holds ' +
       'Ticket 1 for a human, and gg work abandon 1 forgets it [corrupt-record]',
   );

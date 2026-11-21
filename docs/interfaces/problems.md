@@ -123,6 +123,7 @@ state-database-missing
 invalid-command-line
 invalid-glob
 unknown-flow
+corrupt-record
 ```
 
 The rule each code names:
@@ -230,6 +231,7 @@ The rule each code names:
 | `invalid-command-line` | a Declared Command is not a valid command line |
 | `invalid-glob` | a `testPaths` glob is one gg's readers do not read alike |
 | `unknown-flow` | an Execution Record a Run would resume names a Flow that is gone |
+| `corrupt-record` | an Execution Record's row cannot be read, so gg run holds its Ticket for a human |
 
 ## What one run cannot report
 
@@ -500,6 +502,10 @@ unknown-flow.name: string
 unknown-flow.declared: list
 unknown-flow.declared[]: string
 unknown-flow.ticket?: number
+corrupt-record: object (report.ProblemParams)
+corrupt-record.ticket: number
+corrupt-record.field?: string
+corrupt-record.reason: string
 table-never-applies: object (report.ProblemParams)
 table-never-applies.table: string
 optional-input-unsure: object (report.ProblemParams)

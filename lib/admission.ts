@@ -111,9 +111,8 @@ async function openAdmission(issue: github.Issue, context: AdmissionContext) {
   const state = labels.labelsFor(settings.labelPrefix).state;
   const recovery =
     `Inspect the row first in the State Database at ${recordLocation} (relative to the main checkout) using a SQLite ` +
-    'client. After preserving your changes, delete it with ' +
-    `\`DELETE FROM records WHERE kind = 'ticket' AND n = ${ticket};\`, then remove the ` +
-    `${state(labels.NEEDS_HUMAN)} label and re-run gg run ${ticket}.`;
+    `client if you need what it held. Then run gg work abandon ${ticket}, which removes the row and its State Labels ` +
+    `and keeps the worktree and branch, and re-run gg run ${ticket}.`;
   const issueLabels = deps.gh.labelNames(issue);
   const admitting = { issue, context, ticket, cwd, issueLabels, state, recovery, labelFailed: false } as Admitting;
   admitting.events = (type, data) => {

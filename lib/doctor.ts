@@ -211,7 +211,7 @@ export async function doctor({ config: configuration, harnesses, gh, cwd, common
   const errors = [
     ...checked.configurationErrors,
     ...checked.environmentErrors,
-    ...checked.goneFlowRecords(),
+    ...checked.recordProblems(),
     ...read.errors,
   ];
   const warnings = [...checked.warnings, ...checked.misfits.values()];
