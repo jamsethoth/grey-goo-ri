@@ -300,7 +300,7 @@ test('a crash between admission and its hold keeps the decision and its one tick
   assert.equal(final.terminalStop?.fresh, true, 'the hold is still the fresh one admission decided');
   const [comment, ...more] = fixture.comments();
   assert.equal(more.length, 0);
-  assert.doesNotMatch(comment as string, /DELETE FROM records/, 'a fresh hold has no row to delete');
+  assert.doesNotMatch(comment as string, /gg work abandon/, 'a fresh hold has no row to delete');
   assert.equal(runFixture.endsOf(fixture, mid.execution).length, 1);
 });
 
@@ -322,8 +322,8 @@ test('an Interrupted Attempt hold warns before its record is deleted, then and o
   const skipped = fixture.logs.findLast((line) => line.includes('skipped')) ?? '';
   assert.match(skipped, warning, 'the held-record skip warns too');
   assert.ok(
-    skipped.search(warning) < skipped.indexOf('DELETE FROM records'),
-    `the warning comes before the delete: ${skipped}`,
+    skipped.search(warning) < skipped.indexOf('gg work abandon'),
+    `the warning comes before the abandon: ${skipped}`,
   );
 });
 

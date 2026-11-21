@@ -11,9 +11,11 @@ export interface Node {
 export type Read<Value> = (node: Node) => Value;
 
 export class RowFieldError extends Error {
+  declare path: string;
   constructor(node: Node, problem: string) {
     super(`its ${node.path} ${problem}`);
     this.name = 'RowFieldError';
+    this.path = node.path;
   }
 }
 

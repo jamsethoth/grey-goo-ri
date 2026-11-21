@@ -220,11 +220,21 @@ function stateDatabaseProblems(found: report.Report, commonDir: string) {
     report.error(found, '', 'state-database-missing', stateDatabase.missingMessage(commonDir), { path });
 }
 
-// Each Execution Record a Run would resume whose Flow is not admitted: gg run keeps it and exits 2 for its Ticket (A2),
-// and gg doctor lists every one as an error.
-function goneFlowRecords(commonDir: string, admitted: ReadonlySet<string>, database: Database): report.Problem[] {
+// Each Execution Record a Run would resume whose Flow is not admitted: gg run keeps it and exits 2 for its Ticket (A2).
+// Each row the reader refuses: gg run holds its Ticket for a human (#439). gg doctor lists every one as an error.
+function recordProblems(commonDir: string, admitted: ReadonlySet<string>, database: Database): report.Problem[] {
   const found = report.newReport();
-  for (const executionRecord of database.loadAll(commonDir, 'ticket')) {
+  const onCorrupt = ({ recordNumber: ticket, field, reason }: record.RecordCorruptError) => {
+    const message =
+      `Execution Record ticket-${ticket} cannot be read: ${reason}; gg run holds Ticket ${ticket} for a human, and ` +
+      `gg work abandon ${ticket} forgets it`;
+    report.error(found, `records.ticket-${ticket}`, 'corrupt-record', message, {
+      ticket,
+      ...(field !== undefined && { field }),
+      reason,
+    });
+  };
+  for (const executionRecord of database.loadAll(commonDir, 'ticket', { onCorrupt })) {
     const { ticket, flow } = executionRecord;
     if (admitted.has(flow) || interpreter.resumption(executionRecord, database) !== 'resume') continue;
     const message = `Execution Record ticket-${ticket} ${missingFlowAdvice(flow, ticket)}`;
@@ -254,14 +264,14 @@ interface CheckOptions {
 
 // The checked configuration: every declared Flow, the configuration's errors (the settings' first, as #301 lists
 // them, then each source's), the environment's (the State Database, then the Harnesses), the records whose Flow is
-// gone, the warnings, each misfit by its Flow's name, and the Settings when they hold no error. The records are read
-// only when a caller asks: gg run reports each for its own Ticket (A2), so its preflight never opens the State
-// Database.
+// gone or whose row cannot be read, the warnings, each misfit by its Flow's name, and the Settings when they hold no
+// error. The records are read only when a caller asks: gg run reports each for its own Ticket (A2), so its preflight
+// never opens the State Database.
 export interface CheckedConfiguration {
   flows: Map<string, DeclaredFlow>;
   configurationErrors: report.Problem[];
   environmentErrors: report.Problem[];
-  goneFlowRecords: () => report.Problem[];
+  recordProblems: () => report.Problem[];
   warnings: report.Problem[];
   misfits: Map<string, report.Problem>;
   settings?: config.Settings;
@@ -292,8 +302,8 @@ export async function check({
     flows: declared.flows,
     configurationErrors: [...(parsed.errors ?? []), ...declared.errors],
     environmentErrors: environment.errors,
-    goneFlowRecords: () =>
-      readable ? goneFlowRecords(commonDir, new Set(admitted.map(([name]) => name)), database) : [],
+    recordProblems: () =>
+      readable ? recordProblems(commonDir, new Set(admitted.map(([name]) => name)), database) : [],
     warnings: [...declared.warnings, ...environment.warnings],
     misfits: declared.misfits,
     ...(parsed.settings && { settings: parsed.settings }),

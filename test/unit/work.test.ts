@@ -1,11 +1,10 @@
 import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as checks from '../../lib/checks.ts';
 import * as effects from '../../lib/effects/index.ts';
 import * as eventRead from '../../lib/event-read.ts';
-import * as events from '../../lib/events.ts';
 import * as github from '../../lib/github.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as labels from '../../lib/labels.ts';
@@ -15,8 +14,10 @@ import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
 import * as work from '../../lib/work.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
+import * as abandonableTicket from '../support/abandonable-ticket.ts';
 import * as addSuite from '../support/add-suite.ts';
 import * as approvalFlow from '../support/approval-flow.ts';
+import * as corruptRecords from '../support/corrupt-records.ts';
 import * as epicRun from '../support/epic-run.ts';
 import * as fakeGh from '../support/fake-gh.ts';
 import * as golden from '../support/golden.ts';
@@ -26,38 +27,10 @@ import * as runFixture from '../support/run-fixture.ts';
 import * as stoppedTicket from '../support/stopped-ticket.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
-const TICKET = 7;
-const IN_PROGRESS = 'gg:state:in-progress';
-
-// A repository's common dir holding Ticket 7's Execution Record, one Event and its worktree, with the Ticket labelled
-// in progress on the fake gh.
-function abandoning(t: TestContext) {
-  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-work-');
-  const worktree = join(commonDir, 'wt', 'ticket-7');
-  mkdirSync(worktree, { recursive: true });
-  record.save(
-    record.createExecutionRecord({
-      commonDir,
-      repository: 'o/r',
-      ticket: TICKET,
-      epic: null,
-      flow: { name: 'gone', entry: 'red' },
-      configHash: 'x',
-      run: '20261016T000000Z-seed00',
-      worktree,
-      branch: 'ticket/7-add',
-      base: 'main',
-    }),
-  );
-  events.eventLog(commonDir)('run_start', { run: '20261016T000000Z-seed00' });
-  const fake = fakeGh.fakeGh({ branch: 'ticket/7-add', ticket: TICKET });
-  fake.labels.add(IN_PROGRESS);
-  const options = { ticket: TICKET, commonDir, cwd: commonDir, labelPrefix: 'gg', gh: github.createGh(fake.gh), locks };
-  return { commonDir, worktree, fake, options };
-}
+const { TICKET, IN_PROGRESS } = abandonableTicket;
 
 test('gg work abandon deletes the Execution Record row and keeps its Events and worktree', async (t) => {
-  const { commonDir, worktree, fake, options } = abandoning(t);
+  const { commonDir, worktree, fake, options } = abandonableTicket.seed(t);
   const text = await work.abandon(options);
   assert.equal(record.load(commonDir, 'ticket', TICKET), null, 'the row is deleted');
   assert.deepEqual(
@@ -77,7 +50,7 @@ test('gg work abandon deletes the Execution Record row and keeps its Events and 
 
 // Readiness refuses a Ticket with any State Label, so abandoning a held Ticket clears its needs-human too.
 test('gg work abandon removes every State Label the Ticket carries, so the next Run can admit it', async (t) => {
-  const { commonDir, fake, options } = abandoning(t);
+  const { commonDir, fake, options } = abandonableTicket.seed(t);
   fake.labels.add('gg:state:needs-human');
   fake.labels.add('gg:await:approve');
   const text = await work.abandon(options);
@@ -87,7 +60,7 @@ test('gg work abandon removes every State Label the Ticket carries, so the next 
 });
 
 test('gg work abandon refuses while the ticket lock is held', async (t) => {
-  const { commonDir, fake, options } = abandoning(t);
+  const { commonDir, fake, options } = abandonableTicket.seed(t);
   const held = await locks.tryAcquire(commonDir, `ticket-${TICKET}`);
   assert.ok(held, 'the case holds the ticket lock');
   try {
@@ -103,7 +76,7 @@ test('gg work abandon refuses while the ticket lock is held', async (t) => {
 });
 
 test('gg work abandon of a Ticket with no Execution Record says so and changes nothing', async (t) => {
-  const { commonDir, fake, options } = abandoning(t);
+  const { commonDir, fake, options } = abandonableTicket.seed(t);
   assert.ok(record.removeRecord(commonDir, 'ticket', TICKET), 'removeRecord says it deleted a row');
   await assert.rejects(work.abandon(options), { message: 'Ticket 7 has no Execution Record to abandon' });
   assert.ok(fake.labels.has(IN_PROGRESS), 'the label is kept');
@@ -111,11 +84,54 @@ test('gg work abandon of a Ticket with no Execution Record says so and changes n
 
 // A record deleted while the label stays would read as stuck, so a failed label update keeps the record.
 test('gg work abandon keeps the record when its in-progress label cannot be removed', async (t) => {
-  const { commonDir, fake, options } = abandoning(t);
+  const { commonDir, fake, options } = abandonableTicket.seed(t);
   fake.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'edit', status: 502 });
   await assert.rejects(work.abandon(options), /label update .* failed: .*; Execution Record ticket-7 is kept$/);
   assert.ok(record.load(commonDir, 'ticket', TICKET), 'the record is kept');
   assert.ok(fake.labels.has(IN_PROGRESS), 'the label is kept');
+});
+
+// A row the reader refuses is held for a human, never discarded by gg; gg work abandon is that human's verb, so it
+// forgets a row refused each way as it forgets any other, with no flag, saying why it could not be read (#439, Q2 A).
+test('gg work abandon forgets a corrupt Execution Record', async (t) => {
+  for (const corruption of corruptRecords.CORRUPTIONS) {
+    const { name, reason } = corruption;
+    const { commonDir, worktree, fake, options } = abandonableTicket.seed(t);
+    corruptRecords.plant(commonDir, TICKET, corruption);
+    fake.labels.add('gg:state:needs-human');
+    const text = await work.abandon(options).catch((err: unknown) => String(err));
+    assert.equal(
+      text,
+      `gg work abandon deleted Execution Record ticket-7, which could not be read (${reason}) and removed the ` +
+        'gg:state:in-progress, gg:state:needs-human labels; its Events, worktree and branch are kept. gg run 7 ' +
+        '--flow <name> starts a new Execution.\n',
+      name,
+    );
+    assert.equal(record.load(commonDir, 'ticket', TICKET), null, `${name}: the row is deleted`);
+    assert.deepEqual([...fake.labels], [], `${name}: every State Label goes`);
+    assert.deepEqual(
+      eventRead.readEvents(commonDir).map((event) => event.type),
+      ['run_start'],
+      `${name}: the Events are kept`,
+    );
+    assert.ok(existsSync(worktree), `${name}: the worktree is kept`);
+  }
+});
+
+// The State Labels go before the row, so a corrupt row whose labels stay is kept, as a readable one is.
+test('gg work abandon keeps a corrupt record when its State Labels cannot be removed', async (t) => {
+  for (const corruption of corruptRecords.CORRUPTIONS) {
+    const { commonDir, fake, options } = abandonableTicket.seed(t);
+    corruptRecords.plant(commonDir, TICKET, corruption);
+    fake.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'edit', status: 502 });
+    await assert.rejects(work.abandon(options), /label update .* failed: .*; Execution Record ticket-7 is kept$/);
+    assert.throws(
+      () => record.load(commonDir, 'ticket', TICKET),
+      record.RecordCorruptError,
+      `${corruption.name}: the row is kept`,
+    );
+    assert.ok(fake.labels.has(IN_PROGRESS), `${corruption.name}: the label is kept`);
+  }
 });
 
 // gg work done is handed a database, so its check that the State Database is there, before the ticket lock, goes

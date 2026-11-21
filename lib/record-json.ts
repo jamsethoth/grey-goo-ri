@@ -13,14 +13,27 @@ export const RECORD_SCHEMA_VERSION = 3;
 // A row of the version before reads too: each field its version added is optional (ADR 0024).
 const PREVIOUS_RECORD_SCHEMA_VERSION = 2;
 
+// A row the reader refuses: its record's number, why, and the field it refused when it names one, which gg doctor
+// reports as values of their own (#439).
 export class RecordCorruptError extends Error {
   declare file: string;
   declare raw: string;
-  constructor(file: string, reason: string, raw: string) {
+  declare recordNumber: number;
+  declare reason: string;
+  declare field: string | undefined;
+  constructor(
+    file: string,
+    reason: string,
+    raw: string,
+    refused: { recordNumber: number; field?: string } = { recordNumber: 0 },
+  ) {
     super(`corrupt record ${file}: ${reason}`);
     this.name = 'RecordCorruptError';
     this.file = file;
     this.raw = raw;
+    this.recordNumber = refused.recordNumber;
+    this.reason = reason;
+    this.field = refused.field;
   }
 }
 
@@ -94,7 +107,8 @@ export function parseRow(
   { kind, n: recordNumber, json }: RecordRow,
 ): record.ExecutionRecord | record.EpicRecord {
   const file = `${paths.stateDatabaseFile(commonDir)}#${kind}-${recordNumber}`;
-  const corrupt = (reason: string) => new RecordCorruptError(file, reason, json);
+  const corrupt = (reason: string, field?: string) =>
+    new RecordCorruptError(file, reason, json, { recordNumber, ...(field !== undefined && { field }) });
   let data: unknown;
   try {
     data = JSON.parse(json);
@@ -106,12 +120,12 @@ export function parseRow(
     !referencePaths.isRecord(data) ||
     (version !== RECORD_SCHEMA_VERSION && version !== PREVIOUS_RECORD_SCHEMA_VERSION)
   )
-    throw corrupt(`unknown schemaVersion ${String(version)}`);
+    throw corrupt(`unknown schemaVersion ${String(version)}`, 'schemaVersion');
   try {
     if (kind === 'epic') return { ...recordRead.epicRecord({ value: data, path: '' }), commonDir };
     return fromJson(recordRead.executionRecord({ value: data, path: '' }), commonDir);
   } catch (err) {
-    if (err instanceof recordRead.RowFieldError) throw corrupt(err.message);
+    if (err instanceof recordRead.RowFieldError) throw corrupt(err.message, err.path);
     throw err;
   }
 }

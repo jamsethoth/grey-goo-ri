@@ -25,10 +25,10 @@ const ensureWorktree = (fixture: RunFixture, branch: string) =>
   fixture.options.deps.git.ensureWorktree({ mainRoot: fixture.mainRoot, path: fixture.worktree, branch, base: 'main' });
 const snapshot = (fixture: RunFixture) => integrity.snapshot(fixture.worktree, fixture.options.deps.git);
 const prTouched = (fixture: RunFixture) => fixture.gh.calls.some((call) => call.args[0] === 'pr');
-const DELETE_ROW = `DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`;
+const ABANDON_ROW = `Then run gg work abandon ${TICKET}, which removes the row and its State Labels`;
 const CANNOT_RESUME = `Execution Record ticket-${TICKET} is held and cannot resume.`;
 
-// The hold of a resumed Execution found off its recorded branch says to switch back or delete the record's row.
+// The hold of a resumed Execution found off its recorded branch says to switch back or abandon the record.
 function assertSwitchBackAdvice(fixture: RunFixture) {
   assert.ok(
     fixture
@@ -36,7 +36,7 @@ function assertSwitchBackAdvice(fixture: RunFixture) {
       .some(
         (body) =>
           body.includes(`${CANNOT_RESUME} Switch the worktree back to \`${BRANCH}\` or remove it.`) &&
-          body.includes(DELETE_ROW),
+          body.includes(ABANDON_ROW),
       ),
     `the hold says how to recover: ${JSON.stringify(fixture.comments())}`,
   );
@@ -171,7 +171,7 @@ async function assertForeignBranchHeld(fixture: RunFixture, branch: string, seed
     `the hold names the recorded and required branches: ${JSON.stringify(fixture.comments())}`,
   );
   assert.ok(
-    fixture.comments().some((body) => body.includes(CANNOT_RESUME) && body.includes(DELETE_ROW)),
+    fixture.comments().some((body) => body.includes(CANNOT_RESUME) && body.includes(ABANDON_ROW)),
     `the hold says how to recover: ${JSON.stringify(fixture.comments())}`,
   );
   assert.equal(fixture.harness.calls.length, 0, 'no agent started');

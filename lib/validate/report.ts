@@ -123,6 +123,7 @@ export const PROBLEM_CODES = [
   'invalid-command-line',
   'invalid-glob',
   'unknown-flow',
+  'corrupt-record',
 ] as const;
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
 // The codes gg reports only as a warning, and those it reports at either severity by where; every other is an error.
@@ -235,6 +236,7 @@ interface ProblemParams {
   'repository-unread': { path: string; reason: string };
   'state-database-missing': { path: string };
   'unknown-flow': { name: string; declared: string[]; ticket?: number };
+  'corrupt-record': { ticket: number; field?: string; reason: string };
   'table-never-applies': { table: string };
   'optional-input-unsure': { input: string; vertex: string };
   'required-input-unsure': { input: string; vertex: string };

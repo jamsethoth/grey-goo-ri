@@ -18,9 +18,13 @@ import * as unvisitedExecution from '../support/unvisited-execution.ts';
 
 const { BRANCH, TICKET } = runFixture;
 const { IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL } = executionContext;
-// Where the State Database is, which a held or corrupt record's advice names.
+// Where the State Database is, and the verb that forgets the row, which a held or corrupt record's advice names.
 const INSPECT_ADVICE =
-  'Inspect the row first in the State Database at .git/gg/gg.db (relative to the main checkout) using a SQLite client.';
+  'Inspect the row first in the State Database at .git/gg/gg.db (relative to the main checkout) using a SQLite ' +
+  'client if you need what it held.';
+const ABANDON_ADVICE =
+  `Then run gg work abandon ${TICKET}, which removes the row and its State Labels and keeps the worktree and branch, ` +
+  `and re-run gg run ${TICKET}.`;
 
 test('a flow mixing harnesses runs each vertex on its own harness', async (t) => {
   const responses = {
@@ -131,7 +135,7 @@ test('a held Execution Record skip gives row-delete recovery without GitHub writ
     fixture.logs.some(
       (line) =>
         line.includes(`Execution Record ticket-${TICKET} is held and cannot resume.`) &&
-        line.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`) &&
+        line.includes(ABANDON_ADVICE) &&
         line.includes(INSPECT_ADVICE),
     ),
     JSON.stringify(fixture.logs),
@@ -211,9 +215,7 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
     `a comment names the record: ${JSON.stringify(fixture.comments())}`,
   );
   assert.ok(fixture.comments().some((body) => body.includes(INSPECT_ADVICE)));
-  assert.ok(
-    fixture.comments().some((body) => body.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)),
-  );
+  assert.ok(fixture.comments().some((body) => body.includes(ABANDON_ADVICE)));
   assert.equal(
     paths.pathKey((await fixture.options.deps.git.repoInfo(fixture.worktree)).gitCommonDir),
     paths.pathKey(fixture.commonDir),
