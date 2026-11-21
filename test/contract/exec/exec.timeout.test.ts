@@ -312,7 +312,7 @@ test('a finished command whose group is already gone gets no group kill', POSIX_
     childScripts.nodeCommand(t, childScripts.ORPHAN_MIDDLE, midFile, goFile, childScripts.LONG_LIVED, pidFile),
     timedOutShell.shellOptions({
       timeoutMs: 60_000,
-      signal: timedOutShell.noClock(),
+      signal: timedOutShell.noClock(t),
       onWatch: (watched) => (seen = watched),
     }),
   );
