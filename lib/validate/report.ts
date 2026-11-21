@@ -1,7 +1,8 @@
 // The validator's findings, one report passed to each part that checks, and the value tests every part shares.
 
 import * as labels from '../labels.ts';
-import * as referencePaths from '../reference-paths.ts';
+
+export { entries, hasOwnKey, isCount, isName, shown, unique } from './configured-values.ts';
 
 // Which rule a Problem breaks, one code per rule however many sentences name it. Code that needs the kind of problem
 // reads this, never the message, whose wording may change. The decisions doc's ids (H7, R12c) stay out of it, so each
@@ -12,6 +13,7 @@ export const PROBLEM_CODES = [
   'not-a-boolean',
   'not-a-list',
   'not-a-positive-integer',
+  'not-a-non-negative-integer',
   'not-a-string',
   'not-an-object',
   'null-value',
@@ -124,6 +126,19 @@ export const PROBLEM_CODES = [
   'corrupt-record',
 ] as const;
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
+// The codes gg reports only as a warning, and those it reports at either severity by where; every other is an error.
+export const WARNING_CODES = [
+  'unused-agent',
+  'overlapping-rows',
+  'optional-input-unsure',
+  'unreachable-vertex',
+  'repository-labels-missing',
+  'repository-labels-unread',
+] as const satisfies readonly ProblemCode[];
+export const EITHER_CODES = ['undeclared-command', 'harness-doctor-failed'] as const satisfies readonly ProblemCode[];
+type WarningCode = (typeof WARNING_CODES)[number] | (typeof EITHER_CODES)[number];
+type ErrorCode = Exclude<ProblemCode, (typeof WARNING_CODES)[number]>;
+const isIn = (codes: readonly ProblemCode[], code: ProblemCode) => codes.includes(code);
 
 // A Procedure's problem found while typing it at a Vertex: the Flow and Vertex whose inputs exposed it.
 interface AtVertex {
@@ -312,24 +327,23 @@ export type { Reported };
 export const isReported = (value: unknown): value is Reported => Reported.is(value);
 export const reportedSince = (report: Report, before: number) => Reported.since(report, before);
 
-export function error<C extends ProblemCode>(
-  report: Report,
-  location: string,
-  code: C,
-  ...detail: Detail<C>
-): Reported {
+export function error<C extends ErrorCode>(report: Report, location: string, code: C, ...detail: Detail<C>): Reported {
   report.errors.push(problemAt(location, findingOf(code, detail)));
   return Reported.one;
 }
-export function warn<C extends ProblemCode>(report: Report, location: string, code: C, ...detail: Detail<C>) {
+export function warn<C extends WarningCode>(report: Report, location: string, code: C, ...detail: Detail<C>) {
   report.warnings.push(problemAt(location, findingOf(code, detail)));
 }
-// A problem a part found on its own, located where the caller says.
+// A problem a part found on its own, located where the caller says. Its code is not typed by severity there, so it is
+// checked here (#434).
 export function errorOf(report: Report, location: string, finding: Finding): Reported {
+  if (isIn(WARNING_CODES, finding.code)) throw new Error(`${finding.code} is reported only as a warning`);
   report.errors.push(problemAt(location, finding));
   return Reported.one;
 }
 export function warnOf(report: Report, location: string, finding: Finding) {
+  if (!isIn(WARNING_CODES, finding.code) && !isIn(EITHER_CODES, finding.code))
+    throw new Error(`${finding.code} is reported only as an error`);
   report.warnings.push(problemAt(location, finding));
 }
 // A printed line ends in its code, as ESLint prints a rule id, so each line keeps the prefix it had.
@@ -348,18 +362,6 @@ export const dedupe = (list: Problem[]) => [
   ...new Map(list.map((problem) => [`${problem.at}\n${problem.message}`, problem])).values(),
 ];
 
-// A string key only: Object.hasOwn would coerce a list such as ["push"] to the key it spells.
-export function hasOwnKey<T extends object>(value: T, key: unknown): key is Extract<keyof T, string>;
-export function hasOwnKey(value: unknown, key: unknown): key is string;
-export function hasOwnKey(value: unknown, key: unknown) {
-  return typeof key === 'string' && referencePaths.isRecord(value) && Object.hasOwn(value, key);
-}
-// A configured value as gg shows it: a string or number as written, anything else as JSON, so a value of the wrong
-// type never shows as [object Object] or a blank (#305). A number past the largest double parses to Infinity, which
-// JSON would spell null.
-export const shown = (value: unknown) =>
-  typeof value === 'string' || typeof value === 'number' ? String(value) : JSON.stringify(value);
-export const isName = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
 // Every configured name has a character other than whitespace. A carried one has no ":", ".", "/", "--" or whitespace
 // at all: the Action Marker and the Await and Decide Labels split on ":", a reference path on ".", an Action's retry
 // key joins its parts with "/", the HTML comment a marker rides in on GitHub ends at "-->" or "--!>", and a marker is
@@ -386,9 +388,6 @@ export function checkName(
 ): name is string {
   return !isReported(checkedName(report, location, name, naming));
 }
-export const isCount = (value: unknown): value is number => Number.isInteger(value) && (value as number) > 0;
-export const entries = (value: unknown) => (referencePaths.isRecord(value) ? Object.entries(value) : []);
-export const unique = <T>(list: T[]) => [...new Set(list)];
 // What a Procedure's Outcomes and Claim tokens may not be named.
 const isReserved = (name: string) =>
   name === 'failed' || (labels.END_STATES as string[]).includes(name) || name.startsWith('harness-');

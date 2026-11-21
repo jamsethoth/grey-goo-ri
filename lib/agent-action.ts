@@ -13,7 +13,7 @@ import type * as integrity from './integrity.ts';
 import * as jsonValue from './json-value.ts';
 import * as marker from './marker.ts';
 import * as paths from './paths.ts';
-import type * as outcome from './outcome.ts';
+import * as outcome from './outcome.ts';
 import * as record from './record.ts';
 import * as render from './render.ts';
 import type { Harness, HarnessResult, RunContext } from './run-context.ts';
@@ -166,8 +166,7 @@ function callAttempt(runContext: RunContext, running: Attempt): Promise<ActionRe
       const pinned = structuredClone(executionRecord.configurationSnapshot!);
       const brief = await briefOf(runContext, running, pinned.commands);
       const call = callOf(runContext, running, { pinned, brief, actionMarker, harness });
-      // The marker, Agent and Persona stay the Attempt's own: a Harness that edits its call cannot change what is
-      // saved.
+      // The marker, Agent and Persona stay the Attempt's own: a Harness editing its call cannot change what is saved.
       return { call, own: { actionMarker, agent: pinned.agent as Agent, persona: pinned.persona as Persona } };
     },
     work: async ({ call }) => {
@@ -291,22 +290,23 @@ function decideCall(
   const { claim, signal, harnessResult } = state.call!;
   const integrityRows = [{ name: 'integrity', passed: violations.length === 0, violations }];
   const key = marker.actionKeyOf(actionIdentity);
+  const { resolutionPolicy } = executionRecord.configurationSnapshot!.agent!;
   const resolution = visitScope.settle(executionRecord, actionIdentity, state, {
     result: signal,
     claim,
     checks: visitScope.resolverChecks(integrityRows, []),
     retries: executionRecord.retries[key] ?? {},
+    policy: { ...outcome.DEFAULT_RESOLUTION_POLICY, ...(resolutionPolicy as Partial<outcome.ResolutionPolicy>) },
     cleanup: harnessResult.cleanup,
   });
   if (resolution.retryKind)
     (executionRecord.retries[key] ??= {})[resolution.retryKind] =
       (executionRecord.retries[key][resolution.retryKind] ?? 0) + 1;
-  const surfaces = violations.length ? [...new Set(violations.map((violation) => violation.surface))] : null;
   const done = {
     ...resolution,
     sessionId: harnessResult.sessionId,
     reason: claim.reason ?? null,
-    surfaces,
+    surfaces: violations.length ? [...new Set(violations.map((violation) => violation.surface))] : null,
     attempt: actionIdentity.attempt,
   };
   return { done, resolution, integrityRows };

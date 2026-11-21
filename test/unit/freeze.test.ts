@@ -203,6 +203,47 @@ test('problems.md lists exactly the Problem codes', () => {
   );
 });
 
+// The severity each code's row in problems.md gives: "(warning)", "(error; a warning when ...)" for a code gg reports
+// at both, by where it finds it, or no mark for an error.
+function documentedSeverity(text: string) {
+  if (text.endsWith('(warning)')) return 'warning';
+  return /\(error; a warning when [^)]+\)$/.test(text) ? 'error or warning' : 'error';
+}
+// The severity gg reports a code at, read from the lists beside PROBLEM_CODES, which type report.error and report.warn.
+const warningCodes = new Set<string>(report.WARNING_CODES);
+function reportedSeverity(code: string) {
+  if (warningCodes.has(code)) return 'warning';
+  return new Set<string>(report.EITHER_CODES).has(code) ? 'error or warning' : 'error';
+}
+
+test("every Problem's severity matches the frozen list", () => {
+  const rows = [...documentText('problems.md').matchAll(/^\| `([a-z-]+)` \| (.*) \|$/gm)];
+  assert.deepEqual(sorted(rows.map(([, code]) => code!)), sorted(report.PROBLEM_CODES), 'a row for each code');
+  assert.deepEqual(
+    rows.map(([, code, text]) => `${code}: ${documentedSeverity(text!)}`),
+    rows.map(([, code]) => `${code}: ${reportedSeverity(code!)}`),
+  );
+});
+
+// The codes a function of report.ts takes, read from the constraint on its code's type parameter.
+function codesTaken(name: 'error' | 'warn') {
+  const source = shapes.program.getSourceFile(`${typeShape.root}lib/validate/report.ts`)!;
+  const symbol = shapes.checker
+    .getExportsOfModule(shapes.checker.getSymbolAtLocation(source)!)
+    .find((exported) => exported.name === name)!;
+  const [signature] = shapes.checker.getTypeOfSymbolAtLocation(symbol, source).getCallSignatures();
+  const constraint = signature!.typeParameters![0]!.getConstraint()!;
+  return sorted(
+    (constraint.isUnion() ? constraint.types : [constraint]).map((type) => shapes.checker.typeToString(type)),
+  );
+}
+
+test('report.error and report.warn take only the codes of their severity', () => {
+  const quoted = (codes: readonly string[]) => sorted(codes.map((code) => `"${code}"`));
+  assert.deepEqual(codesTaken('warn'), quoted([...report.WARNING_CODES, ...report.EITHER_CODES]));
+  assert.deepEqual(codesTaken('error'), quoted(report.PROBLEM_CODES.filter((code) => !warningCodes.has(code))));
+});
+
 test('records and events carry the frozen version constants', (t) => {
   assert.equal(record.RECORD_SCHEMA_VERSION, 3);
   assert.equal(record.createExecutionRecord(START).schemaVersion, record.RECORD_SCHEMA_VERSION);

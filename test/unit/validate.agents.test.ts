@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as claude from '../../lib/harnesses/claude.ts';
 import * as contract from '../../lib/harnesses/contract.ts';
+import * as outcome from '../../lib/outcome.ts';
 import * as agentChecks from '../../lib/validate/agents.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 
@@ -162,6 +163,48 @@ test('timeouts of { stallMs, wallMs }, either left out, resolve into the Agent',
   const { vertices } = flows.default!.ticket;
   assert.deepEqual(vertices.red!.agent!.timeouts, { stallMs: 60000, wallMs: 3600000 });
   assert.deepEqual(vertices.green!.agent!.timeouts, { wallMs: 7200000 });
+});
+
+// An Agent's resolutionPolicy is its retry budgets, each optional and a whole number 0 or more; a budget left out
+// keeps its shipped value (#435, Q1 A and Q2 A).
+const POLICY_FORMS: { form: string; policy: unknown; under: string; code: string }[] = [
+  { form: 'a number', policy: 5, under: '', code: 'not-an-object' },
+  { form: 'a list', policy: [1, 2], under: '', code: 'not-an-object' },
+  { form: 'an unknown budget', policy: { nonsense: 1 }, under: '', code: 'unknown-key' },
+  { form: 'a negative transient', policy: { transient: -1 }, under: '.transient', code: 'not-a-non-negative-integer' },
+  { form: 'a fractional parse', policy: { parse: 1.5 }, under: '.parse', code: 'not-a-non-negative-integer' },
+  { form: 'a string timeout', policy: { timeout: '1' }, under: '.timeout', code: 'not-a-non-negative-integer' },
+];
+for (const { form, policy, under, code } of POLICY_FORMS)
+  for (const [where, place] of Object.entries(AGENT_SITES))
+    test(`a resolutionPolicy of ${form} is an error at ${where}`, () => {
+      const config = exampleLayer.config();
+      const { site, at } = place(config);
+      site.resolutionPolicy = policy;
+      const { errors, flows } = exampleLayer.check(config);
+      assert.deepEqual(exampleLayer.firedRules(errors), [{ at: `${at}.resolutionPolicy${under}`, code }]);
+      assert.equal(flows.default, undefined);
+    });
+
+// Every budget the Transition Table spends may be set, at every site an Agent key is written: 0 resolves into the
+// Agent, and a negative one is an error at that budget.
+test('every retry budget the Transition Table spends is a budget a resolutionPolicy may set, 0 or more', () => {
+  const wrong: string[] = [];
+  for (const budget of Object.keys(outcome.DEFAULT_RESOLUTION_POLICY))
+    for (const [where, place] of Object.entries(AGENT_SITES))
+      for (const value of [0, -1]) {
+        const config = exampleLayer.config();
+        const { site, at } = place(config);
+        site.resolutionPolicy = { [budget]: value };
+        const { errors, flows } = exampleLayer.check(config);
+        const fired = JSON.stringify(exampleLayer.firedRules(errors));
+        const refused = [{ at: `${at}.resolutionPolicy.${budget}`, code: 'not-a-non-negative-integer' }];
+        const expected = JSON.stringify(value < 0 ? refused : []);
+        const resolves = flows.default !== undefined;
+        if (fired !== expected || resolves !== value >= 0)
+          wrong.push(`${budget} ${value} at ${where}: ${fired}, resolves ${resolves}`);
+      }
+  assert.deepEqual(wrong, []);
 });
 
 // The Agent keys the Capability matrix rules on, each with a value that asks for it. A listed field is refused where

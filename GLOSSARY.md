@@ -340,8 +340,9 @@ gg's fixed rows, run before a Procedure's Rule Tables, that every harness obeys 
 it routes nothing, which Edges do. "Transition" is on Edge's avoid list, but this term names a different concept.
 
 **Resolution Policy**:
-An Agent's rules for deriving one Outcome when its Signals disagree: ordering among non-advance Outcomes, the weight
-of the Claim without deterministic evidence, and retry budgets by Failure Class.
+An Agent's retry budgets (`resolutionPolicy`): how many times its Attempts may retry a transient, rate-limited, timed-out
+or unparsable call, and hand off past its context budget, each a whole number 0 or more, a budget it leaves out keeping
+its shipped value. Which Outcome a Visit takes among the legitimate ones is its Procedure's (ADR 0014).
 _Avoid_: priority, precedence, conflict rule
 
 ### Harness
