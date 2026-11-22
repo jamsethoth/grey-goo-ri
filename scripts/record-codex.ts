@@ -71,13 +71,15 @@ const fill = (text: string, values: Record<string, string>) =>
   text.replace(/\{(\w+)\}/g, (whole, key: string) => values[key] ?? whole);
 
 // How the call starts: a new thread, or the thread it continues resumed or forked, with --sandbox and -C on exec
-// before resume or fork (request 3.2) except for the resume that sets its sandbox by -c after resume.
+// before resume or fork (request 3.2) except for the resume that sets its sandbox by -c after resume and the fork that
+// takes the thread's.
 function headOf(scenario: Scenario, repo: string, threadId: string) {
   const sandbox = ['-s', scenario.sandbox ?? 'read-only', '-C', repo];
   const kind = scenario.start?.kind;
   if (kind === 'resume-config-after') return ['exec', 'resume', threadId];
   if (kind === 'resume-flags-before') return ['exec', ...sandbox, 'resume', threadId];
   if (kind === 'fork') return ['exec', ...sandbox, 'fork', threadId];
+  if (kind === 'fork-unflagged') return ['exec', 'fork', threadId];
   return ['exec', ...sandbox];
 }
 
@@ -171,7 +173,7 @@ function filesUnder(base: string) {
 const textOf = (path: string) => (existsSync(path) ? readFileSync(path, 'utf8') : null);
 
 // gg's CODEX_HOME, or an empty one in the call's directory that holds no login.
-function homeOf(home: 'gg' | 'empty' | 'plugin' | undefined, base: string) {
+function homeOf(home: 'gg' | 'empty' | undefined, base: string) {
   if (home !== 'empty') return GG_CODEX_HOME;
   mkdirSync(join(base, 'home'), { recursive: true });
   return join(base, 'home');
@@ -204,7 +206,7 @@ function evidenceOf(call: {
 
 // The session file a fork continues, whose hash shows whether the fork left it unchanged.
 const forkedOf = (scenario: Scenario, home: string, from: Recorded | undefined) =>
-  scenario.start?.kind === 'fork' ? rolloutOf(home, from?.threadId ?? null) : null;
+  scenario.start?.kind.startsWith('fork') ? rolloutOf(home, from?.threadId ?? null) : null;
 
 // One call: its directories and home, the launch inside a job, and what it changed around it.
 async function call(scenario: Scenario, base: string, from: Recorded | undefined) {
@@ -291,16 +293,16 @@ function codexSync(argv: string[], options: { cwd?: string; env: Record<string, 
   });
 }
 
-// An empty CODEX_HOME with the probe plugin installed from a local marketplace, then disabled in its config, so only
-// a -c can enable it.
-function pluginHome(base: string) {
+// An empty CODEX_HOME with the probe plugin installed from a local marketplace, then, unless it stays enabled,
+// disabled in its config, so only a -c can enable it.
+function pluginHome(base: string, enabled: boolean) {
   const home = join(base, 'home');
   mkdirSync(home, { recursive: true });
   const marketplace = repository.writeMarketplace(base);
   codexSync(['plugin', 'marketplace', 'add', marketplace], { env: { CODEX_HOME: home } });
   codexSync(['plugin', 'add', 'probe-plugin@gg-probe'], { env: { CODEX_HOME: home } });
   const config = join(home, 'config.toml');
-  writeFileSync(config, readFileSync(config, 'utf8').replace('enabled = true', 'enabled = false'));
+  if (!enabled) writeFileSync(config, readFileSync(config, 'utf8').replace('enabled = true', 'enabled = false'));
   return home;
 }
 
@@ -318,7 +320,10 @@ function promptInputFacts(stdout: string) {
 // One command that is no model call, in a directory of its own.
 function recordCommand(command: CliCommand, cliVersion: string, base: string) {
   const directories = repository.prepare(base, command.repository ?? 'plain');
-  const home = command.home === 'plugin' ? pluginHome(base) : homeOf(command.home, base);
+  const home =
+    command.home === 'plugin' || command.home === 'plugin-enabled'
+      ? pluginHome(base, command.home === 'plugin-enabled')
+      : homeOf(command.home, base);
   // The profile's -c keys go after `debug prompt-input`, which takes them, and before any other command.
   const split = command.argv[0] === 'debug' ? 2 : 0;
   const extra = command.profile || command.trusted ? profileFor(command, directories.repo) : [];

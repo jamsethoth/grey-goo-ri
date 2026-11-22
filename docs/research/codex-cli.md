@@ -27,7 +27,10 @@ These go to the owner as one decision batch before #481.
 2. **gg's `CODEX_HOME` holds ten remote plugins, installed and enabled** (`cli-plugin-list`: `github`, `superpowers`,
    `build-web-apps` and seven more from `openai-curated-remote`). Under the profile keys none of them shows in the
    prompt input, but `plugins` exact (decision 7) means gg disables every plugin an Agent does not list: by a
-   `plugins={...}` table naming each installed one, or `--disable plugins` when none is listed.
+   `plugins={...}` table naming each installed one, or `--disable plugins` when none is listed. The table excludes a
+   plugin its `CODEX_HOME` enables: the probe plugin, installed and enabled, reaches the prompt input with no `-c`
+   (`prompt-input-plugin-enabled-default`: `SENTINEL-PLUGINSKILL`) and not under `{enabled=false}`
+   (`prompt-input-plugin-excluded`: no sentinel).
 3. **Repository `.agents/skills` loads with the project untrusted** (decision 3, Q18 A): `SENTINEL-REPOSKILL` in
    `prompt-input-sentinels-untrusted`. `skills.include_instructions=false` drops it (`prompt-input-sentinels-profile`).
 4. **The `unelevated` fallback is not viable** (request 3.2's MXC fallback). Read-only: every shell start fails
@@ -38,8 +41,11 @@ These go to the owner as one decision batch before #481.
    starts and lists its tools (`mcp-schema.json` evidence.mcpLog), but the call fails "MCP tool call requires
    approval, but approval policy is never" (`mcp-schema.jsonl`, `mcp_tool_call` status `failed`). `mcp` exact needs a
    per-server or per-tool approval key; none was found in this session.
-6. **A fork without `-s` takes the thread's last sandbox**, so #485's read-only fork passes `-s read-only` before
-   `fork` (`fork`: one `turn_context`, `read-only`, after a thread whose last turn ran `workspace-write`).
+6. **A fork without `-s` takes the thread's last sandbox**: forked with no `-s` after a `workspace-write` last turn,
+   the fork ran `workspace-write`, where exec's default is read-only (`fork-unflagged`: one `turn_context`,
+   `workspace-write`). Whether `-s` overrides a writable parent is unsettled: `fork` passed `-s read-only` after a
+   read-only last turn (`resume-config-after` rollout line 53), so it shows nothing either way. #485's read-only fork
+   still passes `-s read-only` before `fork`, harmless whether or not it overrides.
 
 ## The nine open questions of facts-codex-cli.md
 
@@ -74,7 +80,8 @@ These go to the owner as one decision batch before #481.
    schema, so a cheap call cannot provoke one) and an MXC setup failure (none could be provoked safely; the
    unelevated sandbox's "CreateProcessAsUserW failed" in `unelevated-read-only` is the nearest recorded).
 6. **Fork and compaction in `--json`**: a fork emits `thread.started` with the new id, then the usual events;
-   nothing fork-specific (`fork.jsonl`). Usage is cumulative over the original thread on a fork as on a resume
+   nothing fork-specific (`fork.jsonl`). With no `-s` a fork runs under the thread's last sandbox, not exec's
+   read-only default (`fork-unflagged`, finding 6); whether `-s` overrides a writable parent is unsettled. Usage is cumulative over the original thread on a fork as on a resume
    (`fork`: 113,063 input tokens on a one-message turn, after the thread's 97,898). The fork writes a new rollout
    with `forked_from_id` and leaves the original's unchanged (`fork.json` evidence.forkedRollout.unchanged). A
    compaction emits nothing in `--json`: under `model_auto_compact_token_limit=16000` the rollout holds three
@@ -102,7 +109,7 @@ These go to the owner as one decision batch before #481.
 | Hooks under exec (Q10), `features.hooks` each way | fire and inject when on and bypassed; none when off or untrusted | `hooks-on`, `hooks-off`, `hooks-untrusted` |
 | One config MCP server with the schema | the request 3.2 regression fixture; the tool refused under `never` (finding 5) | `mcp-schema` |
 | Usage limit, auth error, mid-turn tree kill | question 5 above | `usage-limit`, `auth-invalid`, `auth-missing`, `tree-kill`, `tree-kill-resume` |
-| Compaction and fork in `--json` | question 6 above | `compaction`, `fork` |
+| Compaction and fork in `--json` | question 6 above | `compaction`, `fork`, `fork-unflagged` |
 | Where the rollout lands, what it holds | `CODEX_HOME/sessions/YYYY/MM/DD/rollout-<local time>-<thread id>.jsonl`; a resume appends to the thread's file. It holds `turn_context` (cwd, `sandbox_policy`, approval, model, effort) per turn and `token_count` events with `total_token_usage`, `last_token_usage` and `rate_limits` (`primary` used percent, window minutes, reset time) | `start.json` rolloutPath, `compaction.rollout.jsonl` |
 | The cheap commands #484 reads | `codex --version`; `login status` prints "Logged in using ChatGPT" (exit 0) or "Not logged in" (exit 1); `doctor --json` (schema 1, a status per check); `mcp list --json`; `plugin list --json` (the installed plugins; without `--json` it lists the whole remote catalog, over 1 MB); `features list` | `cli-*` |
 
@@ -116,7 +123,7 @@ These go to the owner as one decision batch before #481.
 | Resume flags (request 3.2) | confirmed: `-s` and `-C` before `resume` hold; gg passes them on every resume, as the cwd is the invocation's | `resume-flags-before`, `resume-config-after` |
 | MXC fallback to `unelevated` | changed: not viable (finding 4) | `unelevated-*` |
 | Hooks (Q10) | confirmed, with `--dangerously-bypass-hook-trust` on every call that needs gg's hook (or trust persisted in gg's `CODEX_HOME`) | `hooks-*` |
-| Capabilities (Q15 A) | `plugins` exact through a `-c` table (`plugins={"x@y"={enabled=true}}`; the dotted key is silently ignored; `--disable plugins` wins over the table). `mcp` exact: changed (finding 5). `skills` hint: `skills.config` can only disable a discovered skill, not add one, so a declared skill reaches Codex from a skill root, a plugin, or as text | `prompt-input-plugin-*`, `cli-plugin-list-installed`, `mcp-schema`, `prompt-input-skills-config-add` |
+| Capabilities (Q15 A) | `plugins` exact through a `-c` table: `{enabled=true}` adds a plugin its `CODEX_HOME` disables and `{enabled=false}` excludes one it enables (`plugins={"x@y"={enabled=true}}`; the dotted key is silently ignored; `--disable plugins` wins over the table). `mcp` exact: changed (finding 5). `skills` hint: `skills.config` can only disable a discovered skill, not add one, so a declared skill reaches Codex from a skill root, a plugin, or as text | `prompt-input-plugin-*`, `cli-plugin-list-installed`, `mcp-schema`, `prompt-input-skills-config-add` |
 | Job containment (F7) | confirmed: while a command ran, the job held the MXC helper (`codex.exe --__codex-windows-mxc`), `powershell.exe`, the command's `node`, `codex-code-mode-host.exe` and a `node` MCP host; every process naming the marker was in the job; nothing was left after exit or after a tree kill | `mxc-workspace-write.json`, `tree-kill.json` evidence.job |
 | Rewrite refusal (decision 6) | confirmed on Claude Code 2.1.330 (the Claude recorder, owner Q2 A): under `-p` with the launch profile on PowerShell, a listed plugin's PreToolUse hook that prefixes the Declared Command `node --version` with a wrapper, giving `updatedInput` and no permission decision, has the rewritten command refused against the allow list (`permission_denied`, its `permission_denials` entry holding the rewritten command); `git status`, not rewritten, ran under its rule | `test/fixtures/claude/rewrite-refusal` |
 
@@ -126,5 +133,7 @@ These go to the owner as one decision batch before #481.
 - What `--ignore-user-config` drops (question 3): moot while gg's own `CODEX_HOME` holds.
 - Whether a trusted project's `.codex/rules` allow runs its command outside the sandbox: in `repository-trusted` the
   model answered that it could not run commands, so the rule's effect was not seen. gg never trusts a project.
+- Whether `-s` on `exec` before `fork` overrides a parent thread last run `workspace-write` (finding 6): the recorded
+  `fork` followed a read-only last turn.
 - An approval key that lets a config MCP server's tool run under `never` (finding 5).
 - A key that stops PowerShell loading the user's profile (finding 1).

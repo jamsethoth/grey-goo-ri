@@ -8,8 +8,8 @@ export interface Scenario {
   purpose: string;
   prompt: string;
   // How the call starts when it does not start a new thread: the thread `from` started, resumed with --sandbox and -C
-  // on exec before resume (request 3.2), resumed with -c sandbox_mode after resume, or forked.
-  start?: { kind: 'resume-flags-before' | 'resume-config-after' | 'fork'; from: string };
+  // on exec before resume (request 3.2), resumed with -c sandbox_mode after resume, or forked with or without them.
+  start?: { kind: 'resume-flags-before' | 'resume-config-after' | 'fork' | 'fork-unflagged'; from: string };
   sandbox?: 'read-only' | 'workspace-write';
   windowsSandbox?: 'mxc' | 'unelevated';
   // Where codex is started: the repository, or the scenario's directory above it.
@@ -77,6 +77,15 @@ Then answer with the word it names.`,
     prompt: `${RUN_EACH}
 1. node write.js resume-flags.txt
 Then answer with whether it ran, what it printed, and the word you read from README.md earlier.`,
+  },
+  {
+    name: 'fork-unflagged',
+    purpose:
+      'the start thread, last run workspace-write, forked with no --sandbox or -C: which sandbox the fork runs under ' +
+      "(exec's default is read-only), what --json emits, whether usage is cumulative, and whether the original " +
+      "thread's rollout is unchanged",
+    start: { kind: 'fork-unflagged', from: 'start' },
+    prompt: 'Without any tool, answer with the word you read from README.md earlier in this conversation.',
   },
   {
     name: 'resume-config-after',
@@ -254,7 +263,7 @@ export interface CliCommand {
   name: string;
   purpose: string;
   argv: string[];
-  home?: 'gg' | 'empty' | 'plugin';
+  home?: 'gg' | 'empty' | 'plugin' | 'plugin-enabled';
   repository?: 'plain' | 'sentinels' | `only:${string}`;
   profile?: boolean;
   trusted?: boolean;
@@ -361,5 +370,17 @@ export const COMMANDS: CliCommand[] = [
     purpose: 'decision 7: the same plugin enabled by -c as a table, under --disable plugins',
     argv: [...PROMPT_INPUT, '-c', `plugins={${PLUGIN}={enabled=true}}`, '--disable', 'plugins', 'hi'],
     home: 'plugin',
+  },
+  {
+    name: 'prompt-input-plugin-enabled-default',
+    purpose: 'decision 7: the same plugin, installed and left enabled in CODEX_HOME, with no -c (the control)',
+    argv: [...PROMPT_INPUT, 'hi'],
+    home: 'plugin-enabled',
+  },
+  {
+    name: 'prompt-input-plugin-excluded',
+    purpose: 'decision 7: the same plugin, enabled in CODEX_HOME, disabled by -c as a table: does the -c exclude it?',
+    argv: [...PROMPT_INPUT, '-c', `plugins={${PLUGIN}={enabled=false}}`, 'hi'],
+    home: 'plugin-enabled',
   },
 ];
