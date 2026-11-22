@@ -44,10 +44,9 @@ const sources = (
 
 // The example Source as loadSources gives it: every file it names loaded beside it.
 function example() {
-  const files = exampleSource.WRITTEN_NAMES.filter((name) => name !== 'gg.json').map((name) => [
-    name,
-    file(exampleSource.fixtureText(name)),
-  ]);
+  const files = exampleSource.WRITTEN_NAMES.filter((name) => name !== 'gg.json').map(
+    (name) => [name, file(exampleSource.fixtureText(name))] as const,
+  );
   return { ...exampleSource.config(), files: Object.fromEntries(files) };
 }
 

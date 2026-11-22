@@ -61,9 +61,16 @@ function exampleReads(checker: ts.TypeChecker) {
     (ts.isObjectLiteralExpression(expression) &&
       expression.properties.some((property) => ts.isSpreadAssignment(property) && isExample(property.expression)));
   // A place is the example's when it is typed by it; an intersection only when every member is, since an open record
-  // beside the example lets any key in (#358, m2).
-  const isExamplePlace = (type: ts.Type) =>
-    type.isIntersection() ? type.types.every((member) => fromExample(member)) : fromExample(type);
+  // beside the example lets any key in (#358, m2), at any depth of a union, list or tuple (round 5's m1).
+  const isExamplePlace = (type: ts.Type, walking = new Set<ts.Type>()): boolean => {
+    if (walking.has(type)) return false;
+    walking.add(type);
+    if (type.isIntersection()) return type.types.every((member) => isExamplePlace(member, walking));
+    if (type.isUnion()) return type.types.some((member) => isExamplePlace(member, walking));
+    if (checker.isArrayType(type) || checker.isTupleType(type))
+      return checker.getTypeArguments(type as ts.TypeReference).some((member) => isExamplePlace(member, walking));
+    return fromExample(type);
+  };
   return { fromExample, isConfigCall, reaches, isExample, isExamplePlace };
 }
 
@@ -140,7 +147,7 @@ function escapes(node: ts.Node, checker: ts.TypeChecker, reads: Reads) {
   if (isCast(node) && reaches(node.expression)) found.push('a cast of the example');
   if (node.kind === ts.SyntaxKind.AnyKeyword && node.getSourceFile().fileName !== WRITES_ANY) found.push('an any');
   if (typedWider(node, checker, reads)) found.push('the example given with a type argument not its own');
-  if (widerParameter(node, checker, reads)) found.push(HANDED);
+  if (widerCallback(node, checker, reads)) found.push(HANDED);
   if (!ts.isExpression(node)) return found;
   // The place is asked first: most expressions have none, and it is cheaper than the type of each.
   const place = placeOf(node, checker);
@@ -149,20 +156,23 @@ function escapes(node: ts.Node, checker: ts.TypeChecker, reads: Reads) {
   return found;
 }
 
-// A callback parameter typed by its own annotation where its callee gives it the example: tsc then checks the example
-// against that annotation, not against a place (#358, m1).
-function widerParameter(node: ts.Node, checker: ts.TypeChecker, reads: Reads) {
-  if (!ts.isParameter(node) || node.type === undefined) return false;
-  const callback = node.parent;
-  if (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback)) return false;
-  const contextual = checker.getContextualType(callback);
-  const signature = contextual && checker.getSignaturesOfType(contextual, ts.SignatureKind.Call)[0];
-  const given = signature?.parameters[callback.parameters.indexOf(node)];
-  return (
-    given !== undefined &&
-    reads.fromExample(checker.getTypeOfSymbolAtLocation(given, node)) &&
-    !reads.isExamplePlace(checker.getTypeFromTypeNode(node.type))
-  );
+// A callback whose parameter is typed wider where its callee gives that parameter the example: tsc then checks the
+// example against the callback's parameter, not against a place. Inline or passed by name, the callback is judged by
+// its own signature against the one the callee declares (#358, m1; round 5's m2).
+function widerCallback(node: ts.Node, checker: ts.TypeChecker, reads: Reads) {
+  if (!ts.isExpression(node) || callOf(node) === undefined) return false;
+  const contextual = checker.getContextualType(node);
+  const declared = contextual && checker.getSignaturesOfType(contextual, ts.SignatureKind.Call)[0];
+  const own = checker.getSignaturesOfType(checker.getTypeAtLocation(node), ts.SignatureKind.Call)[0];
+  if (declared === undefined || own === undefined) return false;
+  return own.parameters.some((parameter, index) => {
+    const given = declared.parameters[index];
+    return (
+      given !== undefined &&
+      reads.fromExample(checker.getTypeOfSymbolAtLocation(given, node)) &&
+      !reads.isExamplePlace(checker.getTypeOfSymbolAtLocation(parameter, node))
+    );
+  });
 }
 
 // A call given the example with a type argument that is not the example's, such as a listed read told to return
@@ -302,6 +312,15 @@ const SAMPLES: [string, ...string[]][] = [
   ['export const vs: Record<string, Record<string, unknown>> = { ...config.flows.default.ticket.vertices };', HANDED],
   ["import * as declared from '../../lib/validate/declared.ts';"],
   ['export const viaLib = declared.declaredValue(config.agents);', HANDED],
+  // Review round 5's m1 and m2: an intersection with an open record inside a list, and a callback passed by name.
+  [
+    'const one = [config.agents.implementer]; export const xs: (typeof one[0] & Record<string, unknown>)[] = one;',
+    HANDED,
+  ],
+  [
+    'function wide(action: Record<string, unknown>) { action.x = 1; } config.procedures.review.actions.forEach(wide);',
+    HANDED,
+  ],
   ['export const read = config.flows.default.actionCap;'],
   ['export const values = Object.values(config.agents);'],
   ["exampleSource.putAt(config, ['labelPrefix'], null);"],
