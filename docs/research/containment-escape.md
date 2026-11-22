@@ -311,8 +311,9 @@ ADR 0030 proposes it; this is its outline.
    survivor, with `confirmed: false`.
 4. **A call's recorded containment stays `job` only while nothing it started has left gg's job.** The first linked
    process the watcher sees outside gg's job makes gg save the call's containment as `none` before it adopts or ends
-   that process, and it stays `none`, so a crash after an escapee is seen leaves a call a resume rescues and holds
-   rather than reset in place. The rules of record.md and harness.md this changes raise `RECORD_SCHEMA_VERSION` (3 to
+   that process, and it stays `none`. Once that save commits, a crash leaves a call a resume rescues and holds rather
+   than reset in place; a crash before it commits, or a failed save (fatal, like a crash), leaves the call `job` with
+   the escapee neither adopted nor ended, the residual risk below. The rules of record.md and harness.md this changes raise `RECORD_SCHEMA_VERSION` (3 to
    4) and `FAKE_HARNESS_VERSION` (5 to 6), with no rule for a `job` saved before the bump, since gg has none in use.
 5. **One shell check for both Harnesses:** the static check on every `gg doctor` and preflight, the live one under
    `gg doctor --probe`.
@@ -320,8 +321,9 @@ ADR 0030 proposes it; this is its outline.
    residual risk there.
 
 What stays unseen, the residual risk this replaces the breakaway text with: on Windows, a process outside gg's job that
-no poll saw before its parent ended or gg died, and a process a service, WMI or the task scheduler starts on a command's behalf,
-which no parent link ties to the command (`docs/testing.md:240` names the second already); on Linux without a cgroup, a
+no poll saw before its parent ended or gg died, or one a poll saw whose call's `none` save had not committed when gg
+died or the save failed (its call stays `job`), and a process a service, WMI or the task scheduler starts on a
+command's behalf, which no parent link ties to the command (`docs/testing.md:240` names the second already); on Linux without a cgroup, a
 process that leaves the group and closes its stdio.
 
 ## What a confirmed cleanup means for #68 and #69
@@ -345,13 +347,16 @@ same for a stdio-closed double fork.
 
 **Under the recommended design.** `job` means again what N1 needs: no process the call started ever left gg's job, so
 kill-on-close on a handle only gg holds ends them all at gg's death. A call whose watcher saw an escapee saves `none`
-before gg adopts or ends it, write-ahead (ADR 0005), and keeps it, which `lib/rescue.ts:216` already rescues and holds:
-a crash while gg is adopting or ending the escapee cannot leave a `job` over it. Neither `lib/rescue.ts` nor
-`confirmedUnder` changes; their premise becomes true. A Pending cleanup hold's `closeJob` must close the adopted jobs
-too. The rule a saved `job` follows changes in record.md (:846-856) and harness.md (:163-166), with no shape change, so
+before gg adopts or ends it, write-ahead (ADR 0005), and keeps it, which `lib/rescue.ts:216` already rescues and holds.
+gg adopts or ends the escapee only once that save commits, so a crash while it does cannot leave a `job` over it;
+until `savedContainment`'s save returns (`lib/agent-call.ts:137-142`) the payload says `job`, and a crash then, or a
+failed save (fatal, like a crash: `lib/effect-errors.ts:19`), leaves `job` over an escapee gg never adopted. Neither
+`lib/rescue.ts` nor `confirmedUnder` changes; their premise becomes true but for that window and the residual gap
+above. A Pending cleanup hold's `closeJob` must close the adopted jobs too. The rule a saved `job` follows changes in record.md (:846-856) and harness.md (:163-166), with no shape change, so
 the implementing ticket raises `RECORD_SCHEMA_VERSION` and `FAKE_HARNESS_VERSION` (owner, 2026-11-22); no record of
 the previous version is in use, so none gets a rule of its own. The residual gap above stays: an escapee unseen at
-gg's death is not ended, its call stays `job`, and a reset can run under it. #69 stays an alternative for file locks and rescued human edits; this design does not need it.
+gg's death, or seen before its call's `none` save committed, is not ended, its call stays `job`, and a reset can run
+under it. #69 stays an alternative for file locks and rescued human edits; this design does not need it.
 
 ## Not probed, and why
 
@@ -405,10 +410,11 @@ To file once the owner decides ADR 0030; none is filed yet. Each test fails toda
      an escapee, after ticket 2; `RECORD_SCHEMA_VERSION` 3 to 4 and `FAKE_HARNESS_VERSION` 5 to 6, with record.md's
      containment paragraph and harness.md's `started` rule restated (ADR 0030 decision 4). No rule for a `job` saved
      before the bump, and no test of one.
-   - Tests that fail today (small, beside `test/unit/interpreter.retry.test.ts`): `a crash after an escapee is seen
-     holds the Interrupted Attempt`, the crash point between the `none` save and the adoption, and `an Interrupted
-     Attempt whose call had an escapee gg adopted is rescued and held, not reset`. Today its payload says `job` and it
-     is reset.
+   - Tests that fail today (small, beside `test/unit/interpreter.retry.test.ts`): `a crash after the none save commits
+     holds the Interrupted Attempt`, the crash point between the committed `none` save and the adoption; `a none save
+     that fails or is interrupted stops the Run before the escapee is adopted or ended`, which pins the order (the call
+     stays `job`, ADR 0030 decision 8's residual risk); and `an Interrupted Attempt whose call had an escapee gg adopted
+     is rescued and held, not reset`. Today its payload says `job` and it is reset.
 4. **One shell check for both Harnesses: a packaged shell fails preflight, and `--probe` checks a command stays in
    gg's job.**
    - Scope: one check both Harnesses' `doctor` call, replacing `shellCheck` (`lib/harnesses/claude-doctor.ts:199`) and

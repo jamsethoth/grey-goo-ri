@@ -42,9 +42,11 @@ with #484's.
    implementing ticket's choice: a snapshot costs about 38 ms, about 15% of one core at POSIX's 250 ms.
 4. **A call's containment is recorded as `job` only while nothing it started has left gg's job.** The first linked
    process the watcher sees outside gg's job makes gg save the call's containment as `none` before it adopts or ends
-   that process, and it stays `none` (the write-ahead order of ADR 0005): a crash at any point after an escapee is seen
-   leaves the call `none`, so a resume rescues and holds it, never resets it in place (N1). `job` then means no process
-   of the call ever left gg's job, so all of them end with gg's handle. `lib/rescue.ts` and `confirmedUnder` keep
+   that process, and it stays `none` (the write-ahead order of ADR 0005). Once the `none` save commits, a crash leaves
+   the call `none`, so a resume rescues and holds it, never resets it in place (N1). A crash before it commits, or a
+   failed save (fatal, like a crash: `lib/effect-errors.ts:19`), leaves the call `job` with the escapee neither adopted
+   nor ended: 8's residual risk. `job` then means no process of the call ever left gg's job, but for that window, so
+   all of them end with gg's handle. `lib/rescue.ts` and `confirmedUnder` keep
    their rules; their premise, that a `job` call's processes all end with gg's handles, becomes true but for 8's
    residual risk. A Pending cleanup hold's `closeJob` closes the adopted jobs too.
    No saved shape changes, but two frozen rules do: what a saved `job` proves (`docs/interfaces/record.md:846-856`)
@@ -67,7 +69,8 @@ with #484's.
    kind `cgroup` with its identity is reserved in `docs/interfaces/record.md`). A `systemd-run --user --scope` held and
    ended a double-forked, stdio-closed process in WSL. Until a cgroup is available, the process group and watcher stay.
 8. **The residual risk, narrowed.** In place of "a tool that explicitly breaks away", gg accepts and names: on
-   Windows, a process outside gg's job that no poll saw before its parent ended or gg died (its call stays `job`, so a
+   Windows, a process outside gg's job that no poll saw before its parent ended or gg died, or one a poll saw whose
+   call's `none` save had not committed when gg died or the save failed (4; either way its call stays `job`, so a
    resume can reset under it), and a process a service, WMI or the task
    scheduler starts on a command's behalf, which no parent link ties to the command; on Linux without a cgroup, a
    process that leaves the process group and closes its stdio.
@@ -142,9 +145,11 @@ These texts stay as they are until the owner decides this ADR; the decision then
 ## Consequences
 
 - Four follow-up tickets, listed ready to file in the research note's last section, carry the failing tests: no
-  breakaway; the Windows watcher with adoption, for a launch and a Check; a call's containment saved as `none` when the
-  watcher first sees an escapee, with the two version bumps; the shared shell check with its `--probe` half.
-- An interrupted call that had an escapee, even one gg adopted, is held for a person rather than reset and retried.
+  breakaway; the Windows watcher with adoption, for a launch and a Check; a call's containment saved as `none`, the
+  save committed before gg adopts or ends the first escapee the watcher sees, with the two version bumps; the shared
+  shell check with its `--probe` half.
+- An interrupted call whose `none` save committed, even one whose escapee gg adopted, is held for a person rather than
+  reset and retried.
 - A machine whose only PowerShell 7 is the Store's, the owner's among them, fails preflight until an unpackaged one
   is installed or put first on PATH.
 - A Windows launch or Check pays for a process snapshot each poll, and a job per packaged process it adopts.
