@@ -199,15 +199,20 @@ function evidenceOf(directories: Directories) {
 }
 
 // The local paths, the user's name, email addresses and keys, replaced wherever they appear (scripts/cli-recording.ts).
+// Claude's recorder replaces the user's name inside a longer name too, as it did before the shared rule (#480).
 function redactorOf(base: string) {
+  const { username } = userInfo();
   return cliRecording.redactorOf({
     paths: [
       [base, '<recording>'],
       [homedir(), '<home>'],
       [process.env.ProgramFiles ?? 'C:\\Program Files', '<program-files>'],
     ],
-    username: userInfo().username,
-    patterns: [[/sk-ant-[\w-]+/g, 'sk-ant-<redacted>']],
+    username,
+    patterns: [
+      [/sk-ant-[\w-]+/g, 'sk-ant-<redacted>'],
+      [new RegExp(username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '<user>'],
+    ],
   });
 }
 
