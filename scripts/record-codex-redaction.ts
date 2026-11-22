@@ -1,8 +1,7 @@
 // What scripts/record-codex.ts commits of a call (#479, owner Q4 A): the local paths, the user's name, email addresses,
-// keys and tokens replaced wherever they appear, as scripts/record-claude.ts replaces them, but the name only where it
-// stands whole; the account's ids and the repository URL replaced by key; and a session file trimmed of OpenAI's
-// base instructions, encrypted reasoning, and the developer messages' text, which lists the user's own skills and
-// plugins.
+// keys and tokens replaced wherever they appear, as scripts/record-claude.ts replaces them; the account's ids and the
+// repository URL replaced by key; and a session file trimmed of OpenAI's base instructions, encrypted reasoning, and
+// the developer messages' text, which lists the user's own skills and plugins.
 import { homedir, userInfo } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -13,9 +12,10 @@ const CHECKOUT = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]$/,
 const TRIMMED_KEYS = new Set(['base_instructions', 'encrypted_content']);
 
 // The text replacements: as written, with forward slashes, JSON-escaped, as Git Bash writes a path, and as a
-// directory name made of it. The user's name only as a whole name, not joined to letters, digits, `_` or `-`: inside a
-// longer name, as Ubuntu CI's `runner` is in `codex-command-runner.exe`, it is that name's text.
-export function redactorOf(base: string, username = userInfo().username) {
+// directory name made of it. `wholeName`, for the privacy test's check of committed text alone, matches the user's
+// name only where it is not joined to letters, digits, `_` or `-`: Ubuntu CI's `runner` is inside Codex's own
+// `codex-command-runner.exe`, which the recorder, on that machine, would redact.
+export function redactorOf(base: string, { username = userInfo().username, wholeName = false } = {}) {
   const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // A path's separators as any run of slashes or backslashes: written, forward, or escaped once or more (a -c value
   // that quotes a path, saved in a JSON argv, then in an error line); as Git Bash writes it; and as a directory name.
@@ -28,7 +28,7 @@ export function redactorOf(base: string, username = userInfo().username) {
     ...forms(base).map((form): [RegExp, string] => [new RegExp(form, 'gi'), '<recording>']),
     ...forms(CHECKOUT).map((form): [RegExp, string] => [new RegExp(form, 'gi'), '<gg>']),
     ...forms(homedir()).map((form): [RegExp, string] => [new RegExp(form, 'gi'), '<home>']),
-    [new RegExp(`(?<![\\w-])${escape(username)}(?![\\w-])`, 'gi'), '<user>'],
+    [new RegExp(wholeName ? `(?<![\\w-])${escape(username)}(?![\\w-])` : escape(username), 'gi'), '<user>'],
     [/eyJ[\w-]+\.[\w-]+\.[\w-]+/g, '<jwt>'],
     [/sk-[\w-]{16,}/g, 'sk-<redacted>'],
     [/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '<email>'],
