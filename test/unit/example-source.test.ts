@@ -157,10 +157,12 @@ function escapes(node: ts.Node, checker: ts.TypeChecker, reads: Reads) {
 }
 
 // A callback whose parameter is typed wider where its callee gives that parameter the example: tsc then checks the
-// example against the callback's parameter, not against a place. Inline or passed by name, the callback is judged by
-// its own signature against the one the callee declares (#358, m1; round 5's m2).
+// example against the callback's parameter, not against a place. Inline or passed by name, or typed by a variable, an
+// object, a list, a return or an assignment, the callback is judged by its own signature against the one that place
+// declares (#358, m1; round 5's m2; round 6's m1).
 function widerCallback(node: ts.Node, checker: ts.TypeChecker, reads: Reads) {
-  if (!ts.isExpression(node) || callOf(node) === undefined) return false;
+  if (!ts.isExpression(node)) return false;
+  if (callOf(node) === undefined && !ts.isArrowFunction(node) && !ts.isFunctionExpression(node)) return false;
   const contextual = checker.getContextualType(node);
   const declared = contextual && checker.getSignaturesOfType(contextual, ts.SignatureKind.Call)[0];
   const own = checker.getSignaturesOfType(checker.getTypeAtLocation(node), ts.SignatureKind.Call)[0];
@@ -319,6 +321,34 @@ const SAMPLES: [string, ...string[]][] = [
   ],
   [
     'function wide(action: Record<string, unknown>) { action.x = 1; } config.procedures.review.actions.forEach(wide);',
+    HANDED,
+  ],
+  // Review round 6's m1: a callback typed wider where something other than a call's argument gives it its type, a
+  // variable, an object, a list, a return or an assignment.
+  ['type A = (typeof config.procedures.review.actions)[number];'],
+  [
+    'export const viaVariable: (action: A) => void = (action: Record<string, unknown>) => { action.extra = 1; };',
+    HANDED,
+  ],
+  ['function each<T>(items: T[], visitor: { visit: (item: T) => void }) { items.forEach(visitor.visit); }'],
+  [
+    'each(config.procedures.review.actions, { visit: (action: Record<string, unknown>) => { action.extra = 1; } });',
+    HANDED,
+  ],
+  [
+    'export const viaList: ((action: A) => void)[] = [(action: Record<string, unknown>) => { action.extra = 1; }];',
+    HANDED,
+  ],
+  [
+    'export function make(): (action: A) => void { return (action: Record<string, unknown>) => { action.x = 1; }; }',
+    HANDED,
+  ],
+  [
+    'export const viaFunction: (action: A) => void = function (action: Record<string, unknown>) { action.extra = 1; };',
+    HANDED,
+  ],
+  [
+    'let assigned: (action: A) => void = () => {}; assigned = (action: Record<string, unknown>) => { action.x = 1; };',
     HANDED,
   ],
   ['export const read = config.flows.default.actionCap;'],
