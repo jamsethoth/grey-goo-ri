@@ -465,9 +465,11 @@ test('a response condition whose is fits no value of its enum field keeps its co
   ]);
 });
 
+// Array.isArray narrows to any[]; this narrows to unknown[], so nothing read from the example is any.
+const isList = (value: unknown): value is unknown[] => Array.isArray(value);
 // Every path to a value of the example Source, as keys and list indices.
 function valuePaths<Value>(value: Value, path: (string | number)[] = []): (string | number)[][] {
-  const children: [string | number, unknown][] = Array.isArray(value)
+  const children: [string | number, unknown][] = isList(value)
     ? value.map((item, index) => [index, item])
     : Object.entries(value !== null && typeof value === 'object' ? value : {});
   return [...(path.length ? [path] : []), ...children.flatMap(([key, item]) => valuePaths(item, [...path, key]))];
@@ -483,7 +485,7 @@ function mutated(path: (string | number)[], leftOut: boolean) {
   const config = exampleSource.config();
   const parent = valueAt(config, path.slice(0, -1));
   const key = path.at(-1) as string | number;
-  if (leftOut && Array.isArray(parent)) parent.splice(key as number, 1);
+  if (leftOut && isList(parent)) parent.splice(key as number, 1);
   else exampleSource.putAt(config, path.map(String), leftOut ? undefined : 3);
   return config;
 }
