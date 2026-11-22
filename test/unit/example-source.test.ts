@@ -55,8 +55,16 @@ function exampleReads(checker: ts.TypeChecker) {
       ts.isParenthesizedExpression(node) ||
       ts.isNonNullExpression(node)) &&
       reaches(node.expression));
-  const isExample = (expression: ts.Expression) => fromExample(checker.getTypeAtLocation(expression));
-  return { fromExample, isConfigCall, reaches, isExample };
+  // An object literal that spreads the example holds its values, and its own type is not the file's (#358, m3).
+  const isExample = (expression: ts.Expression): boolean =>
+    fromExample(checker.getTypeAtLocation(expression)) ||
+    (ts.isObjectLiteralExpression(expression) &&
+      expression.properties.some((property) => ts.isSpreadAssignment(property) && isExample(property.expression)));
+  // A place is the example's when it is typed by it; an intersection only when every member is, since an open record
+  // beside the example lets any key in (#358, m2).
+  const isExamplePlace = (type: ts.Type) =>
+    type.isIntersection() ? type.types.every((member) => fromExample(member)) : fromExample(type);
+  return { fromExample, isConfigCall, reaches, isExample, isExamplePlace };
 }
 
 // The call or `new` that `node` is an argument of, if any.
@@ -86,13 +94,23 @@ function placeOf(node: ts.Expression, checker: ts.TypeChecker) {
   return parameter === undefined ? undefined : checker.getTypeAtLocation(parameter);
 }
 
+type Reads = ReturnType<typeof exampleReads>;
+
+// Whether `call`'s result could be its argument `node` typed wider: a result not the example's that the example fits.
+const handsBack = (node: ts.Expression, call: ts.CallLikeExpression, checker: ts.TypeChecker, reads: Reads) => {
+  const result = checker.getTypeAtLocation(call);
+  return !reads.fromExample(result) && checker.isTypeAssignableTo(checker.getTypeAtLocation(node), result);
+};
+
 // The places the example may go that its type does not name.
-function listed(node: ts.Expression, checker: ts.TypeChecker) {
+function listed(node: ts.Expression, checker: ts.TypeChecker, reads: Reads) {
   const call = callOf(node);
   if (call !== undefined) {
     const { file, name } = calleeOf(call, checker);
-    // gg's own code reads what a case gives it; putAt is the one edit out of the example's shape.
-    if (file.startsWith(`${root}lib/`) || (file === EXAMPLE_MODULE && name === 'putAt')) return true;
+    // putAt is the one edit out of the example's shape.
+    if (file === EXAMPLE_MODULE && name === 'putAt') return true;
+    // gg's own code reads what a case gives it, unless its result could be the argument handed back wider (#358, m4).
+    if (file.startsWith(`${root}lib/`)) return !handsBack(node, call, checker, reads);
     return STANDARD_LIBRARY.some((library) => file.includes(library)) && STANDARD_READS.has(name ?? '');
   }
   const { parent } = node;
@@ -116,22 +134,40 @@ function goldenExample(assignment: ts.PropertyAssignment, checker: ts.TypeChecke
 
 // What `node` does to the example that tsc does not check: a cast of it, an `any`, the example handed to a place not
 // typed by it, or given with a type argument that is not.
-function escapes(node: ts.Node, checker: ts.TypeChecker, reads: ReturnType<typeof exampleReads>) {
-  const { fromExample, reaches, isExample } = reads;
+function escapes(node: ts.Node, checker: ts.TypeChecker, reads: Reads) {
+  const { isExamplePlace, reaches, isExample } = reads;
   const found: string[] = [];
   if (isCast(node) && reaches(node.expression)) found.push('a cast of the example');
   if (node.kind === ts.SyntaxKind.AnyKeyword && node.getSourceFile().fileName !== WRITES_ANY) found.push('an any');
   if (typedWider(node, checker, reads)) found.push('the example given with a type argument not its own');
+  if (widerParameter(node, checker, reads)) found.push(HANDED);
   if (!ts.isExpression(node)) return found;
   // The place is asked first: most expressions have none, and it is cheaper than the type of each.
   const place = placeOf(node, checker);
-  if (place !== undefined && !fromExample(place) && isExample(node) && !listed(node, checker)) found.push(HANDED);
+  if (place !== undefined && !isExamplePlace(place) && isExample(node) && !listed(node, checker, reads))
+    found.push(HANDED);
   return found;
+}
+
+// A callback parameter typed by its own annotation where its callee gives it the example: tsc then checks the example
+// against that annotation, not against a place (#358, m1).
+function widerParameter(node: ts.Node, checker: ts.TypeChecker, reads: Reads) {
+  if (!ts.isParameter(node) || node.type === undefined) return false;
+  const callback = node.parent;
+  if (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback)) return false;
+  const contextual = checker.getContextualType(callback);
+  const signature = contextual && checker.getSignaturesOfType(contextual, ts.SignatureKind.Call)[0];
+  const given = signature?.parameters[callback.parameters.indexOf(node)];
+  return (
+    given !== undefined &&
+    reads.fromExample(checker.getTypeOfSymbolAtLocation(given, node)) &&
+    !reads.isExamplePlace(checker.getTypeFromTypeNode(node.type))
+  );
 }
 
 // A call given the example with a type argument that is not the example's, such as a listed read told to return
 // Record<string, unknown>: the place it hands back is then typed by that argument.
-const typedWider = (node: ts.Node, checker: ts.TypeChecker, reads: ReturnType<typeof exampleReads>) =>
+const typedWider = (node: ts.Node, checker: ts.TypeChecker, reads: Reads) =>
   (ts.isCallExpression(node) || ts.isNewExpression(node)) &&
   node.typeArguments?.some((argument) => !reads.fromExample(checker.getTypeFromTypeNode(argument))) === true &&
   node.arguments?.some(reads.isExample) === true;
@@ -139,11 +175,17 @@ const typedWider = (node: ts.Node, checker: ts.TypeChecker, reads: ReturnType<ty
 const isCast = (node: ts.Node): node is ts.AsExpression | ts.TypeAssertion =>
   (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) && !ts.isConstTypeReference(node.type);
 
-// The lines a comment tells tsc to ignore an error on: an edit of the example there is checked by nothing.
-const suppressedLines = (sourceFile: ts.SourceFile) =>
-  new Set(
-    sourceFile.text.split('\n').flatMap((text, line) => (/@ts-(expect-error|ignore)/.test(text) ? [line + 1] : [])),
+// The lines a comment tells tsc to ignore an error on: an edit of the example there is checked by nothing. A nocheck
+// comment among the file's leading comments ignores every line (#358, m5).
+const suppressedLines = (sourceFile: ts.SourceFile) => {
+  const { text } = sourceFile;
+  const nocheck = (ts.getLeadingCommentRanges(text, 0) ?? []).some((range) =>
+    text.slice(range.pos, range.end).includes('@ts-nocheck'),
   );
+  return new Set(
+    text.split('\n').flatMap((line, index) => (nocheck || /@ts-(expect-error|ignore)/.test(line) ? [index + 1] : [])),
+  );
+};
 
 // In `files` of `program`: every call of exampleSource.config(), and each place a test reaches the example around its
 // type: a config() not typed by the example file, each escape `escapes` names, and the example on a suppressed line.
@@ -244,6 +286,22 @@ const SAMPLES: [string, ...string[]][] = [
   // E6: an edit out of the shape whose error a comment suppresses.
   ['// @ts-expect-error'],
   ['config.labelPrefix = null;', 'a suppressed error on the example'],
+  // A list of the example widened, and an open record two levels down.
+  ['export const listed: Record<string, unknown>[] = Object.values(config.agents);', HANDED],
+  [
+    'export const inner: { ticket: { vertices: Record<string, Record<string, unknown>> } } = config.flows.default;',
+    HANDED,
+  ],
+  // Review round 4's m1 to m4: a callback parameter typed wider, an intersection with an open record, a spread copy in
+  // a wider place, and a function under lib/ that hands its argument back wider.
+  ['config.procedures.review.actions.forEach((action: Record<string, unknown>) => { action.extra = 1; });', HANDED],
+  [
+    'export const both: typeof config.agents.implementer & Record<string, unknown> = config.agents.implementer;',
+    HANDED,
+  ],
+  ['export const vs: Record<string, Record<string, unknown>> = { ...config.flows.default.ticket.vertices };', HANDED],
+  ["import * as declared from '../../lib/validate/declared.ts';"],
+  ['export const viaLib = declared.declaredValue(config.agents);', HANDED],
   ['export const read = config.flows.default.actionCap;'],
   ['export const values = Object.values(config.agents);'],
   ["exampleSource.putAt(config, ['labelPrefix'], null);"],
@@ -268,6 +326,15 @@ test('the census finds a config() not typed by the example, each cast of it, eac
       findings.map((finding) => `test/support/planted-example.ts:${HEADER.length + index + 1}: ${finding}`),
     ),
   );
+});
+
+test('the census reads every line of a file under a leading nocheck comment as suppressed', () => {
+  const { program, plantedFile } = plantedProgram(['// @ts-nocheck', ...HEADER, 'config.labelPrefix = null;']);
+  const { found } = census(program, (sourceFile) => sourceFile === plantedFile);
+  assert.deepEqual(found, [
+    'test/support/planted-example.ts:4: a suppressed error on the example',
+    'test/support/planted-example.ts:5: a suppressed error on the example',
+  ]);
 });
 
 test('tsc refuses an edit out of the example shape, and passes the same edit through putAt and a read of a key', () => {

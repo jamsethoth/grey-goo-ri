@@ -47,7 +47,7 @@ const ROUTE_MAP_CASES: Record<string, (config: Source) => void> = {
   },
   'write-without-commit': (config) => {
     const { implement } = config.procedures;
-    implement.actions = implement.actions.filter((action: { id: string }) => action.id !== 'commit');
+    implement.actions = implement.actions.filter((action) => action.id !== 'commit');
   },
   'commit-without-check': (config) => {
     config.procedures.fix.claimTokens.ok.requires = [];
@@ -363,7 +363,7 @@ function withCanaries(config: Source) {
   // With no Check required, implement has no failed Outcome, so green's route for it is unknown.
   config.procedures.implement.claimTokens.ok.requires = [];
   const { implement } = config.procedures;
-  implement.actions = implement.actions.filter((action: { id: string }) => action.id !== 'commit');
+  implement.actions = implement.actions.filter((action) => action.id !== 'commit');
   exampleSource.putAt(routes, ['*']);
   exampleSource.putAt(routes, ['misscoped']);
   exampleSource.putAt(vertices.green.inputs.findings, ['optional']);

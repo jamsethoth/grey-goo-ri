@@ -120,7 +120,7 @@ test('a path to ready-for-qa without pr-ready is an error', () => {
 test('pr-ready in a Procedure whose token requires no Check is an error', () => {
   const config = exampleSource.config();
   const { publish } = config.procedures;
-  publish.actions = publish.actions.filter((action: { id: string }) => action.id !== 'test');
+  publish.actions = publish.actions.filter((action) => action.id !== 'test');
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: 'procedures.publish.actions[1]',
@@ -132,7 +132,7 @@ test('pr-ready in a Procedure whose token requires no Check is an error', () => 
 test('a passing write path without a commit is an error', () => {
   const config = exampleSource.config();
   const { implement } = config.procedures;
-  implement.actions = implement.actions.filter((action: { id: string }) => action.id !== 'commit');
+  implement.actions = implement.actions.filter((action) => action.id !== 'commit');
   assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     {
       at: `${VERTICES}.green`,

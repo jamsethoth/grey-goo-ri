@@ -538,7 +538,7 @@ test('a response condition list that steps into a list of objects is an error', 
   exampleSource.putAt(
     review,
     ['actions'],
-    review.actions.map((action: { id: string }) =>
+    review.actions.map((action) =>
       action.id === 'review-pass'
         ? { id: 'review-pass', do: 'check', kind: 'response', none: 'findings.detail', where: { severity: 'major' } }
         : action,
@@ -559,7 +559,7 @@ test('a where field or repeat field is one field of each item, not a path', () =
   exampleSource.putAt(
     review,
     ['actions'],
-    review.actions.map((action: { id: string }) =>
+    review.actions.map((action) =>
       action.id === 'review-pass'
         ? { id: 'review-pass', do: 'check', kind: 'response', none: 'findings', where: { 'detail.severity': 'major' } }
         : action,
