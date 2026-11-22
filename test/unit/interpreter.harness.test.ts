@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import type * as events from '../../lib/events.ts';
+import * as contract from '../../lib/harnesses/contract.ts';
 import * as interpreter from '../../lib/interpreter.ts';
-import { actionEvent, attemptsOf } from '../support/execution-reads.ts';
+import { actionEvent, attemptsOf, loadTicket } from '../support/execution-reads.ts';
 import { firstVisitWith } from '../support/first-visit.ts';
 import * as golden from '../support/golden.ts';
 import { runFirstVisit } from '../support/golden-run.ts';
@@ -36,6 +38,84 @@ test("a resumed Attempt's call carries the Session's earlier cumulative Usage", 
     toolCalls: 0,
     compactions: 0,
   });
+});
+
+const RED_THIRD = keys.responseKey({ vertex: 'red', visit: 1, action: 'red', attempt: 3 });
+// What a Claude call stopped before its result line reports (#487 Q3 A): no token totals, cost, turns or cost basis.
+const UNREPORTED = {
+  inputTokens: null,
+  cacheReadTokens: null,
+  cacheWriteTokens: null,
+  outputTokens: null,
+  costUsd: null,
+  turns: null,
+  costBasis: null,
+};
+// The Session's total after the first call, the last one reported.
+const FIRST_TOTAL = {
+  inputTokens: 40,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  outputTokens: 7,
+  reasoningTokens: null,
+  costUsd: null,
+  peakContextTokens: 0,
+  turns: 3,
+  toolCalls: 0,
+  compactions: 0,
+};
+
+// The Session keeps its last reported total as the baseline a resumed call is given (#487 Q1 A), saved and read back,
+// while the call that reported none keeps its null Usage on its Action Event.
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test("a resumed call after a timed-out one computes its delta from the last reported total, across a reload, while the timed-out call's Event carries null Usage", async (t) => {
+  const fixture = await golden.fixture(t, {
+    responses: firstVisitWith({
+      [RED_CALL]: { ...TRANSIENT, result: { usage: { delta: { inputTokens: 40, outputTokens: 7, turns: 3 } } } },
+      [RED_RETRY]: { files: {}, response: null, result: { status: 'timed-out' } },
+      [RED_THIRD]: golden.firstVisitResponses[RED_CALL]!,
+    }),
+  });
+  // The fake reads a scripted null count as 0, so the timed-out call's Usage is set here, as Claude's Harness gives it.
+  const run = fixture.harness.run;
+  fixture.harness.run = async (call, hooks) => {
+    const answer = await run(call, hooks);
+    if (call.attempt === 2)
+      for (const half of ['cumulative', 'delta'] as const)
+        answer.result.usage[half] = { ...answer.result.usage[half], ...UNREPORTED };
+    return answer;
+  };
+  const timedOut = golden.markerOf(fixture.executionRecord, 'red', 1, 'red', 0, 2);
+  await assert.rejects(
+    interpreter.runExecution({ ...fixture.options, crashAt: { marker: timedOut, point: 'after-completion' } }),
+    (err: unknown) => err instanceof interpreter.CrashError,
+  );
+  const reloaded = loadTicket(fixture);
+  const saved = reloaded.sessions[keys.sessionKey({ vertex: 'red', visit: 1, action: 'red' })]!.cumulativeUsage;
+  await interpreter.runExecution({ ...fixture.options, record: reloaded });
+  const stopped = attemptsOf(fixture, 'red', 'red')[1] as events.AgentActionEvent;
+  const fieldsOf = (fields: readonly string[], usage: unknown) =>
+    Object.fromEntries(fields.map((field) => [field, (usage as Record<string, unknown>)[field]]));
+  // The baseline is the counts: a Harness reads no cost basis from the earlier total.
+  const countsOf = (usage: unknown) => fieldsOf(contract.USAGE_FIELDS, usage);
+  const unreportedOf = (usage: unknown) => fieldsOf(Object.keys(UNREPORTED), usage);
+  assert.deepEqual(
+    {
+      stoppedStatus: stopped.signals.harnessResult?.status,
+      stoppedEvent: { cumulative: unreportedOf(stopped.usage.cumulative), delta: unreportedOf(stopped.usage.delta) },
+      savedAfterTheStop: countsOf(saved),
+      thirdCall: {
+        resume: fixture.harness.calls[2]?.resume,
+        previousUsage: countsOf(fixture.harness.calls[2]?.previousUsage),
+      },
+    },
+    {
+      stoppedStatus: 'timed-out',
+      stoppedEvent: { cumulative: UNREPORTED, delta: UNREPORTED },
+      savedAfterTheStop: FIRST_TOTAL,
+      thirdCall: { resume: 'fake-session-1', previousUsage: FIRST_TOTAL },
+    },
+  );
 });
 
 // A resumed call may report another id; the Session entry keeps the one its fresh call reported (#422, Q3 B).
