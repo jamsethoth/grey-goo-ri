@@ -248,13 +248,17 @@ function repositoryDigestOf(cwd: string): string | null {
 
 // A call's Usage (request 3.7): the result's tokens and cost are the Session's running total, the stream's counts this
 // call's own, which a resumed call adds to the earlier total. delta is cumulative less the earlier total, except
-// peakContextTokens, a maximum, which is this call's own.
+// peakContextTokens, a maximum, which is this call's own. Claude gives the tokens, cost and turns only in its closing
+// result line, which always has a subtype, so a stream stopped before it reports them null, with no cost basis (#487).
 function usageOf(stream: claudeStream.ClaudeStream, previous: events.Usage | null) {
   const earlier = (field: contract.CountField) => previous?.[field] ?? 0;
+  const resultLine = stream.finalEventSubtype !== null;
   const cumulative = contract.usageOf((field) => {
     if (field === 'reasoningTokens') return null;
     if (field === 'peakContextTokens') return Math.max(earlier(field), stream.peakContextTokens);
-    if (field === 'turns' || field === 'toolCalls' || field === 'compactions') return earlier(field) + stream[field];
+    if (field === 'toolCalls' || field === 'compactions') return earlier(field) + stream[field];
+    if (!resultLine) return null;
+    if (field === 'turns') return earlier(field) + stream.turns;
     return stream.totals?.[field] ?? earlier(field);
   });
   const delta = contract.usageOf((field) => {
@@ -262,7 +266,7 @@ function usageOf(stream: claudeStream.ClaudeStream, previous: events.Usage | nul
     if (field === 'peakContextTokens') return stream.peakContextTokens;
     return total === null ? null : total - earlier(field);
   });
-  const costBasis = 'reported' as const;
+  const costBasis = resultLine ? ('reported' as const) : null;
   return { cumulative: { ...cumulative, costBasis }, delta: { ...delta, costBasis } };
 }
 

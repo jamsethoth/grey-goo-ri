@@ -126,6 +126,7 @@ const ENTRY_POINTS: Record<string, Record<string, ((commonDir: string) => unknow
     toJson: null,
     fromJson: null,
     rowOf: null,
+    sessionTotal: null,
     load: (commonDir) => record.load(commonDir, 'ticket', 8),
     removeRecord: (commonDir) => record.removeRecord(commonDir, 'ticket', 8),
     loadAll: (commonDir) => record.loadAll(commonDir, 'ticket'),

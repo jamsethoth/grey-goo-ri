@@ -304,6 +304,46 @@ test('a call past wallMs is timed-out', CASE, async (t) => {
   assert.deepEqual({ status: result.status, failure }, { status: 'timed-out', failure: null });
 });
 
+// The counts Claude gives only in its result line: the Session's token totals, its cost, the call's turns (#487 Q3 A).
+const RESULT_LINE_COUNTS = [
+  'inputTokens',
+  'cacheReadTokens',
+  'cacheWriteTokens',
+  'outputTokens',
+  'costUsd',
+  'turns',
+] as const;
+type HalfUsage = Record<string, unknown>;
+const resultLineCountsOf = (usage: object) =>
+  Object.fromEntries([...RESULT_LINE_COUNTS, 'costBasis'].map((field) => [field, (usage as HalfUsage)[field]]));
+const UNREPORTED = Object.fromEntries([...RESULT_LINE_COUNTS, 'costBasis'].map((field) => [field, null]));
+
+// A call stopped before Claude's result line reports none of its counts, so each is null, never 0 or the earlier
+// total, and no cost basis (request section 2, #487); the counts the stream's own lines give keep their values.
+test('a call past wallMs with no result line reports null tokens and cost', CASE, async (t) => {
+  const ended: Record<string, unknown> = {};
+  for (const [name, previousUsage] of [
+    ['fresh', null],
+    ['resumed', AFTER_SUCCESS],
+  ] as const) {
+    const fake = fakeCli(t, { scenario: 'success', mode: 'hang' });
+    const call = claudeCall(fake, { timeouts: { wallMs: 500 }, previousUsage });
+    const { result } = await fake.harness.run(call, hooksOf());
+    const { cumulative, delta } = result.usage;
+    ended[name] = {
+      status: result.status,
+      cumulative: resultLineCountsOf(cumulative),
+      delta: resultLineCountsOf(delta),
+      streamCounts: { toolCalls: delta.toolCalls, peakContextTokens: delta.peakContextTokens },
+    };
+  }
+  const stopped = { status: 'timed-out', cumulative: UNREPORTED, delta: UNREPORTED };
+  assert.deepEqual(ended, {
+    fresh: { ...stopped, streamCounts: { toolCalls: 2, peakContextTokens: 10035 } },
+    resumed: { ...stopped, streamCounts: { toolCalls: 2, peakContextTokens: 10035 } },
+  });
+});
+
 // Decision 3 (G4 A): the Harness applies the defaults, keeping the configured object as passed.
 test('a call that sets no timeouts runs under the 900000 ms stall and 7200000 ms wall defaults', CASE, async (t) => {
   const fake = fakeCli(t, { scenario: 'success' });
@@ -380,24 +420,26 @@ test('doctor fails the login check on a logged-out CLI', CASE, async (t) => {
 });
 
 // Every way a call can fail resolves a typed result: a Harness never throws or rejects for an expected failure
-// (request section 4). Each row is the fake's recording and mode, the call's changes, and whether its signal aborts.
-const FAILURE_PATHS: [string, claudeOverFakeCli.FakeCli, Record<string, unknown>, boolean][] = [
-  ['an authentication failure', { scenario: 'auth-failure' }, {}, false],
-  ['retries before a failure', { scenario: 'api-retry' }, {}, false],
-  ['an init error', { scenario: 'init-error' }, {}, false],
-  ['a stream with no result line', { scenario: 'success', mode: 'no-result' }, {}, false],
-  ['a nonzero exit with no result line', { scenario: 'auth-failure', mode: 'no-result' }, {}, false],
+// (request section 4). Each row is the fake's recording and mode, the call's changes, whether its signal aborts, and
+// whether its stream ends with Claude's result line.
+const FAILURE_PATHS: [string, claudeOverFakeCli.FakeCli, Record<string, unknown>, boolean, boolean][] = [
+  ['an authentication failure', { scenario: 'auth-failure' }, {}, false, true],
+  ['retries before a failure', { scenario: 'api-retry' }, {}, false, true],
+  ['an init error', { scenario: 'init-error' }, {}, false, true],
+  ['a stream with no result line', { scenario: 'success', mode: 'no-result' }, {}, false, false],
+  ['a nonzero exit with no result line', { scenario: 'auth-failure', mode: 'no-result' }, {}, false, false],
   [
     'a stall with no transcript to read',
     { scenario: 'success', mode: 'hang-no-transcript' },
     { timeouts: { stallMs: 500 } },
     false,
+    false,
   ],
-  ['a line that is not JSON', { scenario: 'success', mode: 'garbage' }, {}, false],
-  ['an executable that cannot start', { scenario: 'success', command: 'gg-no-such-claude' }, {}, false],
-  ['a stall', { scenario: 'success', mode: 'hang' }, { timeouts: { stallMs: 500 } }, false],
-  ['the wall clock', { scenario: 'success', mode: 'hang' }, { timeouts: { wallMs: 500 } }, false],
-  ['a cancel', { scenario: 'success', mode: 'hang' }, {}, true],
+  ['a line that is not JSON', { scenario: 'success', mode: 'garbage' }, {}, false, true],
+  ['an executable that cannot start', { scenario: 'success', command: 'gg-no-such-claude' }, {}, false, false],
+  ['a stall', { scenario: 'success', mode: 'hang' }, { timeouts: { stallMs: 500 } }, false, false],
+  ['the wall clock', { scenario: 'success', mode: 'hang' }, { timeouts: { wallMs: 500 } }, false, false],
+  ['a cancel', { scenario: 'success', mode: 'hang' }, {}, true, false],
 ];
 
 test('every failure path resolves a typed result, never a rejection', { timeout: 300_000 }, async (t) => {
@@ -427,6 +469,35 @@ test('every failure path resolves a typed result, never a rejection', { timeout:
     'a cancel': { status: 'killed', failureClass: null },
   });
 });
+
+// Every failure path, resumed from a reported total: a stream with no result line reports null for each count Claude
+// gives only there, in both halves, with no cost basis, never the earlier total; one with a result line keeps reading
+// it as reported, the authentication failure's and the rate-limit stop's $0 among them (#487 Q2 A).
+test(
+  "every failure path with no result line reports null tokens, cost and turns, and one with it keeps the result line's",
+  { timeout: 300_000 },
+  async (t) => {
+    const broken: string[] = [];
+    for (const [name, cli, changes, cancels, resultLine] of FAILURE_PATHS) {
+      const fake = fakeCli(t, cli);
+      const controller = new AbortController();
+      const hooks = hooksOf({ started: () => cancels && controller.abort(), signal: controller.signal });
+      const { result } = await fake.harness.run(claudeCall(fake, { ...changes, previousUsage: AFTER_SUCCESS }), hooks);
+      // The row's column holds to the stream it names: the Harness reports the result line's subtype when there is one.
+      if ((typeof result.finalEventSubtype === 'string') !== resultLine)
+        broken.push(`${name}: finalEventSubtype ${result.finalEventSubtype} with resultLine ${resultLine}`);
+      for (const half of ['cumulative', 'delta'] as const) {
+        const usage = result.usage[half] as object as HalfUsage;
+        for (const field of [...RESULT_LINE_COUNTS, 'costBasis']) {
+          const reported = field === 'costBasis' ? usage[field] === 'reported' : typeof usage[field] === 'number';
+          if (resultLine ? !reported : usage[field] !== null)
+            broken.push(`${name}: ${half}.${field} is ${usage[field]}`);
+        }
+      }
+    }
+    assert.deepEqual(broken, []);
+  },
+);
 
 // The reporting Capability each Usage field turns on (docs/interfaces/harness.md, Usage); the others always count.
 const USAGE_CAPABILITY: Record<string, string> = {
