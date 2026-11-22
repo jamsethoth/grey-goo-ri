@@ -4,7 +4,7 @@ Research record for grey-goo-ri issue #489 (epic #506), probed on 2026-11-22 on 
 26.13.0, Claude Code 2.1.330, the Microsoft Store's PowerShell 7.7.0.0,
 `Microsoft.PowerShell_7.7.0.0_x64__8wekyb3d8bbwe`, Git for Windows 2.45.1), as a user who is not an administrator, and
 in WSL (Ubuntu 26.04, kernel 6.6.114.1-microsoft-standard-WSL2, systemd 259, cgroup v2), with gg at 2934c62. It answers
-the issue's five questions and recommends the design ADR 0030 proposes. The probe scripts and their full output were
+the issue's five questions and recommends the design ADR 0030 decides (accepted 2026-11-22). The probe scripts and their full output were
 kept outside the repository; this note copies the decisive commands and lines, with paths shortened.
 
 **How the Windows probes ran.** A probe started a command as `lib/containment.ts` does, through `cmd.exe` behind the
@@ -17,8 +17,9 @@ end (`first->last`). Then it closed the job, which kill-on-close ends, named wha
 held process is `node -e "setTimeout(() => {}, …)" <marker>`, started by the shell under test. Each row reads
 `pid <- parent pid`.
 
-**Real Claude calls.** 6 of the 10 the owner allowed (Q1 A), on haiku at effort low, each run by hand behind gg's gate
-in a probe job and asked to run one command that leaves a marked node running:
+**Real Claude calls.** 8 of the 10 the owner allowed (Q1 A), on haiku at effort low, each run by hand behind gg's gate
+in a probe job (`node job-probe.ts <job flags> 75 <marker> --argv claude.exe …`, from `claude-call.sh <n> <job flags>
+<tool> <environment>`) and asked to run one command that leaves a marked node running:
 
 ```
 claude.exe -p "Use the PowerShell tool to run exactly this command once: & .\hold.ps1 -Marker GG489C1 -Seconds 90
@@ -65,9 +66,10 @@ needs nothing of its own.
 | gg's gate, no shell (`startArgv`), the direct path | nobreakaway | false | false -> true | in no job | pwsh and node survive |
 | real Claude, PowerShell tool, default PATH (call 1) | gg | false | true | in no job | node survives |
 
-gg's own limits, the PATH alias:
+gg's own limits, the PATH alias (the watch time, `<seconds>`, was not kept):
 
 ```
+node job-probe.ts gg <seconds> GG489P1A pwsh.exe -NoProfile -File hold.ps1 GG489P1A 10
 job flags gg 0x2800
   33272 <- 87648 thisJob=true anyJob=true C:\Windows\System32\cmd.exe
       cmd.exe /d /s /c "set /p GG_GATE= & set "GG_GATE=" & pwsh.exe -NoProfile -File hold.ps1 GG489P1A 10"
@@ -79,6 +81,7 @@ after the job closed, survivors: 88604 pwsh.exe, 76844 node.exe
 Without `BREAKAWAY_OK`, the direct path:
 
 ```
+node job-probe.ts nobreakaway <seconds> GG489P1E "C:\Program Files\WindowsApps\Microsoft.PowerShell_7.7.0.0_x64__8wekyb3d8bbwe\pwsh.exe" -NoProfile -File hold.ps1 GG489P1E 10
 job flags nobreakaway 0x2000
   15608 <- 100904 thisJob=true->true anyJob=true->true C:\Windows\System32\cmd.exe
   98288 <- 15608 thisJob=false->false anyJob=false->true C:\Program Files\WindowsApps\Microsoft.PowerShell_7.7.0.0_x64__8wekyb3d8bbwe\pwsh.exe
@@ -121,7 +124,9 @@ after the job closed, survivors: 98288 pwsh.exe, 98592 node.exe
 - **Other packaged tools.** `fsutil reparsepoint query` gives `Reparse Tag Value : 0x8000001b`
   (`IO_REPARSE_TAG_APPEXECLINK`, an app execution alias) for `pwsh.exe`, `python.exe`, `python3.exe`, `winget.exe`,
   `wt.exe` and `bash.exe` in `%LOCALAPPDATA%\Microsoft\WindowsApps`. Each starts a packaged app and should escape the
-  same way; only pwsh was run (see Not probed). `wsl.exe` resolves to System32's, which is not an alias.
+  same way; only pwsh was run (see Not probed). `wsl.exe` on PATH is System32's, which is not an alias; WSL also
+  installs one in `%LOCALAPPDATA%\Microsoft\WindowsApps` (tag 0x8000001b, its target under `\WindowsApps\`), which a
+  shell check's PATH walk that met it first would treat as packaged.
 
 ## 2. Containing
 
@@ -131,12 +136,13 @@ after the job closed, survivors: 98288 pwsh.exe, 98592 node.exe
 | `SILENT_BREAKAWAY_OK` | nothing | everything after the first process | - | - |
 | Nested jobs (adoption): each escapee, once seen, assigned to gg's job, or to a new empty kill-on-close job gg holds, nested in the job it is already in | a packaged pwsh and each process it starts, once seen | a process that starts and loses its parent between two polls; each child of a packaged process escapes again and must be chased; a process gg cannot open | a poll loop (question 3) and one job per packaged escapee | the watcher's test, with a stand-in escapee |
 | `PROC_THREAD_ATTRIBUTE_JOB_LIST` | gg's own child, assigned at its creation (in place of the gate) | what the gate already covers, no more: the system creates a packaged process elsewhere, so that escape is unchanged | `CreateProcessW` with `STARTUPINFOEX` through `node:ffi`, with stdio of its own (ADR 0021) | - |
-| Point Claude Code at a PowerShell that is not packaged | the whole shell tree, once `BREAKAWAY_OK` is dropped too for Git Bash | a packaged app an agent's command starts itself (`winget`, the `python` alias, a `pwsh` it types) | a shell check; no launch change where the MSI PowerShell 7 is installed | the shell check (question 5); a recorded call |
+| Point Claude Code at a PowerShell that is not packaged | the whole shell tree, once `BREAKAWAY_OK` is dropped too for Git Bash | a packaged app an agent's command starts itself (`winget`, the `python` alias, a `pwsh` it types) | a shell check; no launch change where an unpackaged PowerShell 7 is first on PATH | the shell check (question 5); a recorded call |
 
 The nested-job row, from the probe: a packaged pwsh already in its package job is refused by gg's job (error 5) and
 taken by a new empty one, nested in its package job; real Claude (call 6) left nothing running:
 
 ```
+ADOPT=1 sh claude-call.sh 6 nobreakaway PowerShell '{"CLAUDE_CODE_USE_POWERSHELL_TOOL":"1",…}'
 job flags nobreakaway 0x2000
 adopt 92412 into this job failed (5); into a new empty job: ok
 adopted 55904 into this job
@@ -150,11 +156,14 @@ that sits in `…\Microsoft\WindowsApps\`, the alias's target, which it runs dir
 `pwsh` on PATH: `%ProgramFiles%\PowerShell\7\pwsh.exe`, then the target of the
 `%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe` alias, then `%USERPROFILE%\.dotnet\tools\pwsh.exe`, then System32's
 Windows PowerShell 5.1, then `powershell` on PATH. No setting or variable names the path; the only
-`CLAUDE_CODE_POWERSHELL*` variable is `CLAUDE_CODE_POWERSHELL_RESPECT_EXECUTION_POLICY`. So a PowerShell 7 installed by
-its MSI is used whenever PATH reaches its directory before WindowsApps. The MSI adds its directory to the system PATH,
+`CLAUDE_CODE_POWERSHELL*` variable is `CLAUDE_CODE_POWERSHELL_RESPECT_EXECUTION_POLICY`. So an unpackaged PowerShell 7
+is used whenever PATH reaches its directory before WindowsApps: the 7.7 ZIP build unpacked to
+`%ProgramFiles%\PowerShell\7` with that folder on PATH ahead of WindowsApps, or the 7.6 LTS MSI (`winget install --id
+Microsoft.PowerShell --source winget --installer-type wix`). 7.7 has no MSI, and winget installs the packaged MSIX by
+default from 7.6 (Microsoft's "Install PowerShell on Windows" page). The MSI adds its directory to the system PATH,
 which Windows puts ahead of the user's entries, where WindowsApps sits by default; no MSI is installed here, so that
-order is documented behaviour, not probed. On a machine with only the Store's, gg cannot steer Claude off it short of
-changing `LOCALAPPDATA`, which every tool reads.
+order is documented behaviour, not probed. Call 8 ran the 7.7.0 ZIP build first on PATH. On a machine with only the
+Store's, gg cannot steer Claude off it short of changing `LOCALAPPDATA`, which every tool reads.
 
 Under real Claude, with gg's limits unless named:
 
@@ -166,6 +175,20 @@ Under real Claude, with gg's limits unless named:
 | 4 | Bash tool (Git Bash) | `C:\Program Files\Git\usr\bin\sh.exe` | outside every job (MSYS breakaway) | `nohup` and node survive |
 | 5 | Bash tool, `nobreakaway` | Git Bash | in gg's job | nothing of the call survives |
 | 6 | Store pwsh, `nobreakaway`, adoption on | Store pwsh | adopted into a job gg holds, when seen | nothing of the call survives |
+| 7 | the PowerShell 7.7.0 ZIP build first on PATH, `nobreakaway`; the unpacked copy had lost `pwsh.dll` | none: the shell exited 154 at once | - | nothing survives; not a containment result |
+| 8 | the same, a fresh unpack (Authenticode valid, Microsoft) | `…\gg489-pwsh-portable\pwsh77\pwsh.exe` | in gg's job | nothing survives |
+
+Call 8, the unpackaged PowerShell 7 that decision 2's fix names:
+
+```
+PREPEND='…\gg489-pwsh-portable\pwsh77' sh claude-call.sh 8 nobreakaway PowerShell '{"CLAUDE_CODE_USE_POWERSHELL_TOOL":"1",…}'
+grep -E "thisJob|survivors" claude-call-8.txt
+  66896 <- 29480 thisJob=true anyJob=true …\gg489-pwsh-portable\pwsh77\pwsh.exe
+  32716 <- 29480 thisJob=true anyJob=true C:\Windows\System32\cmd.exe
+  44332 <- 32716 thisJob=true anyJob=true …\gg489-pwsh-portable\pwsh77\pwsh.exe
+  95372 <- 44332 thisJob=true->true anyJob=true->true C:\Program Files\nodejs\node.exe
+after the job closed, survivors: none
+```
 
 Claude starts its shell through `cmd.exe /d /s /c ""…\chcp.com" 65001 >nul & "<pwsh>" …"` for each command, and also
 runs `pwsh -NoProfile -NonInteractive -NoLogo -EncodedCommand …` directly from `claude.exe`; calls 1 and 6 show a
@@ -175,16 +198,23 @@ second packaged pwsh whose parent is `claude.exe`.
 
 | option | sees | privileges | cost | reliability |
 | --- | --- | --- | --- | --- |
-| Descendant watcher: a Toolhelp snapshot, polled, joined by parent pid where the child started no earlier than its parent (`linkedDescendants`, `lib/containment.ts:89`, over `commandCleanup.linkedPids`; today only on the uncontained path) | every escapee probed: the packaged pwsh's parent is the job's `cmd.exe` or `claude.exe`, each of its children's is pwsh | none | 38 ms a snapshot of 497 processes on a 20-thread machine, 67 ms with every process's creation time and command line; about 15% of one core at POSIX's 250 ms poll gap (`lib/process-tree.ts:11`), about 4% at 1 s | misses a process started and orphaned between two polls, as the POSIX watcher does; the creation-time rule rejects a reused pid only at first sight, so a held handle per seen process keeps its pid from reuse (below) |
+| Descendant watcher: a Toolhelp snapshot, polled, joined by parent pid where the child started no earlier than its parent (`linkedDescendants`, `lib/containment.ts:89`, over `commandCleanup.linkedPids`; today only on the uncontained path) | every escapee probed: the packaged pwsh's parent is the job's `cmd.exe` or `claude.exe`, each of its children's is pwsh | none | 38 ms a snapshot of 497 processes on a 20-thread machine, 67 ms with every process's creation time and command line; polling took about 11% of one core at POSIX's 250 ms poll gap (`lib/process-tree.ts:11`) and 4% at 1 s, measured with `process.cpuUsage` over 40 and 10 polls of 458 processes | misses a process started and orphaned between two polls, as the POSIX watcher does; the creation-time rule rejects a reused pid only at first sight, so a held handle per seen process keeps its pid from reuse (below) |
 | Watcher with adoption (question 2) | as the watcher; adds kill-on-close for what it adopted, so gg's death ends it | none | a job per packaged escapee | the same gap; one seen but neither adopted nor ended is a survivor |
 | WMI `Win32_ProcessStartTrace` | every process start, from the kernel | administrator: refused with "Access to a CIM resource was not available to the client." | - | - |
 | WMI `__InstanceCreationEvent WITHIN 1` on `Win32_Process` | a start, with pid, parent pid and creation date | none (it saw the marked node) | WMI polls the whole process table at the `WITHIN` interval in its own service | the same gap as the watcher, run by `WmiPrvSE` |
 | ETW `Microsoft-Windows-Kernel-Process`, a real-time session | every start, no gap | administrator or Performance Log Users: `logman` gave "Access is denied." | - | - |
 
 ```
+node q3-snapshot-cost.ts
 processes on the machine: 497
 snapshot (CreateToolhelp32Snapshot, pid/parent/exe): 38.08 ms each over 50
 snapshot + describe every process (creation time, command line): 66.90 ms each over 5
+
+node snapshot-cpu.ts   (the CPU share: process.cpuUsage over the polls' wall time)
+processes on the machine: 458
+snapshot: 28.57 ms each over 50
+poll every 250 ms, 40 polls: cpu 11.2% of one core
+poll every 1000 ms, 10 polls: cpu 3.7% of one core
 ```
 
 GLOSSARY.md's warning that "a Windows parent pid cannot prove a process its child" (`:210`) held in practice: within
@@ -193,7 +223,7 @@ rule #297 put in `linkedPids` (a child joins only if it started no earlier than 
 pid as a parent, since the reused process started after the child.
 
 That rule decides a link at first sight only. A watcher that keeps a seen process as a seed after its parent exits,
-as gg's POSIX `observe` does (`lib/command-cleanup.ts:181-192`) and the job probe did, links whatever later holds the
+as gg's POSIX `observe` does (`lib/command-cleanup.ts:182-193`) and the job probe did, links whatever later holds the
 seed's pid: if the seed exits and an unrelated process takes its pid between two polls, the replacement's children
 start after it, pass the rule, and are linked. A copy of `lib/command-cleanup.ts` at 2c01d56 fed two listings (poll 1:
 root 100 starts 200; poll 2: 200 is gone, an unrelated process holds pid 200 and starts 300):
@@ -248,6 +278,7 @@ own session by double fork, its stdio closed via launch: setsid -f sh -c 'sleep 
 | pidfd (`pidfd_open`, `pidfd_send_signal`) | pid reuse, for a process gg already knows | finds nothing new | a syscall through `node:ffi`; node has no pidfd API | - |
 
 ```
+sh q4-cgroup.sh   (in WSL: systemd-run --user --scope --quiet --unit "gg489-$run" sh -c "setsid -f sh -c 'sleep 30; true' $marker </dev/null >/dev/null 2>&1", then reads the scope's cgroup.procs and stops it)
 its cgroup: /user.slice/user-1000.slice/user@1000.service/app.slice/gg489-1795373172.scope
 processes in it (cgroup.procs):
   675 sh -c sleep 30; true GG489CG1795373172
@@ -266,6 +297,7 @@ A probe used gg's own `startArgv` (the gate, gg's limits), with no model call an
 on `node -e "console.log(process.pid); setTimeout(() => {}, 1500)"` and ask whether that pid is a member of gg's job:
 
 ```
+node q5-doctor-check.ts
 pwsh on PATH (the Store alias): spawn ok; its command's node pid 101456 in gg's job: false (2018 ms)
 Windows PowerShell 5.1: spawn ok; its command's node pid 88720 in gg's job: true (2110 ms)
 Git Bash: spawn ok; its command's node pid 50688 in gg's job: false (2360 ms)
@@ -296,13 +328,16 @@ watcher, since `exec.launch` is shared. No MXC-specific containment is needed.
 
 ## Recommended design
 
-ADR 0030 proposes it; this is its outline.
+ADR 0030 decides it (accepted 2026-11-22); this is its outline.
 
 1. **gg's job allows no breakaway.** `createJob` sets `KILL_ON_JOB_CLOSE` alone, for a launch, a Check's shell runner
    and the suite launcher. Git Bash's children stay in; no tool probed failed.
 2. **On Windows an Agent's shell is a PowerShell that is not packaged.** PowerShell stays the default (ADR 0025, G5 C;
-   #420 adds Bash as a choice). Where the MSI PowerShell 7 is installed, Claude already takes it. Where Claude would
-   resolve a packaged one, preflight fails, naming the fix, since gg cannot steer Claude off it.
+   #420 adds Bash as a choice). Where an unpackaged PowerShell 7 is first on PATH, Claude already takes it (call 8).
+   Where Claude would resolve a packaged one, preflight fails, naming the fix, since gg cannot steer Claude off it: an
+   unpackaged PowerShell 7, the 7.7 ZIP build unpacked to `%ProgramFiles%\PowerShell\7` with that folder on PATH ahead
+   of WindowsApps, or the 7.6 LTS MSI (`winget install --id Microsoft.PowerShell --source winget --installer-type
+   wix`).
 3. **A Windows launch and a Check's shell runner watch their descendants, as POSIX's do,** linked by parent pid and
    creation time to the job's members and the descendants already seen, each held by an open handle so its pid cannot
    be reused while gg seeds from it (question 3). A linked process outside gg's job is adopted when seen, through its
@@ -312,9 +347,9 @@ ADR 0030 proposes it; this is its outline.
 4. **A call's recorded containment stays `job` only while nothing it started has left gg's job.** The first linked
    process the watcher sees outside gg's job makes gg save the call's containment as `none` before it adopts or ends
    that process, and it stays `none`. Once that save commits, a crash leaves a call a resume rescues and holds rather
-   than reset in place; a crash before it commits, or a failed save (fatal, like a crash), leaves the call `job` with
-   the escapee neither adopted nor ended, the residual risk below. The rules of record.md and harness.md this changes raise `RECORD_SCHEMA_VERSION` (3 to
-   4) and `FAKE_HARNESS_VERSION` (5 to 6), with no rule for a `job` saved before the bump, since gg has none in use.
+   than reset in place; a crash before it commits leaves the call `job` with the escapee neither adopted nor ended, the
+   residual risk below. A failed save (fatal) makes gg end the escapee, then stop; one it cannot end is that residual
+   risk too. The rules of record.md and harness.md this changes raise `RECORD_SCHEMA_VERSION` (3 to 4) and `FAKE_HARNESS_VERSION` (5 to 6), with no rule for a `job` saved before the bump, since gg has none in use.
 5. **One shell check for both Harnesses:** the static check on every `gg doctor` and preflight, the live one under
    `gg doctor --probe`.
 6. **Linux** takes cgroups through #128 and #289, one mechanism; until then the stdio-closed double fork is the named
@@ -322,7 +357,7 @@ ADR 0030 proposes it; this is its outline.
 
 What stays unseen, the residual risk this replaces the breakaway text with: on Windows, a process outside gg's job that
 no poll saw before its parent ended or gg died, or one a poll saw whose call's `none` save had not committed when gg
-died or the save failed (its call stays `job`), and a process a service, WMI or the task scheduler starts on a
+died, or that gg failed to end after the save failed (its call stays `job`), and a process a service, WMI or the task scheduler starts on a
 command's behalf, which no parent link ties to the command (`docs/testing.md:240` names the second already); on Linux without a cgroup, a
 process that leaves the group and closes its stdio.
 
@@ -349,21 +384,19 @@ same for a stdio-closed double fork.
 kill-on-close on a handle only gg holds ends them all at gg's death. A call whose watcher saw an escapee saves `none`
 before gg adopts or ends it, write-ahead (ADR 0005), and keeps it, which `lib/rescue.ts:216` already rescues and holds.
 gg adopts or ends the escapee only once that save commits, so a crash while it does cannot leave a `job` over it;
-until `savedContainment`'s save returns (`lib/agent-call.ts:137-142`) the payload says `job`, and a crash then, or a
-failed save (fatal, like a crash: `lib/effect-errors.ts:19`), leaves `job` over an escapee gg never adopted. Neither
-`lib/rescue.ts` nor `confirmedUnder` changes; their premise becomes true but for that window and the residual gap
-above. A Pending cleanup hold's `closeJob` must close the adopted jobs too. The rule a saved `job` follows changes in record.md (:846-856) and harness.md (:163-166), with no shape change, so
+until `savedContainment`'s save returns (`lib/agent-call.ts:137-142`) the payload says `job`, and a crash then leaves
+`job` over an escapee gg never adopted. A failed save (fatal: `lib/effect-errors.ts:19`) makes gg end the escapee,
+then stop, so the saved `job` again describes what runs, unless gg cannot end it. Neither `lib/rescue.ts` nor
+`confirmedUnder` changes; their premise becomes true but for the residual gap above. A Pending cleanup hold's `closeJob` must close the adopted jobs too. The rule a saved `job` follows changes in record.md (:846-856) and harness.md (:163-166), with no shape change, so
 the implementing ticket raises `RECORD_SCHEMA_VERSION` and `FAKE_HARNESS_VERSION` (owner, 2026-11-22); no record of
 the previous version is in use, so none gets a rule of its own. The residual gap above stays: an escapee unseen at
-gg's death, or seen before its call's `none` save committed, is not ended, its call stays `job`, and a reset can run
+gg's death, seen before its call's `none` save committed, or that gg failed to end after the save failed, is not ended, its call stays `job`, and a reset can run
 under it. #69 stays an alternative for file locks and rescued human edits; this design does not need it.
 
 ## Not probed, and why
 
-- **The real portable PowerShell 7.7.0.** `PowerShell-7.7.0-win-x64.zip` (Authenticode valid, Microsoft) was unpacked
-  in a throwaway directory, but running it in the job probe was refused by the probing session's permission
-  classifier. Call 3 used a copy of System32's `powershell.exe` named `pwsh.exe` instead. That an unpackaged
-  PowerShell 7 stays in the job is expected, since it is a plain executable like 5.1 and the stand-in, but unverified.
+- **The PowerShell 7.6 LTS MSI.** Not installed here; its PATH order is documented behaviour. The 7.7.0 ZIP build,
+  the other fix decision 2 names, was run under real Claude (call 8, after the owner approved it): it stays in the job.
 - **`PROC_THREAD_ATTRIBUTE_JOB_LIST`.** Argued, not tested: the escapee is never created in any job of the caller's,
   so assigning gg's own child at creation cannot reach it.
 - **The `python` and `wt` aliases.** Identified by their reparse tag only. Here `python` resolves first to a
@@ -376,9 +409,9 @@ under it. #69 stays an alternative for file locks and rescued human edits; this 
   to them was not probed.
 - **Codex's MXC**, re-probed: not, by the launch notes; #479's finding stands above.
 
-## Proposed follow-up tickets
+## Follow-up tickets
 
-To file once the owner decides ADR 0030; none is filed yet. Each test fails today.
+To file now the owner has accepted ADR 0030 (2026-11-22); none is filed yet. Each test fails today.
 
 1. **gg's job lets no process break away.**
    - Scope: `lib/containment.ts`'s `createJob` limits and the comment at `:39`; the text edits ADR 0030 lists for ADR
@@ -386,7 +419,7 @@ To file once the owner decides ADR 0030; none is filed yet. Each test fails toda
    - Test that fails today (`test/contract/exec/`, on `windows-2025`, the real job): `a Git Bash command's background
      node ends with its launch` and `… with runShell`:
      `bash.exe -c 'node -e "setTimeout(() => {}, 60000)" <marker> &'` leaves no marked process once the result is in.
-     Today the node runs on, under `confirmed: true`. The contract test `test/contract/exec/exec.job.test.ts:150-180`,
+     Today the node runs on, under `confirmed: true`. The contract test `test/contract/exec/exec.job.test.ts:150-182`,
      "a child that asks to break away from the job still starts", asserts the breakaway this removes: it becomes `a
      child that asks to break away fails to start`, over the same `test/support/child-scripts/breakaway-child.ts`, and
      `scripts/run-suite.ts:184`'s comment changes with it.
@@ -394,7 +427,7 @@ To file once the owner decides ADR 0030; none is filed yet. Each test fails toda
    - Scope: the watcher on win32 (`lib/exec.ts:193`, `:363`, `lib/process-tree.ts`), adoption into gg's job or a new
      nested kill-on-close job (`lib/containment.ts`), the kill plan and report (`lib/command-cleanup.ts`), and
      `closeJob` closing the adopted jobs, with a handle held per linked process (question 3); the POSIX `observe`
-     (`lib/command-cleanup.ts:181-192`), which links an unrelated child through a seed whose pid was reused; and the
+     (`lib/command-cleanup.ts:182-193`), which links an unrelated child through a seed whose pid was reused; and the
      comments ADR 0030's Supersedes assigns to this ticket. The poll gap and a snapshot shared by concurrent watchers
      are this ticket's choices, at the costs above.
    - Tests that fail today: small, in `test/unit/command-cleanup.test.ts`, `a linked process outside the job's members
@@ -412,8 +445,9 @@ To file once the owner decides ADR 0030; none is filed yet. Each test fails toda
      before the bump, and no test of one.
    - Tests that fail today (small, beside `test/unit/interpreter.retry.test.ts`): `a crash after the none save commits
      holds the Interrupted Attempt`, the crash point between the committed `none` save and the adoption; `a none save
-     that fails or is interrupted stops the Run before the escapee is adopted or ended`, which pins the order (the call
-     stays `job`, ADR 0030 decision 8's residual risk); and `an Interrupted Attempt whose call had an escapee gg adopted
+     that is interrupted stops the Run before the escapee is adopted or ended`, which pins the order (the call stays
+     `job`, ADR 0030 decision 8's residual risk); `a none save that fails ends the escapee, then stops the Run` (ADR
+     0030 decision 4); and `an Interrupted Attempt whose call had an escapee gg adopted
      is rescued and held, not reset`. Today its payload says `job` and it is reset.
 4. **One shell check for both Harnesses: a packaged shell fails preflight, and `--probe` checks a command stays in
    gg's job.**
