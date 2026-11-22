@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a2043f-9791-78b1-9ecd-01ba4a4fb74a"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I’ll run the listed command verbatim in a single shell call, then report its result."}}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"\"<home>\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command 'node slow.js gg-kill-marker'","aggregated_output":"","exit_code":null,"status":"in_progress"}}

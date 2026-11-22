@@ -1,0 +1,156 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "scenario": "tree-kill",
+  "purpose": "a call whose job is terminated mid-turn while a command runs: the events, the exit code, what is left running",
+  "modelCall": true,
+  "command": {
+    "executable": "codex",
+    "argv": [
+      "exec",
+      "-s",
+      "workspace-write",
+      "-C",
+      "<recording>\\repo",
+      "-c",
+      "model=\"gpt-6-luna\"",
+      "-c",
+      "model_reasoning_effort=\"low\"",
+      "-c",
+      "approval_policy=\"never\"",
+      "-c",
+      "windows.sandbox=\"mxc\"",
+      "-c",
+      "projects={\"<recording>\\\\repo\"={trust_level=\"untrusted\"}}",
+      "-c",
+      "features.hooks=false",
+      "-c",
+      "features.apps=false",
+      "-c",
+      "features.tool_suggest=false",
+      "-c",
+      "check_for_update_on_startup=false",
+      "-c",
+      "project_doc_max_bytes=0",
+      "-c",
+      "skills.include_instructions=false",
+      "--json",
+      "--output-schema",
+      "<recording>\\run\\schema.json",
+      "-o",
+      "<recording>\\run\\tree-kill.last.txt",
+      "-"
+    ],
+    "cwd": "repo",
+    "env": {
+      "CODEX_HOME": "<home>\\.agents\\gg\\codex"
+    },
+    "stdin": "This is a probe in a throwaway repository. Run each command below exactly as written, one shell call each, in order, and carry on after one is refused or fails; never change a command or try another way.\n1. node slow.js gg-kill-marker\nThen answer with one line per command: its number, whether it ran or was refused, and what it printed."
+  },
+  "start": null,
+  "threadId": "01a2043f-9791-78b1-9ecd-01ba4a4fb74a",
+  "exitCode": 1,
+  "signal": null,
+  "killed": "job terminated 4000 ms after gg-kill-marker first appeared",
+  "lineTimesMs": [
+    700,
+    1410,
+    2961,
+    5118
+  ],
+  "stderr": "",
+  "lastMessage": "",
+  "rolloutPath": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T12-13-26-01a2043f-9791-78b1-9ecd-01ba4a4fb74a.jsonl",
+  "evidence": {
+    "created": [],
+    "hookLog": null,
+    "mcpLog": null,
+    "forkedRollout": null,
+    "job": {
+      "contained": true,
+      "whileMarked": {
+        "jobMembers": [
+          {
+            "pid": 66180,
+            "exe": "node.exe",
+            "commandLine": "\"C:\\Program Files\\nodejs\\node.exe\" C:\\dev\\worktrees\\grey-goo-ri\\479-codex-probe\\lib\\containment-gate.ts"
+          },
+          {
+            "pid": 16900,
+            "exe": "conhost.exe",
+            "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+          },
+          {
+            "pid": 45220,
+            "exe": "codex.exe",
+            "commandLine": "codex exec -s workspace-write -C <recording>\\repo -c \"model=\\\"gpt-6-luna\\\"\" -c \"model_reasoning_effort=\\\"low\\\"\" -c \"approval_policy=\\\"never\\\"\" -c \"windows.sandbox=\\\"mxc\\\"\" -c \"projects={\\\"<recording>\\\\repo\\\"={trust_level=\\\"untrusted\\\"}}\" -c features.hooks=false -c features.apps=false -c features.tool_suggest=false -c check_for_update_on_startup=false -c project_doc_max_bytes=0 -c skills.include_instructions=false --json --output-schema <recording>\\run\\schema.json -o <recording>\\run\\tree-kill.last.txt -"
+          },
+          {
+            "pid": 9460,
+            "exe": "node.exe",
+            "commandLine": "\"C:\\Program Files\\nodejs\\node.exe\" ./mcp/server.mjs"
+          },
+          {
+            "pid": 89252,
+            "exe": "conhost.exe",
+            "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+          },
+          {
+            "pid": 9312,
+            "exe": "codex-code-mode-host.exe",
+            "commandLine": "\"<home>\\.codex\\packages\\standalone\\releases\\0.171.0-x86_64-pc-windows-msvc\\bin\\codex-code-mode-host.exe\" --listen grpc+stdio://"
+          },
+          {
+            "pid": 35292,
+            "exe": "conhost.exe",
+            "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+          },
+          {
+            "pid": 77712,
+            "exe": "codex.exe",
+            "commandLine": "\"<home>\\.codex\\packages\\standalone\\current\\bin\\codex.exe\" --__codex-windows-mxc <home>\\.agents\\gg\\codex"
+          },
+          {
+            "pid": 95840,
+            "exe": "conhost.exe",
+            "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+          },
+          {
+            "pid": 97608,
+            "exe": "powershell.exe",
+            "commandLine": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -Command \"try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n# PowerShell/PowerShell#27899: a denied ancestor can leave $PWD unset and the\r\n# filesystem drive at its root. Use the process cwd without resolving it again.\r\n# A successful startup or a profile that changed location has already set $PWD.\r\n& {\r\n    if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') { return }\r\n    if ($null -ne $ExecutionContext.SessionState.PSVariable.GetValue('global:PWD')) { return }\r\n    $drive = $ExecutionContext.SessionState.Drive.Current\r\n    $cwd = [Environment]::CurrentDirectory\r\n    if ($drive.Provider.Name -eq 'FileSystem' -and !$drive.CurrentLocation -and\r\n        $drive.Root -eq [IO.Path]::GetPathRoot($cwd) -and $cwd.Length -gt $drive.Root.Length) {\r\n        $drive.CurrentLocation = $cwd.Substring($drive.Root.Length)\r\n        Microsoft.PowerShell.Utility\\Set-Variable -Name PWD -Scope Global -Value $ExecutionContext.SessionState.Path.CurrentLocation -Force\r\n    }\r\n}\r\nnode slow.js gg-kill-marker\""
+          },
+          {
+            "pid": 98236,
+            "exe": "conhost.exe",
+            "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+          },
+          {
+            "pid": 99120,
+            "exe": "node.exe",
+            "commandLine": "\"C:\\Program Files\\nodejs\\node.exe\" slow.js gg-kill-marker"
+          }
+        ],
+        "markerProcesses": [
+          {
+            "pid": 97608,
+            "exe": "powershell.exe",
+            "inJob": true
+          },
+          {
+            "pid": 99120,
+            "exe": "node.exe",
+            "inJob": true
+          }
+        ]
+      },
+      "afterKill": {
+        "jobMembers": [],
+        "markerProcesses": []
+      },
+      "leftAfterExit": []
+    },
+    "homeChanges": null,
+    "stubRequests": null,
+    "homeLogTail": "2026-11-22T16:43:20.143445Z  INFO codex_cli::login: starting browser login flow\n2026-11-22T16:43:51.701661Z  INFO codex_login::server: received login callback path=/auth/callback has_code=true has_state=true has_error=false state_valid=true\n2026-11-22T16:43:51.701726Z  INFO codex_login::server: starting oauth token exchange issuer=https://auth.openai.com/ token_endpoint=https://auth.openai.com/oauth/token redirect_uri=http://127.0.0.1:1455/auth/callback\n2026-11-22T16:43:51.951391Z  INFO codex_login::server: oauth token exchange succeeded\n"
+  }
+}

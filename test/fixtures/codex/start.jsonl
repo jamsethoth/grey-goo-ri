@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"01a20433-8960-76d2-bde3-f22e60ac0bf6"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"\"<home>\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command 'Get-Content README.md'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"\"<home>\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command 'Get-Content README.md'","aggregated_output":". : AuthorizationManager check failed.\r\nAt line:1 char:3\r\n+ . '<home>\\Documents\\WindowsPowerShell\\Microsoft.PowerShell_pr ...\r\n+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n    + CategoryInfo          : SecurityError: (:) [], PSSecurityException\r\n    + FullyQualifiedErrorId : UnauthorizedAccess\r\n# Probe\r\n\r\nThe word is heliotrope.\r\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"{\"answer\":\"heliotrope\"}"}}
+{"type":"turn.completed","usage":{"input_tokens":26002,"cached_input_tokens":12672,"cache_write_input_tokens":0,"output_tokens":54,"reasoning_output_tokens":0}}

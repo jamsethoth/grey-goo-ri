@@ -1,0 +1,169 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "scenario": "mxc-workspace-write",
+  "purpose": "a workspace-write task under MXC (Q9: a rename in temp, links, a node child, node --test), and the job listed while a command runs (F7): does every process MXC starts stay inside gg's job?",
+  "modelCall": true,
+  "command": {
+    "executable": "codex",
+    "argv": [
+      "exec",
+      "-s",
+      "workspace-write",
+      "-C",
+      "<recording>\\repo",
+      "-c",
+      "model=\"gpt-6-luna\"",
+      "-c",
+      "model_reasoning_effort=\"low\"",
+      "-c",
+      "approval_policy=\"never\"",
+      "-c",
+      "windows.sandbox=\"mxc\"",
+      "-c",
+      "projects={\"<recording>\\\\repo\"={trust_level=\"untrusted\"}}",
+      "-c",
+      "features.hooks=false",
+      "-c",
+      "features.apps=false",
+      "-c",
+      "features.tool_suggest=false",
+      "-c",
+      "check_for_update_on_startup=false",
+      "-c",
+      "project_doc_max_bytes=0",
+      "-c",
+      "skills.include_instructions=false",
+      "--json",
+      "--output-schema",
+      "<recording>\\run\\schema.json",
+      "-o",
+      "<recording>\\run\\mxc-workspace-write.last.txt",
+      "-"
+    ],
+    "cwd": "repo",
+    "env": {
+      "CODEX_HOME": "<home>\\.agents\\gg\\codex"
+    },
+    "stdin": "This is a probe in a throwaway repository. Run each command below exactly as written, one shell call each, in order, and carry on after one is refused or fails; never change a command or try another way.\n1. node write.js made.txt\n2. node rename-temp.js\n3. node link.js\n4. node child.js\n5. node --test probe.test.js\n6. node slow.js gg-job-marker\nThen answer with one line per command: its number, whether it ran or was refused, and what it printed."
+  },
+  "start": null,
+  "threadId": "01a20434-20fd-7d10-b5db-dfb829089626",
+  "exitCode": 0,
+  "signal": null,
+  "killed": null,
+  "lineTimesMs": [
+    628,
+    1427,
+    3189,
+    5058,
+    5710,
+    8604,
+    9286,
+    11786,
+    12538,
+    14989,
+    15759,
+    18275,
+    19228,
+    20833,
+    22415,
+    36888,
+    36988
+  ],
+  "stderr": "2026-11-22T17:01:31.537189Z ERROR codex_core::session: failed to record rollout items: thread 01a20434-20fd-7d10-b5db-dfb829089626 not found\n",
+  "lastMessage": "{\"answer\":\"1. Ran (exit 0): `wrote made.txt` (PowerShell also printed an authorization warning).\\n2. Ran (exit 0): `rename in temp failed: EPERM` (plus the PowerShell warning).\\n3. Ran (exit 0): `hard link failed: EPERM`, `junction failed: EPERM`, `file symlink made` (plus the PowerShell warning).\\n4. Ran (exit 0): `child ran` (plus the PowerShell warning).\\n5. Ran (exit 0): test passed, 1 pass and 0 fail (plus the PowerShell warning).\\n6. Ran; no command output was captured before the shell call returned without an exit code (PowerShell printed its authorization warning).\"}",
+  "rolloutPath": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T12-00-55-01a20434-20fd-7d10-b5db-dfb829089626.jsonl",
+  "evidence": {
+    "created": [
+      "repo/file-link.md",
+      "repo/made.txt"
+    ],
+    "hookLog": null,
+    "mcpLog": null,
+    "forkedRollout": null,
+    "job": {
+      "contained": true,
+      "whileMarked": {
+        "jobMembers": [
+          {
+            "pid": 38604,
+            "exe": "node.exe",
+            "commandLine": "\"C:\\Program Files\\nodejs\\node.exe\" C:\\dev\\worktrees\\grey-goo-ri\\479-codex-probe\\lib\\containment-gate.ts"
+          },
+          {
+            "pid": 88340,
+            "exe": "conhost.exe",
+            "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+          },
+          {
+            "pid": 91572,
+            "exe": "codex.exe",
+            "commandLine": "codex exec -s workspace-write -C <recording>\\repo -c \"model=\\\"gpt-6-luna\\\"\" -c \"model_reasoning_effort=\\\"low\\\"\" -c \"approval_policy=\\\"never\\\"\" -c \"windows.sandbox=\\\"mxc\\\"\" -c \"projects={\\\"<recording>\\\\repo\\\"={trust_level=\\\"untrusted\\\"}}\" -c features.hooks=false -c features.apps=false -c features.tool_suggest=false -c check_for_update_on_startup=false -c project_doc_max_bytes=0 -c skills.include_instructions=false --json --output-schema <recording>\\run\\schema.json -o <recording>\\run\\mxc-workspace-write.last.txt -"
+          },
+          {
+            "pid": 100776,
+            "exe": "node.exe",
+            "commandLine": "\"C:\\Program Files\\nodejs\\node.exe\" ./mcp/server.mjs"
+          },
+          {
+            "pid": 98024,
+            "exe": "conhost.exe",
+            "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+          },
+          {
+            "pid": 71552,
+            "exe": "codex-code-mode-host.exe",
+            "commandLine": "\"<home>\\.codex\\packages\\standalone\\releases\\0.171.0-x86_64-pc-windows-msvc\\bin\\codex-code-mode-host.exe\" --listen grpc+stdio://"
+          },
+          {
+            "pid": 23684,
+            "exe": "conhost.exe",
+            "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+          },
+          {
+            "pid": 66692,
+            "exe": "codex.exe",
+            "commandLine": "\"<home>\\.codex\\packages\\standalone\\current\\bin\\codex.exe\" --__codex-windows-mxc <home>\\.agents\\gg\\codex"
+          },
+          {
+            "pid": 90964,
+            "exe": "conhost.exe",
+            "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+          },
+          {
+            "pid": 8564,
+            "exe": "powershell.exe",
+            "commandLine": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -Command \"try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n# PowerShell/PowerShell#27899: a denied ancestor can leave $PWD unset and the\r\n# filesystem drive at its root. Use the process cwd without resolving it again.\r\n# A successful startup or a profile that changed location has already set $PWD.\r\n& {\r\n    if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') { return }\r\n    if ($null -ne $ExecutionContext.SessionState.PSVariable.GetValue('global:PWD')) { return }\r\n    $drive = $ExecutionContext.SessionState.Drive.Current\r\n    $cwd = [Environment]::CurrentDirectory\r\n    if ($drive.Provider.Name -eq 'FileSystem' -and !$drive.CurrentLocation -and\r\n        $drive.Root -eq [IO.Path]::GetPathRoot($cwd) -and $cwd.Length -gt $drive.Root.Length) {\r\n        $drive.CurrentLocation = $cwd.Substring($drive.Root.Length)\r\n        Microsoft.PowerShell.Utility\\Set-Variable -Name PWD -Scope Global -Value $ExecutionContext.SessionState.Path.CurrentLocation -Force\r\n    }\r\n}\r\nnode slow.js gg-job-marker\""
+          },
+          {
+            "pid": 99524,
+            "exe": "conhost.exe",
+            "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+          },
+          {
+            "pid": 96956,
+            "exe": "node.exe",
+            "commandLine": "\"C:\\Program Files\\nodejs\\node.exe\" slow.js gg-job-marker"
+          }
+        ],
+        "markerProcesses": [
+          {
+            "pid": 8564,
+            "exe": "powershell.exe",
+            "inJob": true
+          },
+          {
+            "pid": 96956,
+            "exe": "node.exe",
+            "inJob": true
+          }
+        ]
+      },
+      "afterKill": null,
+      "leftAfterExit": []
+    },
+    "homeChanges": null,
+    "stubRequests": null,
+    "homeLogTail": null
+  }
+}

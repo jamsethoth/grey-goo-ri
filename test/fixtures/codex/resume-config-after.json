@@ -1,0 +1,76 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "scenario": "resume-config-after",
+  "purpose": "the start thread resumed with -c sandbox_mode=\"workspace-write\" after resume, started from the directory above the repository with no -C: which sandbox and cwd the resumed turn keeps",
+  "modelCall": true,
+  "command": {
+    "executable": "codex",
+    "argv": [
+      "exec",
+      "resume",
+      "01a20433-8960-76d2-bde3-f22e60ac0bf6",
+      "-c",
+      "model=\"gpt-6-luna\"",
+      "-c",
+      "model_reasoning_effort=\"low\"",
+      "-c",
+      "approval_policy=\"never\"",
+      "-c",
+      "windows.sandbox=\"mxc\"",
+      "-c",
+      "projects={\"<recording>\\\\repo\"={trust_level=\"untrusted\"}}",
+      "-c",
+      "features.hooks=false",
+      "-c",
+      "features.apps=false",
+      "-c",
+      "features.tool_suggest=false",
+      "-c",
+      "check_for_update_on_startup=false",
+      "-c",
+      "project_doc_max_bytes=0",
+      "-c",
+      "skills.include_instructions=false",
+      "-c",
+      "sandbox_mode=\"workspace-write\"",
+      "--json",
+      "--output-schema",
+      "<recording>\\run\\schema.json",
+      "-o",
+      "<recording>\\run\\resume-config-after.last.txt",
+      "-"
+    ],
+    "cwd": "base",
+    "env": {
+      "CODEX_HOME": "<home>\\.agents\\gg\\codex"
+    },
+    "stdin": "This is a probe in a throwaway repository. Run each command below exactly as written, one shell call each, in order, and carry on after one is refused or fails; never change a command or try another way.\n1. node write.js resume-config.txt\n2. Get-Location\nThen answer with one line per command: its number, whether it ran or was refused, and what it printed."
+  },
+  "start": {
+    "kind": "resume-config-after",
+    "from": "start"
+  },
+  "threadId": "01a20433-8960-76d2-bde3-f22e60ac0bf6",
+  "exitCode": 1,
+  "signal": null,
+  "killed": null,
+  "lineTimesMs": [],
+  "stderr": "Not inside a trusted directory and --skip-git-repo-check was not specified.\n",
+  "lastMessage": null,
+  "rolloutPath": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T12-00-16-01a20433-8960-76d2-bde3-f22e60ac0bf6.jsonl",
+  "evidence": {
+    "created": [],
+    "hookLog": null,
+    "mcpLog": null,
+    "forkedRollout": null,
+    "job": {
+      "contained": true,
+      "whileMarked": null,
+      "afterKill": null,
+      "leftAfterExit": []
+    },
+    "homeChanges": null,
+    "stubRequests": null,
+    "homeLogTail": "2026-11-22T16:43:20.143445Z  INFO codex_cli::login: starting browser login flow\n2026-11-22T16:43:51.701661Z  INFO codex_login::server: received login callback path=/auth/callback has_code=true has_state=true has_error=false state_valid=true\n2026-11-22T16:43:51.701726Z  INFO codex_login::server: starting oauth token exchange issuer=https://auth.openai.com/ token_endpoint=https://auth.openai.com/oauth/token redirect_uri=http://127.0.0.1:1455/auth/callback\n2026-11-22T16:43:51.951391Z  INFO codex_login::server: oauth token exchange succeeded\n"
+  }
+}

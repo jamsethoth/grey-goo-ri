@@ -1,0 +1,14 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "command": "cli-version",
+  "purpose": "the version doctor holds to the pinned minimum",
+  "argv": [
+    "--version"
+  ],
+  "home": "gg",
+  "repository": "plain",
+  "exitCode": 0,
+  "stdout": "codex-cli 0.171.0\n",
+  "promptInput": null,
+  "stderr": ""
+}

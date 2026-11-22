@@ -1,0 +1,15 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "command": "cli-login-status",
+  "purpose": "the login doctor reads, in gg's CODEX_HOME",
+  "argv": [
+    "login",
+    "status"
+  ],
+  "home": "gg",
+  "repository": "plain",
+  "exitCode": 0,
+  "stdout": "",
+  "promptInput": null,
+  "stderr": "Logged in using ChatGPT\n"
+}
