@@ -8,24 +8,26 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:http';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as commandShim from '../lib/command-shim.ts';
 import * as containment from '../lib/containment.ts';
+import { type CliCommand, COMMANDS } from './record-codex-commands.ts';
 import * as homeGuard from './record-codex-home.ts';
 import * as redaction from './record-codex-redaction.ts';
 import * as repository from './record-codex-repository.ts';
 import * as contained from './record-codex-run.ts';
-import { type CliCommand, COMMANDS, SCENARIOS, type Scenario } from './record-codex-scenarios.ts';
+import { SCENARIOS, type Scenario } from './record-codex-scenarios.ts';
+import * as standIn from './record-codex-stub.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const OUTPUT = join(root, 'test', 'fixtures', 'codex');
 // Owner Q1 A: at most 30 model calls in one recording session, retries included.
 const MODEL_CALL_CAP = 30;
 const USAGE = `usage: node scripts/record-codex.ts [name ...]
-  no name: every scenario, in order (a resume or fork needs the one it continues), then every command
+  no name: every scenario but a kept thread's fork, in order (a resume or fork needs the one it continues), then
+  every command
   scenarios: ${SCENARIOS.map((scenario) => scenario.name).join(', ')}
   commands, none a model call: ${COMMANDS.map((command) => command.name).join(', ')}`;
 // The cheapest model the catalog lists ("Fast and affordable model for easier tasks"), at its lowest effort.
@@ -39,7 +41,8 @@ const SCHEMA = {
 const GG_CODEX_HOME = join(process.env.GG_HOME || join(homedir(), '.agents', 'gg'), 'codex');
 
 interface Recorded {
-  directories: repository.Directories;
+  // None for a kept thread, whose call gets a fresh repository.
+  directories?: repository.Directories;
   threadId: string | null;
   home: string;
 }
@@ -78,12 +81,13 @@ function headOf(scenario: Scenario, repo: string, threadId: string) {
   const kind = scenario.start?.kind;
   if (kind === 'resume-config-after') return ['exec', 'resume', threadId];
   if (kind === 'resume-flags-before') return ['exec', ...sandbox, 'resume', threadId];
-  if (kind === 'fork') return ['exec', ...sandbox, 'fork', threadId];
+  if (kind === 'fork' || kind === 'fork-kept') return ['exec', ...sandbox, 'fork', threadId];
   if (kind === 'fork-unflagged') return ['exec', 'fork', threadId];
   return ['exec', ...sandbox];
 }
 
-// The call's argv: the start, resume or fork, then the profile, the scenario's own keys, and the stream, schema and
+// The call's argv: the start, resume or fork, then the profile, the MCP server, the scenario's own keys (after the
+// server's table, so a key under it is added to it, not replaced by it), the hooks, and the stream, schema and
 // final-message flags, with the prompt on stdin.
 function argvOf(
   scenario: Scenario,
@@ -104,9 +108,9 @@ function argvOf(
   return [
     ...headOf(scenario, directories.repo, from?.threadId ?? ''),
     ...profile(directories.repo, { ...scenario, hooks: scenario.hooks?.enabled }),
+    ...mcp,
     ...(scenario.config ?? []).flatMap((key) => ['-c', fill(key, values)]),
     ...hooks,
-    ...mcp,
     ...(scenario.extraArgv ?? []),
     '--json',
     '--output-schema',
@@ -115,30 +119,6 @@ function argvOf(
     join(directories.run, `${scenario.name}.last.txt`),
     '-',
   ];
-}
-
-// A stand-in Responses API that answers every request 429 usage_limit_reached, as the ChatGPT backend does at a limit.
-async function startStub(requests: string[]) {
-  const server = createServer((request, response) => {
-    request.resume();
-    request.on('end', () => {
-      const path = (request.url ?? '').split('?')[0] ?? '';
-      if (!path.endsWith('/responses')) {
-        requests.push(`${request.method} ${path} 404`);
-        response.writeHead(404).end();
-        return;
-      }
-      requests.push(`${request.method} ${path} 429`);
-      const error = { type: 'usage_limit_reached', message: 'The usage limit has been reached', plan_type: 'plus' };
-      response
-        .writeHead(429, { 'content-type': 'application/json' })
-        .end(JSON.stringify({ error: { ...error, resets_in_seconds: 3600 } }));
-    });
-  });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  const port = typeof address === 'object' && address !== null ? address.port : 0;
-  return { url: `http://127.0.0.1:${port}`, close: () => server.close() };
 }
 
 // The thread id the stream's thread.started names.
@@ -214,7 +194,7 @@ async function call(scenario: Scenario, base: string, from: Recorded | undefined
   const home = from?.home ?? homeOf(scenario.home, directories.base);
   writeFileSync(join(directories.run, 'schema.json'), JSON.stringify(SCHEMA));
   const requests: string[] = [];
-  const stub = scenario.stub ? await startStub(requests) : undefined;
+  const stub = scenario.stub ? await standIn.start(requests) : undefined;
   const values = { base: directories.base, repo: directories.repo, stub: stub?.url ?? '' };
   const argv = argvOf(scenario, directories, values, from);
   const env = { ...scenario.env, CODEX_HOME: home };
@@ -354,17 +334,34 @@ function profileFor(command: CliCommand, repo: string) {
   return ['-c', `projects={${JSON.stringify(repo)}={trust_level="trusted"}}`];
 }
 
+// Why a chosen scenario cannot continue its thread, found before any call: the scenario it continues is not chosen,
+// or the kept thread it forks is gone from gg's CODEX_HOME.
+function unreachableOf({ name, start }: Scenario, scenarios: Scenario[]): string[] {
+  if (start === undefined) return [];
+  if ('thread' in start)
+    return rolloutOf(GG_CODEX_HOME, start.thread) === null
+      ? [`${name} forks ${start.thread}, gone from ${GG_CODEX_HOME}`]
+      : [];
+  return scenarios.some((other) => other.name === start.from) ? [] : [`${name} continues ${start.from}`];
+}
+
+// The thread a call continues: one this run recorded, or a kept one in gg's CODEX_HOME, which gets a fresh repository.
+function fromOf(start: Scenario['start'], recorded: Map<string, Recorded>): Recorded | undefined {
+  if (start === undefined) return undefined;
+  return 'thread' in start ? { threadId: start.thread, home: GG_CODEX_HOME } : recorded.get(start.from);
+}
+
 function chosenOf(names: string[]) {
   const named = [...SCENARIOS, ...COMMANDS].map((recorded) => recorded.name);
   const unknown = names.filter((name) => name !== '--help' && !named.includes(name));
   if (unknown.length || names.includes('--help'))
     return { error: unknown.length ? `unknown name: ${unknown.join(', ')}\n${USAGE}` : USAGE };
-  const scenarios = SCENARIOS.filter((scenario) => !names.length || names.includes(scenario.name));
-  const missing = scenarios.filter(
-    (scenario) => scenario.start && !scenarios.some((other) => other.name === scenario.start?.from),
+  // A kept thread's fork runs only by name: a re-record of a new version has no such thread.
+  const scenarios = SCENARIOS.filter((scenario) =>
+    names.length ? names.includes(scenario.name) : !(scenario.start && 'thread' in scenario.start),
   );
-  if (missing.length)
-    return { error: `${missing.map((scenario) => `${scenario.name} continues ${scenario.start?.from}`).join('; ')}` };
+  const unreachable = scenarios.flatMap((scenario) => unreachableOf(scenario, scenarios));
+  if (unreachable.length) return { error: unreachable.join('; ') };
   const calls = scenarios.filter((scenario) => scenario.modelCall ?? true).length;
   if (calls > MODEL_CALL_CAP) return { error: `${calls} model calls is over the cap of ${MODEL_CALL_CAP}` };
   const commands = COMMANDS.filter((cliCommand) => !names.length || names.includes(cliCommand.name));
@@ -384,7 +381,7 @@ async function main(names: string[]) {
   mkdirSync(OUTPUT, { recursive: true });
   const recorded = new Map<string, Recorded>();
   for (const scenario of chosen.scenarios) {
-    const from = scenario.start === undefined ? undefined : recorded.get(scenario.start.from);
+    const from = fromOf(scenario.start, recorded);
     recorded.set(scenario.name, await record(scenario, cliVersion, join(temporary, scenario.name), from));
   }
   for (const cliCommand of chosen.commands) recordCommand(cliCommand, cliVersion, join(temporary, cliCommand.name));
