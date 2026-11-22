@@ -32,20 +32,29 @@ These go to the owner as one decision batch before #481.
    commands). Under `-c allow_login_shell=false` the one command ran `-NoProfile` with no profile error, but the model
    passed `login:false` itself (`login-shell-off`, its rollout), so whether the key stops the profile when the model
    leaves `login` out is unsettled. The 0.163 planning notes record `-NoProfile` on every command; no 0.163 fixture
-   exists.
+   exists. Owner D10 A: #481's Launch Profile passes `features.apps=false`, `features.tool_suggest=false`,
+   `skills.include_instructions=false` and `allow_login_shell=false` on every call, with `project_doc_max_bytes=0`,
+   so a declared skill reaches Codex as text only; the last key's effect rests on the Codex configuration reference
+   ("Set false to force non-login shells") until a recording shows it.
 2. **gg's `CODEX_HOME` holds ten remote plugins, installed and enabled** (`cli-plugin-list`: `github`, `superpowers`,
    `build-web-apps` and seven more from `openai-curated-remote`). Under the profile keys none of them shows in the
    prompt input, but `plugins` exact (decision 7) means gg disables every plugin an Agent does not list: by a
    `plugins={...}` table naming each installed one, or `--disable plugins` when none is listed. The table excludes a
    plugin its `CODEX_HOME` enables: the probe plugin, installed and enabled, reaches the prompt input with no `-c`
    (`prompt-input-plugin-enabled-default`: `SENTINEL-PLUGINSKILL`) and not under `{enabled=false}`
-   (`prompt-input-plugin-excluded`: no sentinel).
+   (`prompt-input-plugin-excluded`: no sentinel). Owner D11 A: #481 runs `codex plugin list --json` (no model call)
+   before each call and passes a `plugins` table, each unlisted plugin `{enabled=false}` and each listed one
+   `{enabled=true}`, or `--disable plugins` when the Agent lists none; the table's exclusion is shown on a local
+   plugin only, not on the remote ten.
 3. **Repository `.agents/skills` loads with the project untrusted** (decision 3, Q18 A): `SENTINEL-REPOSKILL` in
    `prompt-input-sentinels-untrusted`. `skills.include_instructions=false` drops it (`prompt-input-sentinels-profile`).
+   Owner D10 A: #481 passes it on every call (finding 1).
 4. **The `unelevated` fallback is not viable** (request 3.2's MXC fallback). Read-only: every shell start fails
    "CreateProcessAsUserW failed: 5 (Access is denied.)" (`unelevated-read-only`). Workspace-write: no command
    returned output, and the process did not exit after `turn.completed` until the recorder's 600 s limit
-   (`unelevated-workspace-write`, exit 1, "call limit"). It isolates nothing usable on this machine.
+   (`unelevated-workspace-write`, exit 1, "call limit"). It isolates nothing usable on this machine. Owner D12 A: #481
+   builds no `unelevated` retry; an MXC error ends the call as a typed failure, and #481 amends request 3.2's
+   fallback line.
 5. **A config MCP server's tool is refused under `approval_policy="never"`** (decision 7, `mcp` exact): the server
    starts and lists its tools (`mcp-schema.json` evidence.mcpLog), but the call fails "MCP tool call requires
    approval, but approval policy is never" (`mcp-schema.jsonl`, `mcp_tool_call` status `failed`). `mcp` exact needs a
