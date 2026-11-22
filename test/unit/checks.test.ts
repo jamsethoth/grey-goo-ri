@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as checks from '../../lib/checks.ts';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 import { fakeGit } from '../support/fake-git.ts';
 
 const fixture = (name: string) => readFileSync(new URL(`../fixtures/runner-output/${name}`, import.meta.url), 'utf8');
@@ -301,7 +301,7 @@ test('test immutability covers a declared test path outside the default globs', 
     ok: false,
     changed: ['spec/cart.mjs'],
   });
-  assert.deepEqual(await checks.testImmutability(mainRoot, base, { globs: exampleLayer.TEST_GLOBS, git: fake.git }), {
+  assert.deepEqual(await checks.testImmutability(mainRoot, base, { globs: exampleSource.TEST_GLOBS, git: fake.git }), {
     ok: true,
     changed: [],
   });

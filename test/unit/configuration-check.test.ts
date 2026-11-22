@@ -292,7 +292,7 @@ test('a gg.db deleted from an existing gg directory is a missing State Database'
   );
 });
 
-test('preflight lists every malformed Declared Command and a missing test, naming the repository Layer', async () => {
+test('preflight lists every malformed Declared Command and a missing test, naming the repository Source', async () => {
   const repository = repositorySource();
   repository.commands = { Test: 'npm test', lint: '' };
   const file = REPOSITORY_FILE;

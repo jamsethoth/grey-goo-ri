@@ -125,11 +125,11 @@ function poison(files: config.SourceFiles, names: string[]) {
   for (const name of names) {
     const { bytes } = files[name]!;
     if (!name.endsWith('.json')) {
-      files[name] = golden.layerFile(`${POISON}\n${bytes}`);
+      files[name] = golden.sourceFile(`${POISON}\n${bytes}`);
       continue;
     }
     const schema = JSON.parse(bytes) as { required: string[] };
-    files[name] = golden.layerFile(JSON.stringify({ ...schema, required: [...schema.required].reverse() }));
+    files[name] = golden.sourceFile(JSON.stringify({ ...schema, required: [...schema.required].reverse() }));
   }
 }
 const noPoison = (text: string, where: string) => assert.ok(!text.includes(POISON), `${where} read a later file`);

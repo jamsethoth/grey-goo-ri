@@ -9,7 +9,7 @@ import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
 import * as record from '../../lib/record.ts';
 import * as shipped from '../../lib/harnesses/shipped.ts';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 import * as fakeGh from '../support/fake-gh.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
@@ -69,10 +69,10 @@ test("gg init writes the example with the repository's keys, creates the user's 
   const { repo, user, commonDir } = initRoots(t);
   const text = doctor.init(repo, { baseBranch: 'trunk', userDirectory: user, commonDir });
   const written = repositoryDirectory(repo);
-  assert.deepEqual(readdirSync(written).sort(), [...exampleLayer.WRITTEN_NAMES].sort(), 'every file but doctor.txt');
-  for (const name of exampleLayer.WRITTEN_NAMES.filter((name) => name !== 'gg.json'))
-    assert.equal(readFileSync(join(written, name), 'utf8'), exampleLayer.fixtureText(name), name);
-  const expected = JSON.parse(exampleLayer.fixtureText('gg.json')) as {
+  assert.deepEqual(readdirSync(written).sort(), [...exampleSource.WRITTEN_NAMES].sort(), 'every file but doctor.txt');
+  for (const name of exampleSource.WRITTEN_NAMES.filter((name) => name !== 'gg.json'))
+    assert.equal(readFileSync(join(written, name), 'utf8'), exampleSource.fixtureText(name), name);
+  const expected = JSON.parse(exampleSource.fixtureText('gg.json')) as {
     commands: Record<string, string>;
     baseBranch: string;
   };
@@ -261,15 +261,15 @@ test(
   async (t) => {
     const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
     const own = JSON.parse(readFileSync(join(repositoryDirectory(repoRoot), 'gg.json'), 'utf8')) as object;
-    const example = JSON.parse(exampleLayer.fixtureText('gg.json')) as object;
+    const example = JSON.parse(exampleSource.fixtureText('gg.json')) as object;
     assert.deepEqual(
       { ...own, commands: undefined, testPaths: undefined },
       { ...example, commands: undefined, testPaths: undefined },
     );
-    for (const name of exampleLayer.WRITTEN_NAMES.filter((name) => name !== 'gg.json'))
+    for (const name of exampleSource.WRITTEN_NAMES.filter((name) => name !== 'gg.json'))
       assert.equal(
         readFileSync(join(repositoryDirectory(repoRoot), name), 'utf8'),
-        exampleLayer.fixtureText(name),
+        exampleSource.fixtureText(name),
         name,
       );
     const { user } = initRoots(t);
@@ -283,7 +283,7 @@ test(
 
 // The repository commits each Agent's harness, so gg init alone gives a Flow gg doctor accepts (ADR 0022).
 test("the example's Agents name a harness", () => {
-  const { agents } = JSON.parse(exampleLayer.fixtureText('gg.json')) as { agents: unknown };
+  const { agents } = JSON.parse(exampleSource.fixtureText('gg.json')) as { agents: unknown };
   assert.deepEqual(agents, {
     implementer: { persona: 'implementer.md', access: 'workspace-write', harness: 'claude' },
     reviewer: { persona: 'reviewer.md', access: 'read-only', harness: 'claude' },

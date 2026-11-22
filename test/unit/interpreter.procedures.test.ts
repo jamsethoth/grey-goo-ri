@@ -37,8 +37,8 @@ const PROBE_SCHEMA = JSON.stringify({
 const probed = (summary: string, files = {}) => ({ files, response: { claim: 'ok', summary } });
 // The files a declared Procedure below names: a Brief that names nothing and the probe schema.
 function probeFiles(configured: GoldenConfig) {
-  configured.files['plain.md'] = golden.layerFile('Do the work.\n');
-  configured.files['probe.schema.json'] = golden.layerFile(PROBE_SCHEMA);
+  configured.files['plain.md'] = golden.sourceFile('Do the work.\n');
+  configured.files['probe.schema.json'] = golden.sourceFile(PROBE_SCHEMA);
 }
 // An agent Action, the test command as Check `gate`, and a commit of `type`; `tests` as the Procedure declares it.
 const sealing = (tests: string, type: string) => ({
@@ -73,9 +73,9 @@ test('the interpreter names no Procedure, Action or Check', async (t) => {
     responses: { [askOf('build')]: probed('Probe the sum.', { 'lib/add.mjs': RIGHT_ADD }) },
   });
   golden.configure(fixture, (configured) => {
-    configured.files['ask.md'] = golden.layerFile('Probe {{ticket.title}}.\n');
-    configured.files['probe.schema.json'] = golden.layerFile(PROBE_SCHEMA);
-    configured.files['probe-body.md'] = golden.layerFile(
+    configured.files['ask.md'] = golden.sourceFile('Probe {{ticket.title}}.\n');
+    configured.files['probe.schema.json'] = golden.sourceFile(PROBE_SCHEMA);
+    configured.files['probe-body.md'] = golden.sourceFile(
       '{{ask.response.summary}}\n{{gate.evidence.output}}\n{{marker}}\n',
     );
     configured.procedures.probe = {
@@ -431,7 +431,7 @@ test('a stop token that names no comment posts the Terminal Reason comment', asy
 test('a Procedure with no agent Action posts its comment', async (t) => {
   const fixture = await golden.fixture(t);
   golden.configure(fixture, (configured) => {
-    configured.files['note.md'] = golden.layerFile('a note\n{{marker}}\n');
+    configured.files['note.md'] = golden.sourceFile('a note\n{{marker}}\n');
     configured.procedures.say = { actions: [{ id: 'note', do: 'comment', target: 'ticket', body: 'note.md' }] };
     configured.flows.golden!.ticket = {
       entry: 'say',

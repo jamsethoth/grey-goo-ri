@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
 import * as briefs from '../../lib/briefs.ts';
 import * as referencePaths from '../../lib/reference-paths.ts';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 
 // What a reader of the SchemaNode reads is what assertStrict checked, for any input (#365): it refuses an object it
 // cannot fully see, wherever in a schema it reads one (owner, Q1 B and Q2 C).
@@ -88,7 +88,7 @@ const objectAt = (schema: unknown, path: string[]) =>
 // The schema with the object at `path` replaced.
 function placed(schema: unknown, path: string[], value: object) {
   if (!path.length) return value;
-  exampleLayer.putAt(schema, path, value);
+  exampleSource.putAt(schema, path, value);
   return schema;
 }
 
@@ -103,7 +103,7 @@ const refusal = (schema: unknown) => {
 
 for (const [hiding, hide, applies] of HIDINGS) {
   test(`assertStrict refuses ${hiding} at every object it reads, with the refusal of that place`, () => {
-    for (const [name, pristine] of Object.entries(exampleLayer.schemas())) {
+    for (const [name, pristine] of Object.entries(exampleSource.schemas())) {
       const reached = sites(pristine as Record<string, unknown>).filter(
         (site) => applies === 'any' || Array.isArray(objectAt(pristine, site.route)),
       );
@@ -123,7 +123,7 @@ for (const [hiding, hide, applies] of HIDINGS) {
 
 // Refusing an object runs nothing of its own: no read reaches its prototype (#399 review).
 test('assertStrict refuses an object whose prototype answers reads without reading through it', () => {
-  for (const [name, pristine] of Object.entries(exampleLayer.schemas())) {
+  for (const [name, pristine] of Object.entries(exampleSource.schemas())) {
     for (const site of sites(pristine as Record<string, unknown>)) {
       const schema = structuredClone(pristine);
       const value = objectAt(schema, site.route);
@@ -144,7 +144,7 @@ test('assertStrict refuses an object whose prototype answers reads without readi
 
 // Nothing is hidden in an object with no prototype at all, which JSON writes as it reads (lib/json-value.ts).
 test('assertStrict accepts a node or a properties map with no prototype', () => {
-  for (const [name, pristine] of Object.entries(exampleLayer.schemas())) {
+  for (const [name, pristine] of Object.entries(exampleSource.schemas())) {
     for (const site of sites(pristine as Record<string, unknown>)) {
       const schema = structuredClone(pristine);
       const value = objectAt(schema, site.route);

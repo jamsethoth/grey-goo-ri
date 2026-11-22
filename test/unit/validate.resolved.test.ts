@@ -5,7 +5,7 @@ import * as labels from '../../lib/labels.ts';
 import type * as model from '../../lib/model.ts';
 import * as procedures from '../../lib/procedures.ts';
 import * as procedureChecks from '../../lib/validate/procedures.ts';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 
 // The Resolved Flow is built from the values the validator's checks judged (#391, D1 A): each check gives the typed
 // value it judged, or gives up by reporting it, so a Flow with no error resolves and one whose copied value was refused
@@ -13,13 +13,13 @@ import * as exampleLayer from '../support/example-layer.ts';
 
 /* eslint-disable id-denylist -- a Problem's key is at */
 
-type Edit = (layer: exampleLayer.Layer, files: ReturnType<typeof exampleLayer.schemas>) => void;
+type Edit = (source: exampleSource.Source, files: ReturnType<typeof exampleSource.schemas>) => void;
 
 // The review response with an integer field, which only an operator or integer rule condition reads.
 const withScore: Edit = (_, files) => {
-  exampleLayer.putAt(files, ['review.schema.json', 'properties', 'score'], { type: 'integer' });
+  exampleSource.putAt(files, ['review.schema.json', 'properties', 'score'], { type: 'integer' });
   const { required } = files['review.schema.json']!;
-  exampleLayer.putAt(
+  exampleSource.putAt(
     files,
     ['review.schema.json', 'required'],
     [...(Array.isArray(required) ? required : []), 'score'],
@@ -27,74 +27,92 @@ const withScore: Edit = (_, files) => {
 };
 const scoreRow =
   (condition: unknown): Edit =>
-  (layer, files) => {
-    withScore(layer, files);
-    layer.procedures.review.passed.unshift({ when: { 'response.score': condition }, outcome: 'retest' });
+  (source, files) => {
+    withScore(source, files);
+    const { review } = source.procedures;
+    exampleSource.putAt(
+      review,
+      ['passed'],
+      [{ when: { 'response.score': condition }, outcome: 'retest' }, ...review.passed],
+    );
   };
 
 // Each form a copied value's type allows that the example lacks, in a configuration with no error.
 const FORMS: Record<string, Edit> = {
-  'an Edge with no max': (layer) => (layer.flows.default.ticket.vertices.red.route.ok = { to: 'green' }),
-  'an Edge to an end': (layer) =>
-    (layer.flows.default.ticket.vertices.red.route.ok = {
+  'an Edge with no max': (source) =>
+    exampleSource.putAt(source.flows.default.ticket.vertices.red.route, ['ok'], { to: 'green' }),
+  'an Edge to an end': (source) =>
+    exampleSource.putAt(source.flows.default.ticket.vertices.red.route, ['ok'], {
       to: { end: 'needs-human' },
       max: 1,
       exhausted: { end: 'needs-human' },
     }),
-  'a Flow route that names a Vertex': (layer) => (layer.flows.default.ticket.routes.misscoped = 'senior-green'),
-  'a Vertex "*" route': (layer) => (layer.flows.default.ticket.vertices.red.route['*'] = { end: 'needs-human' }),
+  'a Flow route that names a Vertex': (source) =>
+    exampleSource.putAt(source.flows.default.ticket.routes, ['misscoped'], 'senior-green'),
+  'a Vertex "*" route': (source) =>
+    exampleSource.putAt(source.flows.default.ticket.vertices.red.route, ['*'], { end: 'needs-human' }),
   // Only blocked, of the Outcomes the Flow's "*" routes, is not an engine Outcome, so routing it leaves the engine's
   // own Outcomes to the engine default.
-  'an engine default route': (layer) => {
-    const { routes } = layer.flows.default.ticket;
-    delete routes['*'];
-    routes.blocked = { end: 'needs-human' };
+  'an engine default route': (source) => {
+    const { routes } = source.flows.default.ticket;
+    exampleSource.putAt(routes, ['*']);
+    exampleSource.putAt(routes, ['blocked'], { end: 'needs-human' });
   },
-  'a Vertex exhausted that names a Vertex': (layer) =>
-    (layer.flows.default.ticket.vertices['senior-red'].exhausted = 'publish'),
-  'a Vertex that narrows the access of the Agent it uses': (layer) =>
-    (layer.flows.default.ticket.vertices.red.access = 'read-only'),
-  'a Vertex whose own Agent keys name its Agent': (layer) => {
-    const { red } = layer.flows.default.ticket.vertices;
-    delete red.use;
-    Object.assign(red, { harness: 'fake', persona: 'implementer.md', access: 'workspace-write' });
+  'a Vertex exhausted that names a Vertex': (source) =>
+    exampleSource.putAt(source.flows.default.ticket.vertices['senior-red'], ['exhausted'], 'publish'),
+  'a Vertex that narrows the access of the Agent it uses': (source) =>
+    exampleSource.putAt(source.flows.default.ticket.vertices.red, ['access'], 'read-only'),
+  'a Vertex whose own Agent keys name its Agent': (source) => {
+    const { red } = source.flows.default.ticket.vertices;
+    exampleSource.putAt(red, ['use']);
+    exampleSource.putAt(red, ['harness'], 'fake');
+    exampleSource.putAt(red, ['persona'], 'implementer.md');
+    exampleSource.putAt(red, ['access'], 'workspace-write');
   },
-  'an Agent that names its model, effort and network': (layer) =>
-    Object.assign(layer.agents.implementer, { model: 'a-model', effort: 'high', network: false }),
-  'a stop Claim token with no comment': (layer) => delete layer.procedures['tests-fail'].claimTokens.blocked.comment,
-  'an await-approval Action': (layer) => {
-    layer.procedures.approval = { actions: [{ id: 'ask', do: 'await-approval' }] };
-    layer.flows.default.ticket.vertices.approve = {
+  'an Agent that names its model, effort and network': (source) => {
+    exampleSource.putAt(source.agents.implementer, ['model'], 'a-model');
+    exampleSource.putAt(source.agents.implementer, ['effort'], 'high');
+    exampleSource.putAt(source.agents.implementer, ['network'], false);
+  },
+  'a stop Claim token with no comment': (source) =>
+    exampleSource.putAt(source.procedures['tests-fail'].claimTokens.blocked, ['comment']),
+  'an await-approval Action': (source) => {
+    exampleSource.putAt(source.procedures, ['approval'], { actions: [{ id: 'ask', do: 'await-approval' }] });
+    exampleSource.putAt(source.flows.default.ticket.vertices, ['approve'], {
       procedure: 'approval',
       route: { approved: { end: 'needs-human' }, rejected: { end: 'needs-replan' } },
-    };
+    });
   },
-  'a failed table with a row': (layer) =>
-    (layer.procedures.implement.failed = [{ when: { 'response.reason': 'misscoped' }, outcome: 'bad-test' }]),
+  'a failed table with a row': (source) =>
+    exampleSource.putAt(
+      source.procedures.implement,
+      ['failed'],
+      [{ when: { 'response.reason': 'misscoped' }, outcome: 'bad-test' }],
+    ),
   'an integer rule condition': scoreRow(3),
   ...Object.fromEntries(
     procedures.OPERATORS.map((operator) => [`a ${operator} rule condition`, scoreRow({ [operator]: 2 })]),
   ),
 };
 
-// The configurations a Flow with no error resolves from, each with its layer as written: the example, and the example
+// The configurations a Flow with no error resolves from, each with its source as written: the example, and the example
 // with each form.
 function corpus() {
-  const example = exampleLayer.config();
+  const example = exampleSource.config();
   return [
-    ['the example', exampleLayer.check(example), example] as const,
+    ['the example', exampleSource.check(example), example] as const,
     ...Object.entries(FORMS).map(([form, edit]) => {
-      const layer = exampleLayer.config();
-      const files = exampleLayer.schemas();
-      edit(layer, files);
-      return [form, exampleLayer.check(layer, files), layer] as const;
+      const source = exampleSource.config();
+      const files = exampleSource.schemas();
+      edit(source, files);
+      return [form, exampleSource.check(source, files), source] as const;
     }),
   ];
 }
 
 for (const [form, checked] of corpus())
   test(`a Flow with no error resolves to the Flow as written, with ${form}`, () => {
-    assert.deepEqual(exampleLayer.firedRules(checked.errors), []);
+    assert.deepEqual(exampleSource.firedRules(checked.errors), []);
     assert.ok(checked.flows.default, 'the Flow resolves');
     assert.deepEqual(checked.flows.default, checked.declared.default);
   });
@@ -129,13 +147,15 @@ function procedureForms(add: Add, procedure: procedures.Procedure) {
       else add('condition', typeof condition);
 }
 
+type WrittenVertices = exampleSource.Source['flows']['default']['ticket']['vertices'];
+
 // The forms of a Vertex's values, by the closed set each is drawn from. Its Agent resolves merged, so whether the
-// Vertex sets its own access over the Agent it uses is read from the layer as written.
-function vertexForms(add: Add, vertex: model.ResolvedVertexJson, written: Record<string, unknown>) {
+// Vertex sets its own access over the Agent it uses is read from the source as written.
+function vertexForms(add: Add, vertex: model.ResolvedVertexJson, written: WrittenVertices[keyof WrittenVertices]) {
   add('agent', agentForm(vertex));
   add('vertex access', vertex.access);
   add('vertex max', presence(vertex.max));
-  if (vertex.use !== null) add('access of a used Agent', Object.hasOwn(written, 'access') ? 'overridden' : 'inherited');
+  if (vertex.use !== null) add('access of a used Agent', 'access' in written ? 'overridden' : 'inherited');
   if (vertex.agent !== null)
     for (const key of ['model', 'effort', 'network'] as const) add(`agent ${key}`, presence(vertex.agent[key]));
   for (const routing of Object.values(vertex.routing)) {
@@ -145,7 +165,7 @@ function vertexForms(add: Add, vertex: model.ResolvedVertexJson, written: Record
 }
 
 // The forms one Resolved Flow holds, by the closed set each is drawn from, a target's by the site that names it.
-function formsOf(flow: model.ResolvedFlowJson, layer: exampleLayer.Layer) {
+function formsOf(flow: model.ResolvedFlowJson, source: exampleSource.Source) {
   const found = new Map<string, Set<unknown>>();
   const add: Add = (set, form) => found.set(set, (found.get(set) ?? new Set()).add(form));
   const target = (site: string, value: model.Target) => {
@@ -160,12 +180,12 @@ function formsOf(flow: model.ResolvedFlowJson, layer: exampleLayer.Layer) {
     if (value.exhausted !== undefined) target('edge exhausted', value.exhausted);
   };
   Object.values(flow.ticket.routes).forEach(routeTarget('flow route'));
-  const written: Record<string, Record<string, unknown>> = layer.flows.default.ticket.vertices;
+  const written = Object.entries(source.flows.default.ticket.vertices);
   for (const [id, vertex] of Object.entries(flow.ticket.vertices)) {
     Object.values(vertex.route).forEach(routeTarget('vertex route'));
     if (vertex.exhausted === null) add('vertex exhausted', 'absent');
     else target('vertex exhausted', vertex.exhausted);
-    vertexForms(add, vertex, written[id]!);
+    vertexForms(add, vertex, written.find(([writtenId]) => writtenId === id)![1]);
   }
   for (const procedure of Object.values(flow.procedures)) procedureForms(add, procedure);
   return found;
@@ -217,8 +237,8 @@ const CLOSED_SETS: Record<string, unknown[]> = {
 
 test('the Flows with no error hold every form of every closed set a copied value is drawn from', () => {
   const held = new Map<string, Set<unknown>>();
-  for (const [, checked, layer] of corpus())
-    for (const [set, forms] of formsOf(checked.flows.default!, layer))
+  for (const [, checked, source] of corpus())
+    for (const [set, forms] of formsOf(checked.flows.default!, source))
       held.set(set, new Set([...(held.get(set) ?? []), ...forms]));
   const missing = Object.entries(CLOSED_SETS).flatMap(([set, forms]) =>
     forms.filter((form) => !held.get(set)?.has(form)).map((form) => `${set}: ${String(form)}`),
@@ -228,29 +248,30 @@ test('the Flows with no error hold every form of every closed set a copied value
 
 // A value its check refuses, each of which a guard of #364 let resolve: the check that reports it is the one that
 // types it, so the Flow is only declared.
-const REFUSED: Record<string, [Edit, exampleLayer.FiredRule]> = {
+const REFUSED: Record<string, [Edit, exampleSource.FiredRule]> = {
   'an actionCap that is not an integer': [
-    (layer) => (layer.flows.default.actionCap = 1.5),
+    (source) => (source.flows.default.actionCap = 1.5),
     { at: 'flows.default.actionCap', code: 'not-a-positive-integer' },
   ],
   'a Vertex max of 0': [
-    (layer) => (layer.flows.default.ticket.vertices['senior-green'].max = 0),
+    (source) => (source.flows.default.ticket.vertices['senior-green'].max = 0),
     { at: 'flows.default.ticket.vertices.senior-green.max', code: 'not-a-positive-integer' },
   ],
   "an Edge's max of 0": [
-    (layer) => (layer.flows.default.ticket.vertices['senior-green'].route['bad-test'].max = 0),
+    (source) => (source.flows.default.ticket.vertices['senior-green'].route['bad-test'].max = 0),
     { at: 'flows.default.ticket.vertices.senior-green.route.bad-test', code: 'not-a-positive-integer' },
   ],
   'an Edge with max and no exhausted target': [
-    (layer) => delete layer.flows.default.ticket.vertices['senior-green'].route['bad-test'].exhausted,
+    (source) =>
+      exampleSource.putAt(source.flows.default.ticket.vertices['senior-green'].route['bad-test'], ['exhausted']),
     { at: 'flows.default.ticket.vertices.senior-green.route.bad-test', code: 'max-without-exhausted' },
   ],
   'a route to an undeclared Vertex': [
-    (layer) => (layer.flows.default.ticket.vertices.red.route.ok = 'nowhere'),
+    (source) => (source.flows.default.ticket.vertices.red.route.ok = 'nowhere'),
     { at: 'flows.default.ticket.vertices.red.route.ok', code: 'unknown-vertex' },
   ],
   'a recover max of 0': [
-    (layer) => (layer.procedures['tests-fail'].recover.max = 0),
+    (source) => (source.procedures['tests-fail'].recover.max = 0),
     { at: 'procedures.tests-fail.recover', code: 'malformed-recover' },
   ],
   'a rule condition comparing with a number that is not an integer': [
@@ -258,22 +279,22 @@ const REFUSED: Record<string, [Edit, exampleLayer.FiredRule]> = {
     { at: 'procedures.review.passed[0]', code: 'invalid-rule-condition' },
   ],
   'a Vertex access that is not a Permission Intent': [
-    (layer) => (layer.flows.default.ticket.vertices.red.access = 'read-write'),
+    (source) => exampleSource.putAt(source.flows.default.ticket.vertices.red, ['access'], 'read-write'),
     { at: 'flows.default.ticket.vertices.red.access', code: 'unknown-permission-intent' },
   ],
   'an empty rule condition': [
-    (layer) => (layer.procedures['tests-fail'].stopped[0].when['response.reason'] = {}),
+    (source) => exampleSource.putAt(source.procedures['tests-fail'].stopped[0].when, ['response.reason'], {}),
     { at: 'procedures.tests-fail.stopped[0]', code: 'invalid-rule-condition' },
   ],
 };
 
 for (const [what, [edit, fired]] of Object.entries(REFUSED))
   test(`a Flow with ${what} is declared and does not resolve`, () => {
-    const layer = exampleLayer.config();
-    const files = exampleLayer.schemas();
-    edit(layer, files);
-    const { errors, flows, declared } = exampleLayer.check(layer, files);
-    assert.deepEqual(exampleLayer.firedRules(errors), [fired]);
+    const source = exampleSource.config();
+    const files = exampleSource.schemas();
+    edit(source, files);
+    const { errors, flows, declared } = exampleSource.check(source, files);
+    assert.deepEqual(exampleSource.firedRules(errors), [fired]);
     assert.ok(declared.default, 'the Flow is declared');
     assert.equal(flows.default, undefined);
   });

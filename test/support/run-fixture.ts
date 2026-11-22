@@ -20,7 +20,7 @@ import * as validate from '../../lib/validate/index.ts';
 import * as addSuite from './add-suite.ts';
 import * as caseDatabase from './case-database.ts';
 import * as executionContext from './execution-context.ts';
-import * as exampleLayer from './example-layer.ts';
+import * as exampleSource from './example-source.ts';
 import * as executionReads from './execution-reads.ts';
 import * as fakeGh from './fake-gh.ts';
 import * as fakeHarnessModule from './fake-harness.ts';
@@ -47,10 +47,10 @@ interface Configuration extends config.Configuration {
 // The repository source gg shipped until #120 with every Agent on `harness`, its test command and, unless `fullFlow`,
 // a red, green and publish Flow to ready-for-qa, whose publish reads green's report and evidence.
 export function testConfig(_root: string, { harness = 'fake', fullFlow = false } = {}) {
-  const { maxParallel: _maxParallel, worktreeRoot: _worktreeRoot, ...configured } = shippedFlow.shippedLayer();
+  const { maxParallel: _maxParallel, worktreeRoot: _worktreeRoot, ...configured } = shippedFlow.shippedSource();
   const repository = configured as unknown as Repository & shippedFlow.SourceWithFiles;
   repository.commands = { test: 'npm test' };
-  repository.testPaths = [...exampleLayer.TEST_GLOBS];
+  repository.testPaths = [...exampleSource.TEST_GLOBS];
   for (const agent of Object.values(repository.agents))
     Object.assign(agent, { harness, model: 'model-x', effort: 'high' });
   if (!fullFlow) {
@@ -287,7 +287,7 @@ export async function seedExecution(
     readTemplate: (name: string) => config.namedFile(files, name),
   }).flows;
   const flow = model.fromJson(flows.default!);
-  const contract = { files, commands: { test: 'npm test' }, testPaths: [...exampleLayer.TEST_GLOBS] };
+  const contract = { files, commands: { test: 'npm test' }, testPaths: [...exampleSource.TEST_GLOBS] };
   const executionRecord = recordToSeed(runFixture, flow, resume);
   const database = options.deps.database as record.StateDatabase;
   await assert.rejects(

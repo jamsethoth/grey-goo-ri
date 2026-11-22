@@ -3,18 +3,21 @@ import * as referencePaths from '../../lib/reference-paths.ts';
 import * as validate from '../../lib/validate/index.ts';
 import type * as report from '../../lib/validate/report.ts';
 
-// The example Layer under test/fixtures/example: the Flow `gg init` writes, its schemas and its templates.
+// The example Source under test/fixtures/example: the Flow `gg init` writes, its schemas and its templates.
 export const fixtureText = (name: string) =>
   readFileSync(new URL(`../fixtures/example/${name}`, import.meta.url), 'utf8');
 
-// The example Flow as `gg init` writes it, plus the per-person harness a user Layer adds (P2). It is an `any`, so a
-// case may edit any key of it into a configuration the validator must judge, until its cases edit through putAt (#358).
-export function config() {
-  const layer: any = JSON.parse(fixtureText('gg.json'));
-  for (const agent of Object.values<Record<string, unknown>>(layer.agents)) agent.harness = 'fake';
-  return layer;
+// The example's own type, which tsc reads from its file; Node never loads it, since a type is erased (ADR 0018).
+type Example = typeof import('../fixtures/example/gg.json', { with: { type: 'json' } });
+
+// The example Flow as `gg init` writes it, plus the per-person harness a user Source adds (P2), typed as the example
+// file, so a read is checked and an edit out of the example's shape goes through putAt (#358).
+export function config(): Example {
+  const source = JSON.parse(fixtureText('gg.json')) as Example;
+  for (const agent of Object.values(source.agents)) agent.harness = 'fake';
+  return source;
 }
-export type Layer = ReturnType<typeof config>;
+export type Source = ReturnType<typeof config>;
 
 export const SCHEMA_NAMES = ['red.schema.json', 'implement.schema.json', 'review.schema.json'];
 // The templates the example names.
@@ -42,7 +45,8 @@ export const schemas = () =>
   Object.fromEntries(SCHEMA_NAMES.map((name) => [name, JSON.parse(fixtureText(name)) as referencePaths.SchemaNode]));
 
 // Puts `value` at `path` in a parsed fixture, or removes the key when `value` is undefined: a case edits a fixture
-// into any shape, the strict subset's or not, through objects and lists it checks, with no `any`.
+// into any shape, the strict subset's or not, through objects and lists it checks, with no `any`. A list's item is
+// named by its index, and is never removed: a delete would leave a hole in the list (#358, D2 A).
 export function putAt(fixture: unknown, path: string[], value?: unknown) {
   const parent = path
     .slice(0, -1)
@@ -51,10 +55,13 @@ export function putAt(fixture: unknown, path: string[], value?: unknown) {
         referencePaths.isRecord(node) || Array.isArray(node) ? (node as Record<string, unknown>)[key] : undefined,
       fixture,
     );
-  if (!referencePaths.isRecord(parent)) throw new Error(`no object at ${path.join('.')}`);
+  if (!referencePaths.isRecord(parent) && !Array.isArray(parent))
+    throw new Error(`no object or list at ${path.join('.')}`);
+  const edited = parent as Record<string, unknown>;
   const key = path.at(-1)!;
-  if (value === undefined) delete parent[key];
-  else parent[key] = value;
+  if (value === undefined && Array.isArray(parent)) throw new Error(`a list item cannot be removed: ${path.join('.')}`);
+  if (value === undefined) delete edited[key];
+  else edited[key] = value;
 }
 
 // The example's own templates, by file name.
@@ -83,13 +90,13 @@ const schemaReader = (files: Record<string, referencePaths.SchemaNode>) => (name
   return files[name];
 };
 
-// Validates `layer` with `harnesses` registered in place of the fake alone: a case about what a Harness declares.
-export const checkOn = (layer: Layer, harnesses: Record<string, unknown>) =>
-  validate.validate(layer, { harnesses, readSchema: schemaReader(schemas()) });
+// Validates `source` with `harnesses` registered in place of the fake alone: a case about what a Harness declares.
+export const checkOn = (source: Source, harnesses: Record<string, unknown>) =>
+  validate.validate(source, { harnesses, readSchema: schemaReader(schemas()) });
 
-// Validates `layer` with the fake harness registered, reading schemas and templates from the files given.
-export function check(layer: Layer, files = schemas(), templateFiles?: Record<string, string>) {
-  return validate.validate(layer, {
+// Validates `source` with the fake harness registered, reading schemas and templates from the files given.
+export function check(source: Source, files = schemas(), templateFiles?: Record<string, string>) {
+  return validate.validate(source, {
     harnesses: { fake: {} },
     readSchema: schemaReader(files),
     ...(templateFiles && {

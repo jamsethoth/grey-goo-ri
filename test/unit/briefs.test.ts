@@ -4,7 +4,7 @@ import * as briefs from '../../lib/briefs.ts';
 import * as checks from '../../lib/checks.ts';
 import type * as referencePaths from '../../lib/reference-paths.ts';
 import * as render from '../../lib/render.ts';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 import { homedir } from 'node:os';
 import { readFileSync } from 'node:fs';
 
@@ -25,7 +25,7 @@ const fixture = (name: string) => readFileSync(new URL(`../fixtures/templates/${
 
 // A template of the example `gg init` writes, or gg's own (the nudge is an engine template).
 const text = (name: string) =>
-  exampleLayer.TEMPLATE_NAMES.includes(name) ? exampleLayer.fixtureText(name) : render.engineTemplate(name);
+  exampleSource.TEMPLATE_NAMES.includes(name) ? exampleSource.fixtureText(name) : render.engineTemplate(name);
 // An example Brief by its file name, and the recovery Brief with a section per `{ brief, ...check }`.
 const shipped = (name: string, context: briefs.BriefContext) => briefs.brief(text(name), context);
 type RecoveryContext = briefs.BriefContext & { sections: { brief: string; [field: string]: unknown }[] };
@@ -39,7 +39,7 @@ const recovery = (name: string, context: RecoveryContext) =>
   });
 // An example schema declares its properties and which are required.
 type ShippedSchema = referencePaths.SchemaNode & Required<Pick<referencePaths.SchemaNode, 'properties' | 'required'>>;
-const schema = (name: string) => JSON.parse(exampleLayer.fixtureText(`${name}.schema.json`)) as ShippedSchema;
+const schema = (name: string) => JSON.parse(exampleSource.fixtureText(`${name}.schema.json`)) as ShippedSchema;
 const SCHEMAS: Record<string, ShippedSchema> = {
   RED_SCHEMA: schema('red'),
   IMPLEMENT_SCHEMA: schema('implement'),
@@ -232,7 +232,7 @@ test('validateResponse rejects an extra property where the object declares no pr
 
 test('a schema keyword outside the strict subset is rejected with its path (in an example schema)', () => {
   const bad = example('implement');
-  exampleLayer.putAt(
+  exampleSource.putAt(
     bad,
     ['properties', 'qa', 'properties', 'steps', 'items', 'properties', 'action', 'pattern'],
     '^x',
@@ -397,7 +397,7 @@ test('the claim enum must equal the declared tokens: an empty token list shows (
 
 test('the claim enum must equal the declared tokens: an empty enum value is shown quoted', () => {
   const emptyValue = example('red');
-  exampleLayer.putAt(emptyValue, ['properties', 'claim', 'enum'], ['ok', '']);
+  exampleSource.putAt(emptyValue, ['properties', 'claim', 'enum'], ['ok', '']);
   assert.throws(() => briefs.assertClaimEnum(emptyValue, ['ok']), {
     message: 'claim: enum "ok" | "" does not equal the declared tokens "ok"',
   });
@@ -405,7 +405,7 @@ test('the claim enum must equal the declared tokens: an empty enum value is show
 
 test('the claim enum must equal the declared tokens: case twins in the enum are rejected', () => {
   const caseTwins = example('red');
-  exampleLayer.putAt(caseTwins, ['properties', 'claim', 'enum'], ['ok', 'Ok', 'blocked']);
+  exampleSource.putAt(caseTwins, ['properties', 'claim', 'enum'], ['ok', 'Ok', 'blocked']);
   assert.throws(() => briefs.assertClaimEnum(caseTwins, ['ok', 'Ok', 'blocked']), {
     message: 'claim: "ok" | "Ok" | "blocked" repeats a value or differs only in case',
   });
@@ -413,7 +413,7 @@ test('the claim enum must equal the declared tokens: case twins in the enum are 
 
 test('the claim enum must equal the declared tokens: a schema with no claim is rejected', () => {
   const noClaim = example('red');
-  exampleLayer.putAt(noClaim, ['properties', 'claim']);
+  exampleSource.putAt(noClaim, ['properties', 'claim']);
   noClaim.required = ['summary', 'tests', 'notes', 'diagnosis', 'reason'];
   assert.throws(() => briefs.assertClaimEnum(noClaim, ['ok', 'blocked']), {
     message: 'claim: the schema has no claim enum',
