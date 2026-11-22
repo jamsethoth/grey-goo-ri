@@ -7,6 +7,7 @@ import type * as config from '../../lib/config.ts';
 import * as configurationCheck from '../../lib/configuration-check.ts';
 import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as procedureKinds from '../../lib/procedures.ts';
+import type * as runContext from '../../lib/run-context.ts';
 import * as report from '../../lib/validate/report.ts';
 import * as corruptRecords from '../support/corrupt-records.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
@@ -185,6 +186,62 @@ test('preflight runs the cheap doctor of each Harness the Flows use, once, and o
     doctored.toSorted(([left], [right]) => left.localeCompare(right)),
     [...used].sort().map((name) => [name, { probe: false }]),
   );
+});
+
+// Every pass and failure a check can report, each a warning or an error.
+const DOCTOR_CHECKS: runContext.DoctorCheck[] = [true, false].flatMap((ok) =>
+  (['warning', 'error'] as const).map((severity) => ({
+    name: `${ok ? 'passing' : 'failing'}-${severity}`,
+    ok,
+    severity,
+    message: `the ${severity} check ${ok ? 'passed' : 'failed'}`,
+  })),
+);
+
+// #494, Q1 A: each Harness check that ran and passed is one pass naming its Harness and check, in cheap mode and under
+// --probe alike; a failed one stays its one Problem and no pass, and a Harness with no checks, no doctor, or a doctor
+// that throws, passes nothing.
+test('each passed doctor check is one pass naming its Harness, and no failed or absent check passes', async () => {
+  const repository = repositorySource();
+  const doctors: Record<string, ((options: unknown) => Promise<runContext.DoctorReport>) | undefined> = {
+    checked: () => Promise.resolve({ ok: false, checks: DOCTOR_CHECKS }),
+    undoctored: undefined,
+    throwing: () => Promise.reject(new Error('the doctor broke\nat its second line')),
+  };
+  for (const name of Object.keys(doctors)) {
+    const flow = repositorySource().flows.default as golden.ConfiguredFlow;
+    repository.agents[name] = { ...repository.agents.implementer, harness: name };
+    (flow.ticket.vertices.red as { use: string }).use = name;
+    repository.flows[name] = flow;
+  }
+  const harnesses = Object.fromEntries(
+    Object.entries(doctors).map(([name, doctor]) => [name, { ...fakeHarness.fakeHarness({ name }), doctor }]),
+  );
+  for (const probe of [false, true]) {
+    const checked = await configurationCheck.check({
+      config: sources(repository),
+      harnesses: { ...HARNESSES, ...harnesses },
+      probe,
+    });
+    const failedText = (problems: report.Problem[]) =>
+      problems.filter((problem) => problem.code === 'harness-doctor-failed').map((problem) => problem.message);
+    const textOf = (harness: string, check: runContext.DoctorCheck) =>
+      `harness ${harness}: ${check.name}: ${check.message}`;
+    const failed = DOCTOR_CHECKS.filter(({ ok }) => !ok);
+    assert.deepEqual(
+      checked.passes,
+      DOCTOR_CHECKS.filter(({ ok }) => ok).map((check) => textOf('checked', check)),
+      `probe ${probe}`,
+    );
+    assert.deepEqual(
+      failedText(checked.warnings),
+      failed.filter(({ severity }) => severity === 'warning').map((check) => textOf('checked', check)),
+    );
+    assert.deepEqual(failedText(checked.environmentErrors), [
+      ...failed.filter(({ severity }) => severity === 'error').map((check) => textOf('checked', check)),
+      'harness throwing: doctor: the doctor broke',
+    ]);
+  }
 });
 
 // The agent Action copies what resolveTools returns at once, so preflight refuses an answer it could not copy (#411).

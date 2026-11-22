@@ -187,11 +187,12 @@ async function harnessProblems(
 }
 
 // Each used Harness's doctor, once however many Vertices run on it (Q1 A, G15): a failed check is one Problem at no
-// configuration path, as the State Database's is, an error or a warning as the check says.
+// configuration path, as the State Database's is, an error or a warning as the check says; a passed one is added to
+// `passes` (#494).
 async function doctorProblems(
   found: report.Report,
   harnessNames: Set<string>,
-  { harnesses, probe }: { harnesses: Record<string, unknown>; probe: boolean },
+  { harnesses, probe, passes }: { harnesses: Record<string, unknown>; probe: boolean; passes: string[] },
 ) {
   for (const harnessName of harnessNames) {
     const harness = harnesses[harnessName] as PreflightHarness;
@@ -204,8 +205,11 @@ async function doctorProblems(
       checks = [{ name: 'doctor', ok: false, severity: 'error', message: (err as Error).message.split('\n')[0]! }];
     }
     for (const { name: check, ok, severity, message } of checks) {
-      if (ok) continue;
       const text = `harness ${harnessName}: ${check}: ${message}`;
+      if (ok) {
+        passes.push(text);
+        continue;
+      }
       const params = { harness: harnessName, check, reason: message };
       if (severity === 'warning') report.warn(found, '', 'harness-doctor-failed', text, params);
       else report.error(found, '', 'harness-doctor-failed', text, params);
@@ -266,7 +270,8 @@ interface CheckOptions {
 // them, then each source's), the environment's (the State Database, then the Harnesses), the records whose Flow is
 // gone or whose row cannot be read, the warnings, each misfit by its Flow's name, and the Settings when they hold no
 // error. The records are read only when a caller asks: gg run reports each for its own Ticket (A2), so its preflight
-// never opens the State Database.
+// never opens the State Database. `passes` holds each Harness check that ran and passed, as `harness <name>: <check>:
+// <message>`, which gg doctor prints and gg run does not (#494).
 export interface CheckedConfiguration {
   flows: Map<string, DeclaredFlow>;
   configurationErrors: report.Problem[];
@@ -274,6 +279,7 @@ export interface CheckedConfiguration {
   recordProblems: () => report.Problem[];
   warnings: report.Problem[];
   misfits: Map<string, report.Problem>;
+  passes: string[];
   settings?: config.Settings;
 }
 
@@ -297,7 +303,8 @@ export async function check({
   const commands = parsed.settings?.commands ?? parsed.commands ?? {};
   for (const [, { declared }] of admitted) await harnessProblems(environment, declared, { harnesses, commands });
   const used = new Set(admitted.flatMap(([, { declared }]) => harnessNamesOf(declared, harnesses)));
-  await doctorProblems(environment, used, { harnesses, probe });
+  const passes: string[] = [];
+  await doctorProblems(environment, used, { harnesses, probe, passes });
   return {
     flows: declared.flows,
     configurationErrors: [...(parsed.errors ?? []), ...declared.errors],
@@ -306,6 +313,7 @@ export async function check({
       readable ? recordProblems(commonDir, new Set(admitted.map(([name]) => name)), database) : [],
     warnings: [...declared.warnings, ...environment.warnings],
     misfits: declared.misfits,
+    passes,
     ...(parsed.settings && { settings: parsed.settings }),
   };
 }
