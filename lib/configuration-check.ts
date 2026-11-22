@@ -266,7 +266,8 @@ interface CheckOptions {
 // them, then each source's), the environment's (the State Database, then the Harnesses), the records whose Flow is
 // gone or whose row cannot be read, the warnings, each misfit by its Flow's name, and the Settings when they hold no
 // error. The records are read only when a caller asks: gg run reports each for its own Ticket (A2), so its preflight
-// never opens the State Database.
+// never opens the State Database. `passes` holds each Harness check that ran and passed, as `harness <name>: <check>:
+// <message>`, which gg doctor prints and gg run does not (#494).
 export interface CheckedConfiguration {
   flows: Map<string, DeclaredFlow>;
   configurationErrors: report.Problem[];
@@ -274,6 +275,7 @@ export interface CheckedConfiguration {
   recordProblems: () => report.Problem[];
   warnings: report.Problem[];
   misfits: Map<string, report.Problem>;
+  passes: string[];
   settings?: config.Settings;
 }
 
@@ -306,6 +308,7 @@ export async function check({
       readable ? recordProblems(commonDir, new Set(admitted.map(([name]) => name)), database) : [],
     warnings: [...declared.warnings, ...environment.warnings],
     misfits: declared.misfits,
+    passes: [],
     ...(parsed.settings && { settings: parsed.settings }),
   };
 }
