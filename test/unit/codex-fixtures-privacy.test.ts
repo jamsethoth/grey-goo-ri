@@ -14,3 +14,12 @@ test('no Codex recording holds what the recorder redacts', () => {
   });
   assert.deepEqual(leaking, []);
 });
+
+// Ubuntu CI runs as `runner`, a word inside Codex's own executable names in cli-doctor.json (CI run 45056354195).
+test('the recorder redacts the user name standing whole, not inside a longer name', () => {
+  const redact = redaction.redactorOf('Z:/no-such-recording-base', 'runner');
+  assert.equal(
+    redact('codex-command-runner.exe; runner_x; Runner said; D:/runner/x'),
+    'codex-command-runner.exe; runner_x; <user> said; D:/<user>/x',
+  );
+});
