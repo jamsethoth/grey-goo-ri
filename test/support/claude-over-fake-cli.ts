@@ -31,7 +31,8 @@ export interface FakeCli {
   // How the fake changes the replay (fake-claude.ts): `no-result`, `garbage`, `hang`, `hang-no-transcript` or
   // `signal`; or its answer to a command that is no model call: `old-version` or `logged-out`.
   mode?: string;
-  // Whether the fake leaves an orphan descendant running, whose pid it writes to orphanPidFile.
+  // Whether the fake leaves an orphan descendant running, whose pid it writes to orphanPidFile. Its call's stall and
+  // wall clocks count from that write, so a stop always comes after the descendant a case checks (#475).
   orphan?: boolean;
   // What the fake writes to its stderr.
   stderr?: string;
@@ -92,6 +93,7 @@ export function claudeOverFakeCli(t: TestContext, cli: FakeCli) {
     launches.push(options);
     const launched = {
       ...options,
+      ...(orphan && { testHooks: { signal: processProbe.pidWritten(orphanPidFile, t.signal) } }),
       command,
       args: [fakeScript, ...options.args],
       env: {

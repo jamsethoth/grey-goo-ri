@@ -226,6 +226,8 @@ test('contending processes never throw and grant at most one owner', { timeout: 
       stdio: ['pipe', 'pipe', 'inherit'],
     });
     t.after(() => child.kill());
+    // At the case's timeout too, before the after hooks: removing the directory throws while the owner holds its lock.
+    t.signal.addEventListener('abort', () => child.kill());
     const exited = new Promise((resolve) => child.on('exit', resolve));
     return { child, exited, lines: createInterface({ input: child.stdout })[Symbol.asyncIterator]() };
   });
