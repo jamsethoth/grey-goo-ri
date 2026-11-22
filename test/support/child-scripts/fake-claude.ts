@@ -2,9 +2,11 @@
 // stdout, with the recording's exit code. It reads its stdin to the end first, writes what it received (argv and
 // stdin) to FAKE_CLAUDE_RECEIVED and its own pid to FAKE_CLAUDE_PID, and writes the transcript where Claude Code does:
 // under CLAUDE_CONFIG_DIR, in projects/<cwd, each non-alphanumeric character as "-">/<session id>.jsonl.
-// FAKE_CLAUDE_MODE changes the replay: `no-result` leaves out the result line, `garbage` sends a line that is not JSON
-// after the init line, `hang` leaves out the result line and then outlives any case, so only a kill ends it,
-// `hang-no-transcript` hangs as `hang` does and writes no transcript, and `signal` leaves out the result line and then
+// Before its output it writes into its working directory each file the recorded call changed (`changes`: path to
+// content, null for one it deleted), so gg finds the tree as the call left it. FAKE_CLAUDE_MODE changes the replay:
+// `no-result` leaves out the result line, `garbage` sends a line that is not JSON after the init line, `hang` leaves
+// out the result line and then outlives any case, so only a kill ends it, `hang-no-transcript` hangs as `hang` does
+// and writes no transcript, and `signal` leaves out the result line and then
 // ends itself with SIGTERM. FAKE_CLAUDE_STDERR is written to stderr first. FAKE_CLAUDE_ORPHAN starts a descendant
 // before the replay, through a middle process that exits once the descendant has written its pid to that file, so the
 // descendant is an orphan the CLI left: detached on Windows, which keeps it out of the job libuv gives node's children;
@@ -13,8 +15,8 @@
 // Its tests copy it alone to a directory whose path holds spaces, so it imports nothing.
 // The test runner also loads this file with no FAKE_CLAUDE_RECORDING, where it does nothing.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // As test/support/child-scripts.ts's LIVES_MS: longer than any case.
@@ -69,7 +71,17 @@ async function replay(recordingPath: string, mode: string) {
     });
   }
   const lines = readFileSync(`${recordingPath}.jsonl`, 'utf8').split('\n').filter(Boolean);
-  const { exitCode } = JSON.parse(readFileSync(`${recordingPath}.json`, 'utf8')) as { exitCode: number };
+  const { exitCode, changes = {} } = JSON.parse(readFileSync(`${recordingPath}.json`, 'utf8')) as {
+    exitCode: number;
+    changes?: Record<string, string | null>;
+  };
+  for (const [path, text] of Object.entries(changes)) {
+    if (text === null) rmSync(path, { force: true });
+    else {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, text);
+    }
+  }
   const { session_id: sessionId } = JSON.parse(lines[0] ?? '{}') as { session_id: string };
   const configDirectory = process.env.CLAUDE_CONFIG_DIR;
   if (configDirectory && mode !== 'hang-no-transcript') {
