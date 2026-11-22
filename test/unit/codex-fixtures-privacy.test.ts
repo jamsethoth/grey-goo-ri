@@ -57,6 +57,13 @@ test('no Codex recording holds an account id or repository URL by key', () => {
   assert.deepEqual(leaks, []);
 });
 
+// The case above reads the committed fixtures, so it holds under a weakened ACCOUNT_KEYS: this one runs the rule.
+test('the recorder redacts the account ids and repository URL by key, at any depth', () => {
+  const keys = ['creator_user_id', 'creator_account_id', 'repository_url', 'installation_id', 'email'];
+  const line = { items: [Object.fromEntries(keys.map((key) => [key, 'x']))] };
+  assert.deepEqual(redaction.trimmed(line), { items: [Object.fromEntries(keys.map((key) => [key, '<redacted>']))] });
+});
+
 // The recorder's own calls keep the substring rule: only this test reads the name standing whole (owner D6 A).
 test('the recorder never asks for the whole-name rule', () => {
   const scripts = new URL('../../scripts/', import.meta.url);
