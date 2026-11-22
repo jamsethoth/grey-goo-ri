@@ -107,7 +107,7 @@ export interface SessionEntry {
 }
 
 // A Session's cumulativeUsage is its last reported total, the baseline its next resumed call is given: a resumed call
-// that left a count null, as a Claude call stopped before its result line does, keeps the Session's earlier value
+// that left a count null, as a call stopped before its Harness reports totals does, keeps the Session's earlier value
 // (#487 Q1 A).
 export function sessionTotal(earlier: events.Usage | undefined, usage: events.Usage): events.Usage {
   if (!earlier) return usage;
