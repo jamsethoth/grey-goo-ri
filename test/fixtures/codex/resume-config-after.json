@@ -49,7 +49,7 @@
   },
   "start": {
     "kind": "resume-config-after",
-    "from": "start"
+    "from": "resume-flags-before"
   },
   "threadId": "01a2044a-1251-7180-8d49-dc1220e52393",
   "exitCode": 0,

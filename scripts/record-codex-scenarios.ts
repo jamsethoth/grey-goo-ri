@@ -84,7 +84,7 @@ Then answer with whether it ran, what it printed, and the word you read from REA
       'the start thread, last run workspace-write, forked with no --sandbox or -C: which sandbox the fork runs under ' +
       "(exec's default is read-only), what --json emits, whether usage is cumulative, and whether the original " +
       "thread's rollout is unchanged",
-    start: { kind: 'fork-unflagged', from: 'start' },
+    start: { kind: 'fork-unflagged', from: 'resume-flags-before' },
     prompt: 'Without any tool, answer with the word you read from README.md earlier in this conversation.',
   },
   {
@@ -100,7 +100,7 @@ Then answer with whether it ran, what it printed, and the word you read from REA
     purpose:
       'the thread, last run workspace-write, resumed with -c sandbox_mode="read-only" after resume, started from ' +
       'the directory above the repository with no -C: does the -c take effect, and which cwd does the turn run in?',
-    start: { kind: 'resume-config-after', from: 'start' },
+    start: { kind: 'resume-config-after', from: 'resume-flags-before' },
     cwd: 'base',
     config: ['sandbox_mode="read-only"'],
     // Outside a git repository, resume refuses to start without it.

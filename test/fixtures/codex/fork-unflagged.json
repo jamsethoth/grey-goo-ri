@@ -45,8 +45,8 @@
     "stdin": "Without any tool, answer with the word you read from README.md earlier in this conversation."
   },
   "start": {
-    "kind": "fork",
-    "from": "start"
+    "kind": "fork-unflagged",
+    "from": "resume-flags-before"
   },
   "threadId": "01a20433-be70-72e0-8f89-951ae1e85d39",
   "exitCode": 0,
