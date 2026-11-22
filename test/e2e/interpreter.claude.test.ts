@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as exampleOnClaude from '../support/example-on-claude.ts';
 import * as exampleRun from '../support/example-run.ts';
+import * as executionReads from '../support/execution-reads.ts';
 import * as golden from '../support/golden.ts';
 
 // The example Flow's first-visit pass through the Claude Harness (#486), over recordings of real Claude calls that
@@ -47,6 +48,7 @@ test("golden: the example's first-visit pass runs through the Claude Harness ove
     { scenario: 'example-review', launchProfile },
   ]);
   const ran = await exampleOnClaude.runOverRecordings(t);
+  const saved = executionReads.loadTicket(ran);
   assert.deepEqual(golden.trace(ran.events), FIRST_VISIT_PASS);
   // Every agent Action ran on the Claude Harness, none on the fake one
   const agentEvents = exampleOnClaude.agentEvents(ran.events);
@@ -71,19 +73,16 @@ test("golden: the example's first-visit pass runs through the Claude Harness ove
     [red!.schema, green!.schema, review!.schema],
   );
   // The Red Evidence is the real test command's, run over the test the red call wrote (Q2 A)
-  assert.match(
-    exampleRun.outputOf(ran.executionRecord, 'red', 'red-check')?.evidence?.output ?? '',
-    /^ℹ duration_ms /m,
-  );
+  assert.match(exampleRun.outputOf(saved, 'red', 'red-check')?.evidence?.output ?? '', /^ℹ duration_ms /m);
   // The Claims gg read back from Claude's structured output
   const responses = [
-    exampleRun.outputOf(ran.executionRecord, 'red', 'red')?.response,
-    exampleRun.outputOf(ran.executionRecord, 'green', 'green')?.response,
-    exampleRun.outputOf(ran.executionRecord, 'reviewer', 'review')?.response,
+    exampleRun.outputOf(saved, 'red', 'red')?.response,
+    exampleRun.outputOf(saved, 'green', 'green')?.response,
+    exampleRun.outputOf(saved, 'reviewer', 'review')?.response,
   ];
   assert.deepEqual(responses, [red!.response, green!.response, review!.response]);
   // The Sessions saved, each with the transcript the CLI wrote
-  assert.deepEqual(exampleOnClaude.savedSessions(ran.executionRecord), [
+  assert.deepEqual(exampleOnClaude.savedSessions(saved), [
     { key: 'red/1/red', harness: 'claude', sessionId: red!.sessionId, transcript: red!.lines },
     { key: 'green/1/green', harness: 'claude', sessionId: green!.sessionId, transcript: green!.lines },
     { key: 'reviewer/1/review', harness: 'claude', sessionId: review!.sessionId, transcript: review!.lines },
