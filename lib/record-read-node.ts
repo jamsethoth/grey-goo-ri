@@ -1,5 +1,6 @@
-// The node readers lib/record-read.ts builds a record's row from: each reads one node of the parsed row, gives a
-// typed value or throws a RowFieldError naming the node's path from the row.
+// The node readers lib/record-read.ts and lib/record-read-visit.ts build a record's row from, and the payload readers
+// of lib/write-ahead.ts and lib/effects/ an intent's payload: each reads one node of the parsed row, gives a typed
+// value or throws a RowFieldError naming the node's path from the row.
 import * as jsonValue from './json-value.ts';
 import * as referencePaths from './reference-paths.ts';
 

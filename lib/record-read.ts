@@ -7,11 +7,13 @@ import type * as outcome from './outcome.ts';
 import * as recordReadVisit from './record-read-visit.ts';
 import * as recordReadNode from './record-read-node.ts';
 import * as referencePaths from './reference-paths.ts';
+import * as effects from './effects/index.ts';
+import * as writeAhead from './write-ahead.ts';
 
 export { RowFieldError } from './record-read-node.ts';
 
 const { text, count, flag, json, nullable, list, keyed, oneOf, object, variant } = recordReadNode;
-const { ruleIdentity, historyItem, worktreeSnapshot, untrackedFiles, integrityBaseline, usage } = recordReadVisit;
+const { ruleIdentity, historyItem, usage } = recordReadVisit;
 const nullableText = nullable(text);
 const nullableCount = nullable(count);
 const texts = list(text);
@@ -155,120 +157,27 @@ const pendingInstance = object((field) => ({
   digest: text(field('digest')),
 }));
 
-const label = (field: (key: string) => recordReadNode.Node) => ({
-  ticket: count(field('ticket')),
-  add: texts(field('add')),
-  remove: texts(field('remove')),
-});
-
-const within = object((field, has) => ({
-  ...(has('paths') && { paths: texts(field('paths')) }),
-  ...(has('globs') && { globs: texts(field('globs')) }),
-  ...(has('exclude') && { exclude: texts(field('exclude')) }),
-}));
-
-const rollbackSet = object((field, has) => ({
-  files: untrackedFiles(field('files')),
-  ...(has('within') && { within: within(field('within')) }),
-}));
-
-// What an intent saves: an Effect's payload, a consumed Decision's or an agent call's baseline. Each fits one form by
-// its keys; which Effect an entry names is not checked against it (#384).
-const payload = variant('a write-ahead payload', [
-  {
-    required: ['message', 'tree', 'parent'],
-    read: object((field) => ({
-      message: text(field('message')),
-      tree: text(field('tree')),
-      parent: text(field('parent')),
-    })),
-  },
-  {
-    required: ['branch', 'sha'],
-    read: object((field) => ({ branch: text(field('branch')), sha: text(field('sha')) })),
-  },
-  {
-    required: ['target', 'body', 'bodyHash'],
-    read: object((field) => ({
-      target: object((target) => ({ kind: text(target('kind')), number: count(target('number')) }))(field('target')),
-      body: text(field('body')),
-      bodyHash: text(field('bodyHash')),
-    })),
-  },
-  {
-    required: ['branch', 'title', 'body', 'bodyHash'],
-    optional: ['base'],
-    read: object((field, has) => ({
-      branch: text(field('branch')),
-      ...(has('base') && { base: text(field('base')) }),
-      title: text(field('title')),
-      body: text(field('body')),
-      bodyHash: text(field('bodyHash')),
-    })),
-  },
-  {
-    required: ['number', 'sha', 'tree'],
-    read: object((field) => ({
-      number: count(field('number')),
-      sha: nullableText(field('sha')),
-      tree: nullableText(field('tree')),
-    })),
-  },
-  { required: ['ticket', 'add', 'remove'], read: object(label) },
-  { required: ['issue'], read: object((field) => ({ issue: count(field('issue')) })) },
-  {
-    required: ['ticket', 'add', 'remove', 'decision'],
-    read: object((field) => ({
-      ...label(field),
-      decision: object((decision, has) => ({
-        instance: text(decision('instance')),
-        event: count(decision('event')),
-        actor: has('actor') ? text(decision('actor')) : undefined,
-        time: text(decision('time')),
-        outcome: text(decision('outcome')),
-        next: text(decision('next')),
-        reply: nullableText(decision('reply')),
-      }))(field('decision')),
-    })),
-  },
-  {
-    required: ['ref', 'commit', 'tree', 'parent', 'left'],
-    read: object((field) => ({
-      ref: text(field('ref')),
-      commit: text(field('commit')),
-      tree: text(field('tree')),
-      parent: text(field('parent')),
-      left: worktreeSnapshot(field('left')),
-    })),
-  },
-  {
-    required: ['baseline', 'history'],
-    optional: ['untracked', 'left'],
-    read: object((field, has) => ({
-      baseline: text(field('baseline')),
-      history: historyItem(field('history')),
-      ...(has('untracked') && { untracked: rollbackSet(field('untracked')) }),
-      ...(has('left') && {
-        left: object((left, hasKey) => ({
-          head: text(left('head')),
-          tree: text(left('tree')),
-          index: text(left('index')),
-          ...(hasKey('files') && { files: untrackedFiles(left('files')) }),
-        }))(field('left')),
-      }),
-    })),
-  },
-  {
-    required: ['baseline'],
-    optional: ['containment'],
-    read: object((field, has) => ({
-      baseline: integrityBaseline(field('baseline')),
-      ...(has('containment') && {
-        containment: object((kind) => ({ kind: text(kind('kind')) }))(field('containment')),
-      }),
-    })),
-  },
-]);
+// An intent's payload, read by its effect's reader: the one form that effect saves (#384). An intent naming an effect
+// this gg does not know loads holding whichever form it fits, for Reconciliation to hold (record.md); every form's
+// keys are its own, so it fits one at most.
+const anyPayload: recordReadNode.Read<writeAhead.Payload> = (node) => {
+  if (!referencePaths.isRecord(node.value)) throw new recordReadNode.RowFieldError(node, 'is not an object');
+  for (const read of [writeAhead.readCallPayload, ...effects.all().map((effect) => effect.readPayload)]) {
+    try {
+      return read(node);
+    } catch (err) {
+      if (!(err instanceof recordReadNode.RowFieldError)) throw err;
+    }
+  }
+  throw new recordReadNode.RowFieldError(node, 'is not a write-ahead payload');
+};
+const intentPayload = (effect: string | null): recordReadNode.Read<writeAhead.Payload> =>
+  effect === 'call' ? writeAhead.readCallPayload : (effects.lookup(effect)?.readPayload ?? anyPayload);
+// Evidence and completion carry no payload (#384).
+const noPayload: recordReadNode.Read<null> = (node) => {
+  if (node.value === null) return null;
+  throw new recordReadNode.RowFieldError(node, 'is not null outside an intent');
+};
 
 // What an Effect leaves as Evidence, one form per Effect told apart by its keys (effects.Evidence), or an agent call's,
 // which holds the Usage it spent.
@@ -293,14 +202,20 @@ const evidence = (node: recordReadNode.Node) =>
     ? recordReadVisit.callEvidence(node)
     : variant("an Effect's evidence", EFFECT_EVIDENCE)(node);
 
-const writeAheadEntry = object((field) => ({
-  step: oneOf({ intent: true, evidence: true, complete: true })(field('step')),
-  actionMarker: text(field('actionMarker')),
-  effect: nullableText(field('effect')),
-  payload: nullable(payload)(field('payload')),
-  evidence: nullable(evidence)(field('evidence')),
-  time: text(field('time')),
-}));
+// Typed whole: inferred, its payload's union would lose a consumed Decision's form into the label form it extends.
+const writeAheadEntry: recordReadNode.Read<writeAhead.WriteAheadEntry> = object((field) => {
+  const step = oneOf({ intent: true, evidence: true, complete: true })(field('step'));
+  const actionMarker = text(field('actionMarker'));
+  const effect = nullableText(field('effect'));
+  return {
+    step,
+    actionMarker,
+    effect,
+    payload: (step === 'intent' ? intentPayload(effect) : noPayload)(field('payload')),
+    evidence: nullable(evidence)(field('evidence')),
+    time: text(field('time')),
+  };
+});
 
 export const executionRecord = object((field) => ({
   schemaVersion: count(field('schemaVersion')),

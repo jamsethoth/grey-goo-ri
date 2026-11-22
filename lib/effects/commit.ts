@@ -1,9 +1,17 @@
 // The commit Effect: a commit of the tree the Action staged, on the parent it recorded, carrying its Action Marker.
 import type * as record from '../record.ts';
-import type * as writeAhead from '../write-ahead.ts';
+import * as recordReadNode from '../record-read-node.ts';
+import * as writeAhead from '../write-ahead.ts';
 import * as effects from './index.ts';
 
 export type Payload = { message: string; tree: string; parent: string };
+// The payload an intent of this Effect saves, read from its row: its one form, any other refused by its path (#384).
+const { text, object } = recordReadNode;
+export const readPayload: recordReadNode.Read<Payload> = object((field) => ({
+  message: text(field('message')),
+  tree: text(field('tree')),
+  parent: text(field('parent')),
+}));
 // A commit with nothing to commit saves a null sha.
 export type Evidence = { sha: string | null };
 
@@ -28,8 +36,9 @@ const perform: effects.Effect<Payload, Context>['perform'] = async (
     : await git.commitStaged(executionRecord.worktree, planned.message),
 });
 
-const find: effects.FindEffect = async ({ actionMarker, payload }, { executionRecord, git }) => {
-  const { parent, tree: intendedTree } = payload as Payload;
+const find: effects.FindEffect = async (entry, { executionRecord, git }) => {
+  const { actionMarker } = entry;
+  const { parent, tree: intendedTree } = writeAhead.payloadOf(entry, readPayload);
   for (const { sha, parents, tree, message } of await git!.commitLog(
     executionRecord.worktree,
     executionRecord.branch,
@@ -53,17 +62,20 @@ const find: effects.FindEffect = async ({ actionMarker, payload }, { executionRe
 };
 
 // The recorded parent, with the tree the commit staged in the index and the worktree.
-const proves: NonNullable<effects.Effect<Payload, Context>['proves']> = async (
-  { payload },
-  worktree,
-  { integrity },
-) => {
-  const { parent, tree } = payload as Payload;
+const proves: NonNullable<effects.Effect<Payload, Context>['proves']> = async (entry, worktree, { integrity }) => {
+  const { parent, tree } = writeAhead.payloadOf(entry, readPayload);
   const now = await integrity.snapshot(worktree);
   return now.head === parent && now.index === tree && now.tree === tree;
 };
 
-export const effect: effects.Effect<Payload, Context> = { name: 'commit', remote: null, perform, find, proves };
+export const effect: effects.Effect<Payload, Context> = {
+  name: 'commit',
+  readPayload,
+  remote: null,
+  perform,
+  find,
+  proves,
+};
 
 // The last commit gg made, by its marker and sha, or undefined before its first: the branch must still be at its sha.
 // A commit with nothing to commit saves a null sha.

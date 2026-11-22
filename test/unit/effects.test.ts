@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import ts from 'typescript';
 import * as effects from '../../lib/effects/index.ts';
 import * as label from '../../lib/effects/label.ts';
 import * as reset from '../../lib/effects/reset.ts';
@@ -9,6 +10,7 @@ import * as sideEffect from '../../lib/effects/side-effect.ts';
 import * as record from '../../lib/record.ts';
 import * as support from '../support/execution-context.ts';
 import * as executionReads from '../support/execution-reads.ts';
+import * as payloadReads from '../support/payload-reads.ts';
 
 // A reset's payload, which these cases only pass through.
 const resetTo = (baseline: string): reset.Payload => ({ baseline, history: { kind: 'rescued', text: 'reset' } });
@@ -126,14 +128,14 @@ test('an open intent is settled by its finder, as safe to repeat, or from the wo
 });
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
-const isEffect = (value: unknown): value is effects.Effect<never, never> =>
+const isEffect = (value: unknown): value is effects.Effect<never, never, unknown> =>
   !!value && typeof value === 'object' && 'name' in value && 'perform' in value;
 
 // Every Effect value a module of lib/effects/ exports, label's two policies included.
-async function exportedEffects(): Promise<[string, effects.Effect<never, never>][]> {
+async function exportedEffects(): Promise<[string, effects.Effect<never, never, unknown>][]> {
   const files = readdirSync(`${root}lib/effects`).filter((file) => !['index.ts', 'side-effect.ts'].includes(file));
   assert.ok(files.length >= 8, 'the Effect modules are read');
-  const found: [string, effects.Effect<never, never>][] = [];
+  const found: [string, effects.Effect<never, never, unknown>][] = [];
   for (const file of files) {
     const exported: Record<string, unknown> = await import(pathToFileURL(`${root}lib/effects/${file}`).href);
     for (const [name, value] of Object.entries(exported)) if (isEffect(value)) found.push([`${file} ${name}`, value]);
@@ -147,7 +149,7 @@ test('every Effect lib/effects/ exports is the one its persisted name looks up',
   for (const [where, effect] of exported) {
     const looked = effects.lookup(effect.name);
     assert.ok(looked, where);
-    for (const part of ['remote', 'find', 'repeatable', 'proves'] as const)
+    for (const part of ['remote', 'readPayload', 'find', 'repeatable', 'proves'] as const)
       assert.equal(effect[part], looked[part], `${where}: ${part}`);
   }
 });
@@ -182,4 +184,88 @@ test('no module outside lib/effects/ matches an Effect by its name or makes one 
     [],
   );
   for (const gone of ['lib/effects.ts', 'lib/effect-evidence.ts']) assert.equal(existsSync(root + gone), false, gone);
+});
+
+// An intent's payload is read by the reader its effect's module exports beside its Payload, which the row parse finds
+// through the lookup (#384).
+test("every Effect's reader reads its own intent's payload and refuses every other's by its path", () => {
+  assert.deepEqual(
+    [...new Set(payloadReads.INTENTS.map(({ effect }) => effect))].sort(),
+    [...EFFECT_NAMES, 'call'].sort(),
+    'an intent of every Effect and of an agent call',
+  );
+  assert.deepEqual(
+    effects.all().flatMap((effect) => payloadReads.misreads(effect.name, effect.readPayload)),
+    [],
+  );
+});
+
+// Each `as` cast of a payload in a module's source, as `path:line`: a payload named alone or as a property, through
+// any parentheses, `!` or `?.` around it, or any value cast to a type holding a payload type, bare or qualified,
+// whatever it is named.
+function payloadCasts(path: string, text: string): string[] {
+  const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+  const sites: string[] = [];
+  const isPayload = (node: ts.Expression): boolean => {
+    if (ts.isParenthesizedExpression(node) || ts.isNonNullExpression(node)) return isPayload(node.expression);
+    if (ts.isIdentifier(node)) return node.text === 'payload';
+    return ts.isPropertyAccessExpression(node) && node.name.text === 'payload';
+  };
+  const isPayloadType = (type: ts.Node): boolean => {
+    if (ts.isTypeReferenceNode(type)) {
+      const name = ts.isQualifiedName(type.typeName) ? type.typeName.right : type.typeName;
+      if (['Payload', 'CallPayload', 'Consumption'].includes(name.text)) return true;
+    }
+    return ts.forEachChild(type, isPayloadType) ?? false;
+  };
+  const visit = (node: ts.Node) => {
+    if (
+      (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) &&
+      (isPayload(node.expression) || isPayloadType(node.type))
+    )
+      sites.push(`${path}:${source.getLineAndCharacterOfPosition(node.getStart()).line + 1}`);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return sites;
+}
+
+test("no module in lib/ casts an intent's payload: each reads it through its effect's reader", () => {
+  assert.deepEqual(
+    payloadCasts(
+      'lib/sample.ts',
+      [
+        'const a = payload as P;',
+        'const b = (entry.payload as P).add;',
+        'const c = find()?.payload as',
+        '  P;',
+        'const d = <P>x.payload;',
+        'const g = p as Payload;',
+        'const h = value as push.Payload;',
+        'const i = <writeAhead.CallPayload>entry;',
+        'const j = decision as Consumption;',
+        'const k = p as Readonly<push.Payload> | undefined;',
+      ].join('\n'),
+    ),
+    [
+      'lib/sample.ts:1',
+      'lib/sample.ts:2',
+      'lib/sample.ts:3',
+      'lib/sample.ts:5',
+      'lib/sample.ts:6',
+      'lib/sample.ts:7',
+      'lib/sample.ts:8',
+      'lib/sample.ts:9',
+      'lib/sample.ts:10',
+    ],
+  );
+  assert.deepEqual(payloadCasts('lib/sample.ts', 'const e = evidence as E;\nconst f = readPayload(payload);'), []);
+  const modules = readdirSync(`${root}lib`, { recursive: true, encoding: 'utf8' })
+    .map((file) => `lib/${file.split('\\').join('/')}`)
+    .filter((path) => path.endsWith('.ts'));
+  assert.ok(modules.includes('lib/effects/push.ts') && modules.includes('lib/rescue.ts'), 'the lib modules are read');
+  assert.deepEqual(
+    modules.flatMap((path) => payloadCasts(path, readFileSync(root + path, 'utf8'))),
+    [],
+  );
 });

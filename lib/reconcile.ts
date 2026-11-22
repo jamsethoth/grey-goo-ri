@@ -110,7 +110,7 @@ async function proves(
   context: { git: ReconcileGit; integrity: integrityModule.Integrity },
 ): Promise<boolean> {
   if (entry.effect !== 'call') return effects.proves(entry, worktree, context);
-  const { baseline } = entry.payload as writeAhead.CallPayload;
+  const { baseline } = writeAhead.payloadOf(entry, writeAhead.readCallPayload);
   const now = await context.integrity.snapshot(worktree);
   return now.head === baseline.head && now.index === baseline.own.index;
 }

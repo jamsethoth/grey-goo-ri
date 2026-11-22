@@ -1,8 +1,15 @@
 // The push Effect: the commit the record proves checked, pushed to its branch on origin.
 import type * as record from '../record.ts';
+import * as recordReadNode from '../record-read-node.ts';
+import * as writeAhead from '../write-ahead.ts';
 import * as effects from './index.ts';
 
 export type Payload = { branch: string; sha: string };
+// The payload an intent of this Effect saves, read from its row: its one form, any other refused by its path (#384).
+export const readPayload: recordReadNode.Read<Payload> = recordReadNode.object((field) => ({
+  branch: recordReadNode.text(field('branch')),
+  sha: recordReadNode.text(field('sha')),
+}));
 export type Evidence = { remoteSha: string };
 
 // The git verbs a push is made with (lib/git.ts).
@@ -23,8 +30,9 @@ const perform: effects.Effect<Payload, Context>['perform'] = async ({ record: ex
   return { remoteSha };
 };
 
-const find: effects.FindEffect = async ({ actionMarker, payload }, { executionRecord, git }) => {
-  const { branch, sha } = payload as Payload;
+const find: effects.FindEffect = async (entry, { executionRecord, git }) => {
+  const { actionMarker } = entry;
+  const { branch, sha } = writeAhead.payloadOf(entry, readPayload);
   if ((await git!.remoteSha(executionRecord.worktree, branch)) === sha) return effects.found({ remoteSha: sha });
   const head = await git!.branchHead(executionRecord.worktree, branch);
   if (head !== sha)
@@ -35,4 +43,4 @@ const find: effects.FindEffect = async ({ actionMarker, payload }, { executionRe
   return effects.ABSENT;
 };
 
-export const effect: effects.Effect<Payload, Context> = { name: 'push', remote: 'origin', perform, find };
+export const effect: effects.Effect<Payload, Context> = { name: 'push', readPayload, remote: 'origin', perform, find };

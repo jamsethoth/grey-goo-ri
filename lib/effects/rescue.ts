@@ -4,6 +4,8 @@ import type * as integrity from '../integrity.ts';
 import type * as record from '../record.ts';
 import * as marker from '../marker.ts';
 import * as writeAhead from '../write-ahead.ts';
+import * as recordReadNode from '../record-read-node.ts';
+import * as recordReadVisit from '../record-read-visit.ts';
 import * as effects from './index.ts';
 
 export type Evidence = { ref: string; commit: string };
@@ -17,6 +19,15 @@ export interface Payload {
   parent: string;
   left: integrity.WorktreeSnapshot;
 }
+// The payload an intent of this Effect saves, read from its row: its one form, any other refused by its path (#384).
+const { text, object } = recordReadNode;
+export const readPayload: recordReadNode.Read<Payload> = object((field) => ({
+  ref: text(field('ref')),
+  commit: text(field('commit')),
+  tree: text(field('tree')),
+  parent: text(field('parent')),
+  left: recordReadVisit.worktreeSnapshot(field('left')),
+}));
 
 // The git verbs a Rescue Ref is made with (lib/git.ts).
 export interface Context {
@@ -43,8 +54,9 @@ const perform: effects.Effect<Payload, Context>['perform'] = async (
 };
 
 // The ref holds the intended commit, or is absent and so is made, or holds another, which is never overwritten.
-const find: effects.FindEffect = async ({ actionMarker, payload }, { executionRecord, git }) => {
-  const { ref, commit } = payload as Payload;
+const find: effects.FindEffect = async (entry, { executionRecord, git }) => {
+  const { actionMarker } = entry;
+  const { ref, commit } = writeAhead.payloadOf(entry, readPayload);
   const target = await git!.refTarget(executionRecord.worktree, ref);
   if (target === null) return effects.ABSENT;
   if (target === commit) return effects.found({ ref, commit });
@@ -55,17 +67,20 @@ const find: effects.FindEffect = async ({ actionMarker, payload }, { executionRe
 };
 
 // The worktree as the rescue found it.
-const proves: NonNullable<effects.Effect<Payload, Context>['proves']> = async (
-  { payload },
-  worktree,
-  { integrity },
-) => {
-  const { left } = payload as Payload;
+const proves: NonNullable<effects.Effect<Payload, Context>['proves']> = async (entry, worktree, { integrity }) => {
+  const { left } = writeAhead.payloadOf(entry, readPayload);
   const now = await integrity.snapshot(worktree);
   return now.head === left.head && now.index === left.index && now.tree === left.tree;
 };
 
-export const effect: effects.Effect<Payload, Context> = { name: 'rescue', remote: null, perform, find, proves };
+export const effect: effects.Effect<Payload, Context> = {
+  name: 'rescue',
+  readPayload,
+  remote: null,
+  perform,
+  find,
+  proves,
+};
 
 // The ref and commit an unfinished rescue intends. Its intent comes before its ref, so a caller that could run before
 // the ref was made asks git whether it holds that commit.
@@ -74,7 +89,7 @@ export function openRescue(
 ): { ref: string; commit: string } | null {
   const open = effects.openIntents(executionRecord, effect);
   if (!open[0]) return null;
-  const { ref, commit } = open[0].payload as Payload;
+  const { ref, commit } = writeAhead.payloadOf(open[0], readPayload);
   return { ref, commit };
 }
 
@@ -95,7 +110,8 @@ export function namingInterrupted(executionRecord: record.ExecutionRecord, callM
         const made = writeAhead.evidenceOf(executionRecord, rescueMarker)?.evidence as Evidence | undefined;
         const attempt = `Attempt ${number} of ${parts.action} at ${parts.vertex}`;
         // A ref the reason names, made or not, is its intent's: the reason says what became of it, this whose it is.
-        const planned = writeAhead.findEntry(executionRecord, rescueMarker, 'intent')?.payload as Payload | undefined;
+        const intent = writeAhead.findEntry(executionRecord, rescueMarker, 'intent');
+        const planned = intent && writeAhead.payloadOf(intent, readPayload);
         if (planned && reason.includes(planned.ref)) return ` ${planned.ref} is the Rescue Ref of ${attempt}.`;
         return made ? ` Rescue Ref ${made.ref} keeps the work of ${attempt}.` : '';
       })

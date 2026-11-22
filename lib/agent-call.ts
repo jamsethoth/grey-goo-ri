@@ -137,7 +137,7 @@ export async function guardedCall(
 function savedContainment(runContext: RunContext, actionMarker: string) {
   return ({ kind }: HarnessStarted) => {
     const intended = writeAhead.findEntry(runContext.record, actionMarker, 'intent')!;
-    intended.payload = { ...(intended.payload as writeAhead.CallPayload), containment: { kind } };
+    intended.payload = { ...writeAhead.payloadOf(intended, writeAhead.readCallPayload), containment: { kind } };
     runContext.database.save(runContext.record);
   };
 }
