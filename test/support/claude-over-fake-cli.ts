@@ -1,7 +1,8 @@
 // The Claude Harness over the fake claude CLI (child-scripts/fake-claude.ts): gg's real launch, with the command it
-// starts replaced by node running the fake, which replays one recorded call. Every path the call carries holds a
-// space, the fake's own script and recording included, and each launch checks it. It spawns, so only medium tests call
-// it.
+// starts replaced by node running the fake, which replays a recorded call at each model call: the same one, or the
+// next of several a case names. Every path the call carries holds a space, the fake's own script and recordings
+// included, and each launch checks it unless the case runs in a repository of its own. It spawns, so only medium tests
+// call it.
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -26,8 +27,9 @@ const COMMAND_STATES: Record<string, recordedCli.CliState> = {
 };
 
 export interface FakeCli {
-  // The recording the fake replays, by its name in test/fixtures/claude/.
-  scenario: string;
+  // The recording the fake replays, by its name in test/fixtures/claude/; with several, each model call replays the
+  // next, and any after the last replays the last.
+  scenario: string | string[];
   // How the fake changes the replay (fake-claude.ts): `no-result`, `garbage`, `hang`, `hang-no-transcript` or
   // `signal`; or its answer to a command that is no model call: `old-version` or `logged-out`.
   mode?: string;
@@ -38,6 +40,9 @@ export interface FakeCli {
   stderr?: string;
   // The executable launched in place of claude, node unless a case names one that does not exist.
   command?: string;
+  // Whether each launch checks that the paths it carries hold a space; a case whose calls run in a repository of its
+  // own, whose path holds none, turns it off.
+  spaced?: boolean;
 }
 
 // Every absolute path a launch carries whole as its working directory, an argv entry or an environment value, the
@@ -60,10 +65,35 @@ function writeCommands(directory: string, state: recordedCli.CliState | undefine
   return commandsFile;
 }
 
+// The recordings the fake replays, copied into `directory`, one each model call in turn and the last after them; and
+// what the fake received at each model call, its argv after the executable and its stdin, a file each.
+function replaysIn(directory: string, scenarios: string[]) {
+  const recordings = scenarios.map((scenario, index) => {
+    const recording = join(directory, `the recording ${index}`);
+    for (const extension of ['.json', '.jsonl'])
+      copyFileSync(`${RECORDINGS}/${scenario}${extension}`, recording + extension);
+    return recording;
+  });
+  const replayedAt = (call: number) => Math.min(call, scenarios.length - 1);
+  const receivedFile = (call: number) => join(directory, `received ${call}.json`);
+  // Nothing when the fake never ran.
+  const receivedAt = (call: number): { argv: string[]; stdin: string | null } =>
+    existsSync(receivedFile(call))
+      ? (JSON.parse(readFileSync(receivedFile(call), 'utf8')) as { argv: string[]; stdin: string })
+      : { argv: [], stdin: null };
+  // Each of `count` model calls that reached the fake, in order, with the recording it replayed.
+  const calls = (count: number) =>
+    Array.from({ length: count }, (_unused, call) => ({
+      recording: scenarios[replayedAt(call)]!,
+      ...receivedAt(call),
+    })).filter((made): made is { recording: string; argv: string[]; stdin: string } => made.stdin !== null);
+  return { recordingAt: (call: number) => recordings[replayedAt(call)]!, receivedFile, receivedAt, calls };
+}
+
 // A Claude Harness whose launches start the fake, in a temp directory that holds the Claude configuration directory,
 // the repository the call runs in, the Run directory, and the fake's script and recording, copied there.
 export function claudeOverFakeCli(t: TestContext, cli: FakeCli) {
-  const { scenario, mode = 'replay', command = process.execPath, orphan = false, stderr } = cli;
+  const { mode = 'replay', command = process.execPath, orphan = false, stderr, spaced = true } = cli;
   // On Windows a fake just killed holds its working directory for a moment, so the repository goes first, with retries;
   // any process of the fake's left running, which a failed case can leave, is ended before it.
   const removeRepository = () => {
@@ -77,20 +107,19 @@ export function claudeOverFakeCli(t: TestContext, cli: FakeCli) {
     string,
   ];
   for (const made of [configDirectory, cwd, runDirectory]) mkdirSync(made);
-  const receivedFile = join(directory, 'received.json');
   const [cliPidFile, orphanPidFile] = [join(directory, 'cli.pid'), join(directory, 'orphan.pid')];
   // .mts, so node runs the copy as a module whatever package.json lies above the temp directory
   const fakeScript = join(directory, 'fake claude.mts');
   copyFileSync(FAKE_CLAUDE, fakeScript);
-  const recording = join(directory, 'the recording');
-  for (const extension of ['.json', '.jsonl'])
-    copyFileSync(`${RECORDINGS}/${scenario}${extension}`, recording + extension);
+  const replays = replaysIn(directory, [cli.scenario].flat());
   const commandState = COMMAND_STATES[mode];
   const commandsFile = writeCommands(directory, commandState);
   // What the Harness asked launch for, each call's options as it passed them.
   const launches: exec.LaunchOptions[] = [];
+  const modelCalls = () => launches.filter((launched) => launched.args.includes('-p')).length;
   const overFake = (options: exec.LaunchOptions) => {
     launches.push(options);
+    const call = Math.max(modelCalls() - 1, 0);
     const launched = {
       ...options,
       ...(orphan && { testHooks: { signal: processProbe.pidWritten(orphanPidFile, t.signal) } }),
@@ -99,28 +128,26 @@ export function claudeOverFakeCli(t: TestContext, cli: FakeCli) {
       env: {
         ...options.env,
         CLAUDE_CONFIG_DIR: configDirectory,
-        FAKE_CLAUDE_RECORDING: recording,
+        FAKE_CLAUDE_RECORDING: replays.recordingAt(call),
         FAKE_CLAUDE_COMMANDS: commandsFile,
         FAKE_CLAUDE_MODE: commandState ? 'replay' : mode,
-        FAKE_CLAUDE_RECEIVED: receivedFile,
+        FAKE_CLAUDE_RECEIVED: replays.receivedFile(call),
         FAKE_CLAUDE_PID: cliPidFile,
         ...(orphan && { FAKE_CLAUDE_ORPHAN: orphanPidFile }),
         ...(stderr !== undefined && { FAKE_CLAUDE_STDERR: stderr }),
       },
     };
-    assertSpaced(launched);
+    if (spaced) assertSpaced(launched);
     return launch(launched);
   };
   const harness = {
     ...claude.createClaude({ configDirectory }),
     ...claude.createCli({ launch: overFake }, { configDirectory }),
   };
-  // What the fake read: its argv after the executable, and its stdin; nothing when it never ran.
-  const received = (): { argv: string[]; stdin: string | null } =>
-    existsSync(receivedFile)
-      ? (JSON.parse(readFileSync(receivedFile, 'utf8')) as { argv: string[]; stdin: string })
-      : { argv: [], stdin: null };
-  return { harness, configDirectory, cwd, runDirectory, received, launches, cliPidFile, orphanPidFile };
+  // What the fake read at the last model call, and at each.
+  const received = () => replays.receivedAt(Math.max(modelCalls() - 1, 0));
+  const calls = () => replays.calls(modelCalls());
+  return { harness, configDirectory, cwd, runDirectory, received, calls, launches, cliPidFile, orphanPidFile };
 }
 
 export type ClaudeOverFakeCli = ReturnType<typeof claudeOverFakeCli>;

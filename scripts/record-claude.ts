@@ -3,7 +3,8 @@
 // lines, redacted, land in test/fixtures/claude/<name>.jsonl, and the command that made them, each line's arrival time
 // and what the call left behind in <name>.json. Each command that is no model call (#427) runs once, and its argv, exit
 // code and output, redacted, land in test/fixtures/claude/<name>.json. It calls the real CLI and spends tokens: run it
-// to re-record a new Claude version, never from a test.
+// to re-record a new Claude version, never from a test. The name `example` instead records the example's first-visit
+// pass through gg (scripts/record-claude-example.ts, #486), alone.
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
@@ -13,13 +14,16 @@ import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import * as commandShim from '../lib/command-shim.ts';
+import * as exec from '../lib/exec.ts';
 import * as claude from '../lib/harnesses/claude.ts';
+import * as recordClaudeExample from './record-claude-example.ts';
 import { type CliCommand, COMMANDS, SCENARIOS, type Scenario } from './record-claude-scenarios.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const OUTPUT = join(root, 'test', 'fixtures', 'claude');
 const USAGE = `usage: node scripts/record-claude.ts [name ...]
   no name: every scenario, in order (a resume scenario needs the one it resumes), then every command
+  example, alone: the example's first-visit pass through gg, one call each Agent Action
   scenarios: ${SCENARIOS.map((scenario) => scenario.name).join(', ')}
   commands, none a model call: ${COMMANDS.map((command) => command.name).join(', ')}`;
 const SCHEMA = {
@@ -318,7 +322,28 @@ function recordCommand(command: CliCommand, cliVersion: string, base: string) {
   console.log(`${command.name}: exit ${ran.status}`);
 }
 
+// The example's first-visit pass through gg, its calls on the real CLI in gg's own launch, which passes on the
+// environment, so the session's own variables go first.
+async function recordExample(cliVersion: string) {
+  for (const key of Object.keys(process.env)) if (INHERITED.test(key)) Reflect.deleteProperty(process.env, key);
+  mkdirSync(OUTPUT, { recursive: true });
+  const { launch } = exec.createExec();
+  const passed = await recordClaudeExample.recordExample({ cliVersion, launch, save, redactorOf });
+  console.log(
+    passed ? `recorded the example's first-visit pass into ${OUTPUT}` : 'the example left its first-visit pass',
+  );
+  return passed ? 0 : 1;
+}
+
 async function main(names: string[]) {
+  if (names.includes('example')) {
+    if (names.length > 1) {
+      console.error(`example records alone\n${USAGE}`);
+      return 2;
+    }
+    const { command, args } = commandShim.argvOf('claude', ['--version']);
+    return recordExample(execFileSync(command, args, { encoding: 'utf8' }).trim());
+  }
   const named = [...SCENARIOS, ...COMMANDS].map((recorded) => recorded.name);
   const unknown = names.filter((name) => !named.includes(name));
   if (unknown.length || names.includes('--help')) {

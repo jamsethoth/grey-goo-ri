@@ -1,14 +1,21 @@
 // The example's first-visit pass on the Claude Harness, over the recorded CLI (#486): the recordings
 // scripts/record-claude.ts makes of that pass through gg, read raw from test/fixtures/claude/, and the example fixture
 // run with its Agents on Claude, each launch replaying the next recording in the fake CLI and the example's test
-// command run for real (Q2 A). It spawns, so only medium tests call it. It reads no Claude-private helper of
-// lib/harnesses/claude.ts (planning Q12): the Harness is the one `shipped` builds, as gg run builds it.
+// command run for real (Q2 A). It spawns, so only medium tests call it. It calls no Claude-private helper of
+// lib/harnesses/claude.ts (planning Q12): the replay's Harness is the fake CLI's (claude-over-fake-cli.ts), built as
+// `shipped` builds it but over a Claude configuration directory of the case's own, and the recorder's is the one
+// `shipped` builds, as gg run builds it.
 import type { TestContext } from 'node:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import * as exec from '../../lib/exec.ts';
+import * as paths from '../../lib/paths.ts';
 import type * as events from '../../lib/events.ts';
 import type * as record from '../../lib/record.ts';
+import type * as runContext from '../../lib/run-context.ts';
+import * as claudeOverFakeCli from './claude-over-fake-cli.ts';
 import * as exampleRun from './example-run.ts';
-import type * as goldenRun from './golden-run.ts';
+import * as golden from './golden.ts';
+import * as goldenRun from './golden-run.ts';
 
 // The recordings of the example's first-visit pass, one per agent Action in call order: red's, green's and review's.
 export const RECORDINGS = ['example-red', 'example-green', 'example-review'];
@@ -93,10 +100,38 @@ export type ExampleOnClaude = goldenRun.GoldenRun & {
   calls: { recording: string; argv: string[]; stdin: string }[];
 };
 
-// The example fixture with its Agents on the Claude Harness (haiku, low effort, as recorded), built through
-// `shipped.shipped` over a launch that starts the fake CLI, on the fake git and the real test command, run to its
-// Terminal.
+// The example's Agents on Claude, as recorded: its cheapest model at low effort (planning Q17).
+const ON_CLAUDE = { harness: 'claude', model: 'haiku', effort: 'low' };
+
+// The example fixture with its Agents on the Claude Harness `harness` and the example's test command run for real
+// (Q2 A), with the Run directory gg run makes, where the Harness writes the files its launch names. It runs nothing;
+// scripts/record-claude.ts builds it over the real CLI.
+export async function claudeFixture(
+  t: TestContext,
+  harness: runContext.Harness,
+  options?: exampleRun.ExampleOptions,
+): Promise<golden.GoldenFixture> {
+  const fixture = await exampleRun.exampleFixture(t, options);
+  golden.configure(fixture, (configured) => {
+    for (const agent of Object.values(configured.agents)) Object.assign(agent, ON_CLAUDE);
+  });
+  fixture.options.harness = harness;
+  fixture.options.deps.exec = exec.createExec();
+  mkdirSync(paths.runDirectory(fixture.commonDir, fixture.executionRecord.run), { recursive: true });
+  // A test runner running the case sets NODE_TEST_CONTEXT, which the example's own node --test would inherit and so
+  // report to it, printing no test names; the variable is back once the case ends.
+  const runnerContext = process.env.NODE_TEST_CONTEXT;
+  Reflect.deleteProperty(process.env, 'NODE_TEST_CONTEXT');
+  t.after(() => {
+    if (runnerContext !== undefined) process.env.NODE_TEST_CONTEXT = runnerContext;
+  });
+  return fixture;
+}
+
+// The example fixture on the Claude Harness over the fake CLI, which replays the recordings in turn, on the fake git
+// and the real test command, run to its Terminal.
 export async function runOverRecordings(t: TestContext): Promise<ExampleOnClaude> {
-  // A stub until #486's Green: the example on the fake Harness and the stand-in suite, which no launch reaches.
-  return { ...(await exampleRun.runExample(t)), calls: [] };
+  const fake = claudeOverFakeCli.claudeOverFakeCli(t, { scenario: RECORDINGS, spaced: false });
+  const ran = await goldenRun.ranToEnd(await claudeFixture(t, fake.harness));
+  return { ...ran, calls: fake.calls() };
 }

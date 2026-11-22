@@ -144,10 +144,10 @@ export function goldenConfig(): GoldenConfig {
   };
 }
 
-// The configuration's one Flow as admission resolves it; a configuration the validator rejects fails the case.
+// The configuration's one Flow as admission resolves it, beside each shipped Harness; one the validator rejects fails.
 export function resolve(goldenConfiguration: GoldenConfig): model.ResolvedFlow {
   const { flows, errors } = validate.validate(goldenConfiguration, {
-    harnesses: { fake: {} },
+    harnesses: { fake: {}, ...shipped.HARNESSES },
     readSchema: (name: string) => JSON.parse(config.namedFile(goldenConfiguration.files, name)),
     readTemplate: (name: string) => config.namedFile(goldenConfiguration.files, name),
   });
