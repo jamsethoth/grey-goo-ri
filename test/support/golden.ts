@@ -18,7 +18,7 @@ import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as validate from '../../lib/validate/index.ts';
 import * as addSuiteModule from './add-suite.ts';
 import * as caseDatabase from './case-database.ts';
-import * as exampleLayer from './example-layer.ts';
+import * as exampleSource from './example-source.ts';
 import * as fakeGhModule from './fake-gh.ts';
 import * as fakeGitModule from './fake-git.ts';
 import * as fakeHarnessModule from './fake-harness.ts';
@@ -35,8 +35,8 @@ export const TICKET = 15;
 export const BRANCH = 'ticket/15-add-two-numbers';
 export { GREEN_FAIL_OUTPUT, GREEN_OUTPUT, RED_OUTPUT, TEST_NAME } from './add-suite.ts';
 export const PERSONA = '# implementer\nWrite the smallest change.\n';
-// A Layer file as loadLayers loads it.
-export const layerFile = (bytes: string) => ({ bytes, hash: createHash('sha256').update(bytes).digest('hex') });
+// A Source file as loadSources loads it.
+export const sourceFile = (bytes: string) => ({ bytes, hash: createHash('sha256').update(bytes).digest('hex') });
 
 export const redResponse = {
   claim: 'ok',
@@ -133,14 +133,14 @@ export interface GoldenConfig {
 // The golden configuration: gg's Procedures until #120 and their files, the implementer on the fake Harness with the
 // golden Persona, the repository's commands and test paths, and the golden Flow.
 export function goldenConfig(): GoldenConfig {
-  const shipped = shippedFlow.shippedLayer();
+  const shipped = shippedFlow.shippedSource();
   return {
     commands: { test: 'npm test' },
-    testPaths: [...exampleLayer.TEST_GLOBS],
+    testPaths: [...exampleSource.TEST_GLOBS],
     agents: { implementer: implementerAgent('implementer.md') },
     procedures: shipped.procedures as GoldenConfig['procedures'],
     flows: { golden: redGreenFlow() },
-    files: { ...shipped.files, 'implementer.md': layerFile(PERSONA) },
+    files: { ...shipped.files, 'implementer.md': sourceFile(PERSONA) },
   };
 }
 
@@ -304,7 +304,7 @@ function goldenClock() {
   return { clock, sleeps };
 }
 
-// What the fixture passes runExecution: the golden Ticket on `deps`, its record, Flow and Layer files.
+// What the fixture passes runExecution: the golden Ticket on `deps`, its record, Flow and Source files.
 function executionOptions({
   repos,
   planned,

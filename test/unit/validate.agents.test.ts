@@ -4,7 +4,7 @@ import * as claude from '../../lib/harnesses/claude.ts';
 import * as contract from '../../lib/harnesses/contract.ts';
 import * as outcome from '../../lib/outcome.ts';
 import * as agentChecks from '../../lib/validate/agents.ts';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 
 // The Agent keys the validator checks (#386). A case about a rule asserts which one fired and where.
 /* eslint-disable id-denylist -- a Problem's key is at */
@@ -20,16 +20,16 @@ const AGENT_KEY_ERRORS: Record<string, { under: boolean; code: string }> = {
   effort: { under: true, code: 'not-a-string' },
   network: { under: true, code: 'not-a-boolean' },
 };
-const AGENT_SITES: Record<string, (config: exampleLayer.Layer) => { site: Record<string, unknown>; at: string }> = {
-  'a declared Agent': (config) => ({ site: config.agents.implementer, at: 'agents.implementer' }),
-  "a Vertex's override of its Agent": (config) => ({
+const AGENT_SITES = {
+  'a declared Agent': (config: exampleSource.Source) => ({ site: config.agents.implementer, at: 'agents.implementer' }),
+  "a Vertex's override of its Agent": (config: exampleSource.Source) => ({
     site: config.flows.default.ticket.vertices.red,
     at: `${VERTICES}.red`,
   }),
-  'an inline Vertex Agent': (config) => {
+  'an inline Vertex Agent': (config: exampleSource.Source) => {
     const red = config.flows.default.ticket.vertices.red;
-    delete red.use;
-    Object.assign(red, config.agents.implementer);
+    exampleSource.putAt(red, ['use']);
+    for (const [key, value] of Object.entries(config.agents.implementer)) exampleSource.putAt(red, [key], value);
     return { site: red, at: `${VERTICES}.red` };
   },
 };
@@ -41,23 +41,23 @@ test('the Agent keys checked at each site are every key the Resolved Flow declar
 for (const key of Object.keys(agentChecks.AGENT_FIELDS))
   for (const [where, place] of Object.entries(AGENT_SITES))
     test(`an Agent's ${key} of the wrong type at ${where} is an error there, and the Flow does not resolve`, () => {
-      const config = exampleLayer.config();
+      const config = exampleSource.config();
       const { site, at } = place(config);
-      site[key] = { wrong: true };
+      exampleSource.putAt(site, [key], { wrong: true });
       const { under, code } = AGENT_KEY_ERRORS[key]!;
-      const { errors, flows } = exampleLayer.check(config);
-      assert.deepEqual(exampleLayer.firedRules(errors), [{ at: under ? `${at}.${key}` : at, code }]);
+      const { errors, flows } = exampleSource.check(config);
+      assert.deepEqual(exampleSource.firedRules(errors), [{ at: under ? `${at}.${key}` : at, code }]);
       // The check that reports the key types it, so the Agent it sits in is not typed (#391).
       assert.equal(flows.default, undefined);
     });
 
 test("an Agent with no persona is one error at the Agent, used or not, which a Vertex's own does not excuse", () => {
-  const config = exampleLayer.config();
-  delete config.agents.reviewer.persona;
-  config.flows.default.ticket.vertices.reviewer.persona = 'reviewer.md';
-  config.agents.spare = { harness: 'fake' };
-  const { errors } = exampleLayer.check(config);
-  assert.deepEqual(exampleLayer.firedRules(errors), [
+  const config = exampleSource.config();
+  exampleSource.putAt(config.agents.reviewer, ['persona']);
+  exampleSource.putAt(config.flows.default.ticket.vertices.reviewer, ['persona'], 'reviewer.md');
+  exampleSource.putAt(config.agents, ['spare'], { harness: 'fake' });
+  const { errors } = exampleSource.check(config);
+  assert.deepEqual(exampleSource.firedRules(errors), [
     { at: 'agents.reviewer', code: 'required-key-missing' },
     { at: 'agents.spare', code: 'required-key-missing' },
   ]);
@@ -65,28 +65,29 @@ test("an Agent with no persona is one error at the Agent, used or not, which a V
 });
 
 test('an inline Vertex Agent with no persona is an error at the Vertex', () => {
-  const config = exampleLayer.config();
+  const config = exampleSource.config();
   const red = config.flows.default.ticket.vertices.red;
-  delete red.use;
-  Object.assign(red, { harness: 'fake', access: 'workspace-write' });
-  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+  exampleSource.putAt(red, ['use']);
+  exampleSource.putAt(red, ['harness'], 'fake');
+  exampleSource.putAt(red, ['access'], 'workspace-write');
+  assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     { at: `${VERTICES}.red`, code: 'required-key-missing' },
   ]);
 });
 
 test("a Vertex may override its Agent's persona with another file", () => {
-  const config = exampleLayer.config();
-  config.flows.default.ticket.vertices.red.persona = 'reviewer.md';
-  const { errors, flows } = exampleLayer.check(config);
+  const config = exampleSource.config();
+  exampleSource.putAt(config.flows.default.ticket.vertices.red, ['persona'], 'reviewer.md');
+  const { errors, flows } = exampleSource.check(config);
   assert.deepEqual(errors, []);
   assert.equal(flows.default!.ticket.vertices.red!.agent!.persona, 'reviewer.md');
 });
 
 test('an empty persona names no file, and a null one is only a null', () => {
-  const config = exampleLayer.config();
+  const config = exampleSource.config();
   config.agents.reviewer.persona = ' ';
-  config.agents.senior.persona = null;
-  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+  exampleSource.putAt(config.agents.senior, ['persona'], null);
+  assert.deepEqual(exampleSource.firedRules(exampleSource.check(config).errors), [
     { at: 'agents.senior.persona', code: 'null-value' },
     { at: 'agents.reviewer.persona', code: 'file-not-named' },
   ]);
@@ -95,10 +96,10 @@ test('an empty persona names no file, and a null one is only a null', () => {
 // An Agent asking for more access than its Procedure allows is refused, never capped, so the Harness sees the access
 // the call runs with (#424, Q1 A).
 test('a workspace-write Agent on a read-only Procedure is an access-conflict that names the fix', () => {
-  const config = exampleLayer.config();
+  const config = exampleSource.config();
   config.agents.reviewer.access = 'workspace-write';
-  const { errors } = exampleLayer.check(config);
-  assert.deepEqual(exampleLayer.firedRules(errors), [{ at: `${VERTICES}.reviewer`, code: 'access-conflict' }]);
+  const { errors } = exampleSource.check(config);
+  assert.deepEqual(exampleSource.firedRules(errors), [{ at: `${VERTICES}.reviewer`, code: 'access-conflict' }]);
   assert.ok(errors[0]!.message.includes('"review"'), errors[0]!.message);
   assert.ok(errors[0]!.message.includes('"reviewer"'), errors[0]!.message);
   assert.ok(errors[0]!.message.includes('set "access": "read-only" on the Vertex'), errors[0]!.message);
@@ -114,13 +115,13 @@ test('every Vertex runs with the access its Agent asks for, or is an access-conf
   for (const procedureAccess of [undefined, 'read-only'])
     for (const agentAccess of accesses)
       for (const vertexAccess of accesses) {
-        const config = exampleLayer.config();
-        exampleLayer.putAt(config, ['procedures', 'review', 'access'], procedureAccess);
-        exampleLayer.putAt(config, ['agents', 'reviewer', 'access'], agentAccess);
-        exampleLayer.putAt(config, ['flows', 'default', 'ticket', 'vertices', 'reviewer', 'access'], vertexAccess);
-        const { errors, flows } = exampleLayer.check(config);
+        const config = exampleSource.config();
+        exampleSource.putAt(config, ['procedures', 'review', 'access'], procedureAccess);
+        exampleSource.putAt(config, ['agents', 'reviewer', 'access'], agentAccess);
+        exampleSource.putAt(config, ['flows', 'default', 'ticket', 'vertices', 'reviewer', 'access'], vertexAccess);
+        const { errors, flows } = exampleSource.check(config);
         const asked = vertexAccess ?? agentAccess ?? 'read-only';
-        const fired = JSON.stringify(exampleLayer.firedRules(errors.filter(({ code }) => code === 'access-conflict')));
+        const fired = JSON.stringify(exampleSource.firedRules(errors.filter(({ code }) => code === 'access-conflict')));
         const runs = flows.default?.ticket.vertices.reviewer?.access;
         const conflict = procedureAccess === 'read-only' && asked === 'workspace-write';
         const expected = conflict ? JSON.stringify([{ at: `${VERTICES}.reviewer`, code: 'access-conflict' }]) : '[]';
@@ -146,19 +147,19 @@ const TIMEOUTS_FORMS: { form: string; timeouts: unknown; under: string; code: st
 for (const { form, timeouts, under, code } of TIMEOUTS_FORMS)
   for (const [where, place] of Object.entries(AGENT_SITES))
     test(`timeouts of ${form} is an error at ${where}`, () => {
-      const config = exampleLayer.config();
+      const config = exampleSource.config();
       const { site, at } = place(config);
-      site.timeouts = timeouts;
-      const { errors, flows } = exampleLayer.check(config);
-      assert.deepEqual(exampleLayer.firedRules(errors), [{ at: `${at}.timeouts${under}`, code }]);
+      exampleSource.putAt(site, ['timeouts'], timeouts);
+      const { errors, flows } = exampleSource.check(config);
+      assert.deepEqual(exampleSource.firedRules(errors), [{ at: `${at}.timeouts${under}`, code }]);
       assert.equal(flows.default, undefined);
     });
 
 test('timeouts of { stallMs, wallMs }, either left out, resolve into the Agent', () => {
-  const config = exampleLayer.config();
-  config.agents.implementer.timeouts = { stallMs: 60000, wallMs: 3600000 };
-  config.flows.default.ticket.vertices.green.timeouts = { wallMs: 7200000 };
-  const { errors, flows } = exampleLayer.check(config);
+  const config = exampleSource.config();
+  exampleSource.putAt(config.agents.implementer, ['timeouts'], { stallMs: 60000, wallMs: 3600000 });
+  exampleSource.putAt(config.flows.default.ticket.vertices.green, ['timeouts'], { wallMs: 7200000 });
+  const { errors, flows } = exampleSource.check(config);
   assert.deepEqual(errors, []);
   const { vertices } = flows.default!.ticket;
   assert.deepEqual(vertices.red!.agent!.timeouts, { stallMs: 60000, wallMs: 3600000 });
@@ -178,11 +179,11 @@ const POLICY_FORMS: { form: string; policy: unknown; under: string; code: string
 for (const { form, policy, under, code } of POLICY_FORMS)
   for (const [where, place] of Object.entries(AGENT_SITES))
     test(`a resolutionPolicy of ${form} is an error at ${where}`, () => {
-      const config = exampleLayer.config();
+      const config = exampleSource.config();
       const { site, at } = place(config);
-      site.resolutionPolicy = policy;
-      const { errors, flows } = exampleLayer.check(config);
-      assert.deepEqual(exampleLayer.firedRules(errors), [{ at: `${at}.resolutionPolicy${under}`, code }]);
+      exampleSource.putAt(site, ['resolutionPolicy'], policy);
+      const { errors, flows } = exampleSource.check(config);
+      assert.deepEqual(exampleSource.firedRules(errors), [{ at: `${at}.resolutionPolicy${under}`, code }]);
       assert.equal(flows.default, undefined);
     });
 
@@ -193,11 +194,11 @@ test('every retry budget the Transition Table spends is a budget a resolutionPol
   for (const budget of Object.keys(outcome.DEFAULT_RESOLUTION_POLICY))
     for (const [where, place] of Object.entries(AGENT_SITES))
       for (const value of [0, -1]) {
-        const config = exampleLayer.config();
+        const config = exampleSource.config();
         const { site, at } = place(config);
-        site.resolutionPolicy = { [budget]: value };
-        const { errors, flows } = exampleLayer.check(config);
-        const fired = JSON.stringify(exampleLayer.firedRules(errors));
+        exampleSource.putAt(site, ['resolutionPolicy'], { [budget]: value });
+        const { errors, flows } = exampleSource.check(config);
+        const fired = JSON.stringify(exampleSource.firedRules(errors));
         const refused = [{ at: `${at}.resolutionPolicy.${budget}`, code: 'not-a-non-negative-integer' }];
         const expected = JSON.stringify(value < 0 ? refused : []);
         const resolves = flows.default !== undefined;
@@ -233,14 +234,15 @@ function capabilityErrors(intents: boolean) {
   for (const field of CAPABILITY_KEYS.filter((key) => PERMISSION_INTENTS.has(key) === intents))
     for (const level of ['exact', 'hint', 'unsupported'])
       for (const [where, place] of Object.entries(AGENT_SITES)) {
-        const config = exampleLayer.config();
+        const config = exampleSource.config();
         const { site, at } = place(config);
-        Object.assign(site, { harness: 'limited', [field]: ASKING[field] });
+        exampleSource.putAt(site, ['harness'], 'limited');
+        exampleSource.putAt(site, [field], ASKING[field]);
         const limited = { capabilities: { ...EXACT, [field]: level } };
-        const { errors } = exampleLayer.checkOn(config, { fake: {}, limited });
+        const { errors } = exampleSource.checkOn(config, { fake: {}, limited });
         const refused = intents ? level !== 'exact' : level === 'unsupported';
         const code = intents ? 'unenforceable-permission-intent' : 'unsupported-agent-field';
-        const fired = JSON.stringify(exampleLayer.firedRules(errors));
+        const fired = JSON.stringify(exampleSource.firedRules(errors));
         const expected = JSON.stringify(refused ? [{ at: `${at}.${field}`, code }] : []);
         if (fired !== expected) wrong.push(`${field} ${level} at ${where}: ${fired}, expected ${expected}`);
       }
@@ -256,32 +258,33 @@ test('a permission intent its Harness cannot enforce is an error', () => {
 });
 
 test('a read-only Claude Agent listing MCP servers is an error', () => {
-  const config = exampleLayer.config();
-  Object.assign(config.agents.reviewer, { harness: 'claude', mcp: ['github'] });
-  const { errors } = exampleLayer.checkOn(config, { fake: {}, claude });
-  assert.deepEqual(exampleLayer.firedRules(errors), [{ at: 'agents.reviewer.mcp', code: 'unsupported-agent-field' }]);
+  const config = exampleSource.config();
+  exampleSource.putAt(config.agents.reviewer, ['harness'], 'claude');
+  exampleSource.putAt(config.agents.reviewer, ['mcp'], ['github']);
+  const { errors } = exampleSource.checkOn(config, { fake: {}, claude });
+  assert.deepEqual(exampleSource.firedRules(errors), [{ at: 'agents.reviewer.mcp', code: 'unsupported-agent-field' }]);
   assert.deepEqual(errors[0]!.params, { field: 'mcp', harness: 'claude' });
 });
 
 // The field is the Agent's but the Harness the Vertex's own, so the Vertex is where the two meet.
 test('a field its Agent lists, unsupported by the Harness its Vertex sets, is an error at the Vertex', () => {
-  const config = exampleLayer.config();
-  config.agents.implementer.mcp = ['github'];
-  config.flows.default.ticket.vertices.red.harness = 'limited';
+  const config = exampleSource.config();
+  exampleSource.putAt(config.agents.implementer, ['mcp'], ['github']);
+  exampleSource.putAt(config.flows.default.ticket.vertices.red, ['harness'], 'limited');
   const limited = { capabilities: { ...EXACT, mcp: 'unsupported' } };
-  const { errors } = exampleLayer.checkOn(config, { fake: {}, limited });
-  assert.deepEqual(exampleLayer.firedRules(errors), [{ at: `${VERTICES}.red`, code: 'unsupported-agent-field' }]);
+  const { errors } = exampleSource.checkOn(config, { fake: {}, limited });
+  assert.deepEqual(exampleSource.firedRules(errors), [{ at: `${VERTICES}.red`, code: 'unsupported-agent-field' }]);
 });
 
 // An Agent that writes no access asks for read-only, so its Harness must enforce access; one that writes no network
 // asks for nothing.
 test('an Agent writing no access still asks for read-only, which a Harness that only hints access refuses', () => {
-  const config = exampleLayer.config();
+  const config = exampleSource.config();
   config.agents.reviewer.harness = 'limited';
-  delete config.agents.reviewer.access;
+  exampleSource.putAt(config.agents.reviewer, ['access']);
   const limited = { capabilities: { ...EXACT, access: 'hint', network: 'unsupported' } };
-  const { errors } = exampleLayer.checkOn(config, { fake: {}, limited });
-  assert.deepEqual(exampleLayer.firedRules(errors), [
+  const { errors } = exampleSource.checkOn(config, { fake: {}, limited });
+  assert.deepEqual(exampleSource.firedRules(errors), [
     { at: 'agents.reviewer', code: 'unenforceable-permission-intent' },
   ]);
 });
@@ -293,18 +296,20 @@ test('a Vertex whose Procedure recovers, on a Harness that cannot resume a Sessi
   const fired = (supported: boolean) => {
     const sessionResume = { supported, preconditions: [] };
     const harnesses = { fake: { capabilities: { ...EXACT, sessionResume } } };
-    return exampleLayer.firedRules(exampleLayer.checkOn(exampleLayer.config(), harnesses).errors);
+    return exampleSource.firedRules(exampleSource.checkOn(exampleSource.config(), harnesses).errors);
   };
-  const config = exampleLayer.config();
-  const vertices = Object.entries<Record<string, unknown>>(config.flows.default.ticket.vertices);
-  const recovers = (vertex: Record<string, unknown>) =>
-    config.procedures[vertex.procedure as string].recover !== undefined;
+  const config = exampleSource.config();
+  const recoveringProcedures = new Set(
+    Object.entries(config.procedures).flatMap(([name, procedure]) => ('recover' in procedure ? [name] : [])),
+  );
+  const vertices = Object.entries(config.flows.default.ticket.vertices);
+  const recovers = (vertex: (typeof vertices)[number][1]) => recoveringProcedures.has(vertex.procedure);
   const recovering = vertices
     .filter(([, vertex]) => recovers(vertex))
     .map(([id]) => ({ at: `${VERTICES}.${id}`, code: 'session-resume-unsupported' }));
   // The rule is not vacuous: some Vertices recover, and some that run an Agent do not.
   assert.ok(recovering.length > 0);
-  assert.ok(vertices.some(([, vertex]) => vertex.use !== undefined && !recovers(vertex)));
+  assert.ok(vertices.some(([, vertex]) => 'use' in vertex && !recovers(vertex)));
   assert.deepEqual(fired(false), recovering);
   assert.deepEqual(fired(true), []);
 });

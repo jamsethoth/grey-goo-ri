@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-// The request's key tables, which a Layer's author reads. A Keys column holds only key names, each a code span, so a
+// The request's key tables, which a Source's author reads. A Keys column holds only key names, each a code span, so a
 // table compares exactly with the key lists the code declares (#229).
 const REQUEST = new URL('../../docs/requests/node-harness-dag.md', import.meta.url);
 const spans = (cell: string) => (cell.match(/`[^`]+`/g) ?? []).map((span) => span.slice(1, -1));

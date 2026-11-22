@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as briefs from '../../lib/briefs.ts';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 
 const ticket = {
   number: 7,
@@ -13,23 +13,23 @@ const base = { ticket, baseBranch: 'origin/main', commands: { test: 'npm test' }
 const redEvidence = { command: 'npm test', output: 'not ok 1 - widgets render' };
 const greenInputs = { testFiles: ['test/widgets.test.mjs'], red: redEvidence };
 // An example Brief by its file name.
-const shipped = (name: string, context: briefs.BriefContext) => briefs.brief(exampleLayer.fixtureText(name), context);
+const shipped = (name: string, context: briefs.BriefContext) => briefs.brief(exampleSource.fixtureText(name), context);
 
 // What the example's Briefs say (#120): GLOSSARY terms, the Visit's inputs, and nothing a Procedure does not read.
 const VISIT_BRIEFS = { 'red.md': 'RED', 'green.md': 'GREEN', 'fix.md': 'FIX' };
 
 test('the example Briefs use the GLOSSARY terms', () => {
-  for (const name of exampleLayer.TEMPLATE_NAMES) {
-    const brief = exampleLayer.fixtureText(name);
+  for (const name of exampleSource.TEMPLATE_NAMES) {
+    const brief = exampleSource.fixtureText(name);
     assert.doesNotMatch(brief, /structured result|repo commands|\bphase\b|\brounds?\b/i, name);
   }
   for (const [name, heading] of Object.entries(VISIT_BRIEFS))
-    assert.match(exampleLayer.fixtureText(name), new RegExp(`^${heading} VISIT for GitHub issue #`), name);
+    assert.match(exampleSource.fixtureText(name), new RegExp(`^${heading} VISIT for GitHub issue #`), name);
 });
 
 test('no example Brief asks for a field nothing reads', () => {
-  for (const name of exampleLayer.TEMPLATE_NAMES)
-    assert.doesNotMatch(exampleLayer.fixtureText(name), /your persona asks for one|start "diagnosis" with/, name);
+  for (const name of exampleSource.TEMPLATE_NAMES)
+    assert.doesNotMatch(exampleSource.fixtureText(name), /your persona asks for one|start "diagnosis" with/, name);
 });
 
 test('the tests-fail recovery tells a red agent that needs no test to claim blocked with that reason', async () => {
@@ -46,8 +46,8 @@ test('a History entry is numbered by attemptNumber', async () => {
     history,
   });
   assert.equal(numbered, '1 red-failed\n2 rescued\n');
-  for (const name of exampleLayer.TEMPLATE_NAMES)
-    assert.doesNotMatch(exampleLayer.fixtureText(name), /\{\{n\}\}/, name);
+  for (const name of exampleSource.TEMPLATE_NAMES)
+    assert.doesNotMatch(exampleSource.fixtureText(name), /\{\{n\}\}/, name);
 });
 
 // A rescued Visit's work, as `<vertex>.rescue` gives it (W3).

@@ -1,5 +1,5 @@
 // The Action of a Procedure with id `id`, so a case edits it by name and not by its index. A missing id fails the case.
-// Its type is the procedure's Action type, so a Layer parsed from JSON gives an Action a case may edit freely.
+// Its type is the procedure's Action type, so a Source parsed from JSON gives an Action a case may edit freely.
 export function actionById<Procedure extends { actions: { id: string }[] }>(
   procedure: Procedure,
   id: string,

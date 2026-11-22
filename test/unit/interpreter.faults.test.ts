@@ -609,7 +609,7 @@ test('a persona edit between green and its recovery pass does not reach the reco
   const run = fixture.harness.run;
   fixture.harness.run = async (call) => {
     const ran = await run(call);
-    if (call.phase === 'green') fixture.files['implementer.md'] = golden.layerFile('# edited mid-visit\n');
+    if (call.phase === 'green') fixture.files['implementer.md'] = golden.sourceFile('# edited mid-visit\n');
     return ran;
   };
   const { outcome } = await interpreter.runExecution(fixture.options);

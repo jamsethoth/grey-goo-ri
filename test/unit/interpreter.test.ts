@@ -62,7 +62,7 @@ test('the green call is a fresh session with the full brief', async (t) => {
 });
 
 test("a Persona from the repository's gg.json is pinned with its hash", async (t) => {
-  const directory = mkdtempSync(join(tmpdir(), 'gg-persona-layer-'));
+  const directory = mkdtempSync(join(tmpdir(), 'gg-persona-source-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const repo = join(directory, 'repo');
   mkdirSync(join(repo, '.agents', 'gg'), { recursive: true });
@@ -70,11 +70,11 @@ test("a Persona from the repository's gg.json is pinned with its hash", async (t
   writeFileSync(file, '{"agents":{"implementer":{"persona":"repo-implementer.md"}}}');
   writeFileSync(join(repo, '.agents', 'gg', 'repo-implementer.md'), '# repo implementer\n');
   const loaded = config.loadSources(repo, join(directory, 'user'));
-  const layered = loaded.repository;
+  const repositorySource = loaded.repository;
   const fixture = await golden.fixture(t);
   golden.configure(fixture, (configured) => {
     configured.files = { ...configured.files, ...loaded.files.repository };
-    configured.agents.implementer!.persona = (layered.agents as GoldenConfig['agents']).implementer!.persona;
+    configured.agents.implementer!.persona = (repositorySource.agents as GoldenConfig['agents']).implementer!.persona;
   });
   await interpreter.runExecution(fixture.options);
   const [red, green] = fixture.harness.calls;
@@ -120,7 +120,7 @@ async function tokenRun(t: TestContext) {
   fixture.config.commands = { test: 'npm test TOKEN' };
   // Configuration reaches commit trailers and provenance cells too, each of which is public text.
   golden.configure(fixture, (configured) => {
-    configured.files['TOKEN.md'] = golden.layerFile(golden.PERSONA);
+    configured.files['TOKEN.md'] = golden.sourceFile(golden.PERSONA);
     Object.assign(configured.agents.implementer!, {
       model: 'model TOKEN',
       effort: 'TOKEN effort',
@@ -555,11 +555,11 @@ test('a routed harness-timeout takes its route', async (t) => {
   assert.ok(fixture.gh.labels.has('gg:state:needs-replan'));
 });
 
-// The Terminal Reason comment is gg's own template, so an end needs no Layer file for its comment (#121).
+// The Terminal Reason comment is gg's own template, so an end needs no Source file for its comment (#121).
 test('an end without a stop token still posts its Terminal Reason comment', async (t) => {
   const fixture = await golden.fixture(t, { responses: firstVisitWith(timedOut) });
   golden.configure(fixture, (configured) => {
-    // Every Claim token that names templates/stop.md, so the Layer can do without it.
+    // Every Claim token that names templates/stop.md, so the Source can do without it.
     const tokens = (procedure: string) => (configured.procedures[procedure] as ConfiguredProcedure).claimTokens;
     delete tokens('tests-fail').blocked!.comment;
     delete tokens('tests-fail').misscoped!.comment;
@@ -615,7 +615,7 @@ test("a stop token's comment names the stopped Visit's own outputs and inputs", 
   });
   const fixture = await golden.fixture(t, { responses });
   golden.configure(fixture, (configured) => {
-    configured.files['stop-direct.md'] = golden.layerFile(
+    configured.files['stop-direct.md'] = golden.sourceFile(
       'own: {{green.response.summary}}\ninput: {{inputs.red.output}}\n{{marker}}\n',
     );
     (configured.procedures.implement as ConfiguredProcedure).claimTokens.blocked!.comment = 'stop-direct.md';
@@ -750,7 +750,7 @@ test("the reply reaches the next Vertex's Brief through its input", async (t) =>
     };
     const brief = configured.files['templates/green.md']!.bytes;
     const answers = '{{#inputs.answers}}Answers: {{inputs.answers}}{{/inputs.answers}}\n';
-    configured.files['templates/green.md'] = golden.layerFile(`${brief}${answers}`);
+    configured.files['templates/green.md'] = golden.sourceFile(`${brief}${answers}`);
   });
   await interpreter.runExecution(fixture.options);
   fixture.gh.humanComments('1. Use B.', approvalFlow.OWNER);
