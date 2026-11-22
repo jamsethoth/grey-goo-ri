@@ -596,3 +596,70 @@ test('gg doctor --probe asks no copy when the hand-off probe failed', async () =
     [],
   );
 });
+
+const pluralOf = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+
+// #494, Q1 A and Q2 A: every check the Claude Harness's doctor reports, read from the doctor itself in each state of
+// the CLI, in cheap mode and under --probe: a passed one prints one `passed:` line naming its Harness, the check and
+// its message, after the Flows and before the warnings; a failed one prints as before, its one warning or error and
+// no passed line; and the summary counts no passed line.
+test('gg doctor prints one passed line per passed check, before the warnings, and counts none', async (t) => {
+  caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
+  onlyOnPath(t, GG_FILE);
+  let passedSeen = 0;
+  for (const [state, cliState] of [
+    ...CLI_STATES,
+    ['a --bare refusal on no API key', { bare: onNone((line) => line) }] as const,
+  ])
+    for (const probe of [false, true]) {
+      const where = `${state}, probe ${probe}`;
+      const { checks } = await claude.createCli(recordedCli.recordedCli(cliState)).doctor({ probe });
+      const { text } = await doctorOverCli(cliState, { probe });
+      const lines = text.split('\n').slice(0, -1);
+      const passed = lines.filter((line) => line.startsWith('passed: '));
+      assert.deepEqual(
+        passed,
+        checks.filter(({ ok }) => ok).map(({ name, message }) => `passed: harness claude: ${name}: ${message}`),
+        where,
+      );
+      passedSeen += passed.length;
+      for (const severity of ['warning', 'error'] as const)
+        assert.deepEqual(
+          doctorLines(text, severity).toSorted(),
+          checks
+            .filter((check) => !check.ok && check.severity === severity)
+            .map(({ name, message }) => `${severity}: harness claude: ${name}: ${message} [harness-doctor-failed]`)
+            .toSorted(),
+          where,
+        );
+      if (passed.length) {
+        const first = lines.indexOf(passed[0]!);
+        assert.deepEqual(lines.slice(first, first + passed.length), passed, `${where}: the passed lines run together`);
+        assert.ok(
+          lines.slice(0, first).every((line) => !/^(warning|error): /.test(line)),
+          `${where}: no warning or error before the passed lines`,
+        );
+        assert.ok(
+          lines.slice(first + passed.length, -1).every((line) => /^(warning|error): /.test(line)),
+          `${where}: only warnings and errors between the passed lines and the summary`,
+        );
+      }
+      const warned = linesOf(text, 'warning').length;
+      assert.equal(
+        lines.at(-1),
+        `${pluralOf(linesOf(text, 'error').length, 'error')}${warned ? `, ${pluralOf(warned, 'warning')}` : ''}`,
+        where,
+      );
+    }
+  assert.ok(passedSeen > 0, 'some check passed');
+});
+
+// #494 DoD: gg doctor --probe shows each probe that ran and passed, so a passed probe differs from one never run.
+test('gg doctor --probe prints a passed line naming each probe that passed', async (t) => {
+  caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
+  onlyOnPath(t, GG_FILE);
+  const { text } = await doctorOverCli({}, { probe: true });
+  const passed = text.split('\n').filter((line) => line.startsWith('passed: harness claude: '));
+  for (const probe of ['profile-probe', 'handoff-probe', 'fork-probe'])
+    assert.equal(passed.filter((line) => line.startsWith(`passed: harness claude: ${probe}: `)).length, 1, text);
+});
