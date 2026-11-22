@@ -293,6 +293,8 @@ async function lockedWriter(t: TestContext, fixture: RunFixture) {
   });
   const exited = new Promise((resolve) => child.on('exit', resolve));
   t.after(() => child.kill());
+  // At the case's timeout too, before the after hooks: removing the directory throws while the writer holds its lock.
+  t.signal.addEventListener('abort', () => child.kill());
   const { sha } = await new Promise<{ sha: string }>((resolve, reject) => {
     child.once('message', resolve);
     child.once('exit', (code) => reject(new Error(`the writer exited ${code} before reporting`)));

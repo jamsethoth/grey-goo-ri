@@ -355,6 +355,8 @@ test('a temp census that cannot remove the directory still names each entry left
     stdio: ['ignore', 'pipe', 'ignore'],
   });
   t.after(() => holder.kill());
+  // At the case's timeout too, before the after hooks: removing the directory throws while the holder works in it.
+  t.signal.addEventListener('abort', () => holder.kill());
   await once(holder.stdout, 'data');
   const { failed, report } = runSuite.tempCensus(directory);
   holder.kill();

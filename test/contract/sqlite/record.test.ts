@@ -77,6 +77,8 @@ test('a save waits out another process that holds the write lock for longer than
   t.after(() => {
     if (holder.exitCode === null) holder.kill();
   });
+  // At the case's timeout too, before the after hooks: removing the directory throws while the holder holds its lock.
+  t.signal.addEventListener('abort', () => holder.kill());
   await new Promise((resolve) => holder.stdout.once('data', resolve));
   const executionRecord = record.createExecutionRecord({
     commonDir,
