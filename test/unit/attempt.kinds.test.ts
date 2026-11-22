@@ -439,7 +439,7 @@ test('a complete agent Attempt resumes to the result its evidence saved, and mak
   context.pinned.configuration.files = {
     get greenBrief() {
       reads.push('greenBrief');
-      return golden.layerFile('The Brief.');
+      return golden.sourceFile('The Brief.');
     },
   };
   const actionIdentity = { vertex: 'green', visit: 1, procedure: 'implement', action: 'green', recovery: 0 };

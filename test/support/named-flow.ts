@@ -1,5 +1,5 @@
 // One Flow written over a set of names: every name the configuration gives (Flow, Agent, Procedure, Vertex, Action id,
-// Claim token, Outcome, input, Declared Command, Layer file) comes from the set, so the same Flow can be named with
+// Claim token, Outcome, input, Declared Command, Source file) comes from the set, so the same Flow can be named with
 // ordinary names and with the names of Object.prototype's properties, and the two compared (#174).
 import type { TestContext } from 'node:test';
 import * as config from '../../lib/config.ts';
@@ -86,7 +86,7 @@ export const PROTOTYPE: Names = {
   schema: 'propertyIsEnumerable',
 };
 
-// An object from entries, so a key __proto__ is an own key, as JSON.parse makes it in a Layer.
+// An object from entries, so a key __proto__ is an own key, as JSON.parse makes it in a Source.
 const keyed = (...entries: [string, unknown][]) => Object.fromEntries(entries);
 
 // The first Vertex's Procedure: its agent writes lib/add.mjs, its Check passes and its work is committed and pushed.
@@ -165,10 +165,10 @@ function namedFiles(names: Names): config.SourceFiles {
   return {
     ...golden.goldenConfig().files,
     ...keyed(
-      [names.persona, golden.layerFile(golden.PERSONA)],
-      [names.brief, golden.layerFile('Write lib/add.mjs.\n')],
-      [names.body, golden.layerFile('The change.\n{{#provenance}}| {{vertex}} | {{calls}} |\n{{/provenance}}')],
-      [names.schema, golden.layerFile(`${JSON.stringify(schema)}\n`)],
+      [names.persona, golden.sourceFile(golden.PERSONA)],
+      [names.brief, golden.sourceFile('Write lib/add.mjs.\n')],
+      [names.body, golden.sourceFile('The change.\n{{#provenance}}| {{vertex}} | {{calls}} |\n{{/provenance}}')],
+      [names.schema, golden.sourceFile(`${JSON.stringify(schema)}\n`)],
     ),
   } as config.SourceFiles;
 }

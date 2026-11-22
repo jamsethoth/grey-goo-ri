@@ -13,7 +13,7 @@ import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as run from '../../lib/run.ts';
 import * as caseEnv from '../support/case-env.ts';
 import * as claudeRecordings from '../support/claude-recordings.ts';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 import * as fakeGh from '../support/fake-gh.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
 import * as recordedCli from '../support/recorded-cli.ts';
@@ -26,11 +26,11 @@ const DEPS = { gh: github.createGh(fakeGh.fakeGh({ branch: 'b', ticket: 1 }).gh)
 const file = (bytes: string) => ({ bytes, hash: config.sha256(bytes) });
 
 // `repository` as the repository's source, beside a user source that holds only the machine settings; the files it
-// names move beside it.
-const sources = ({
+// names move beside it. A type parameter, so the example passes as its own type and is not widened to a Source.
+const sources = <Repository extends config.Source & { files?: config.SourceFiles }>({
   files = {},
   ...repository
-}: config.Source & { files?: config.SourceFiles }): config.Configuration => ({
+}: Repository): config.Configuration => ({
   repository,
   user: { maxParallel: 2, worktreeRoot: '~/worktrees' },
   repositoryFile: '/repo/.agents/gg/gg.json',
@@ -38,18 +38,22 @@ const sources = ({
   files: { repository: files, user: {} },
 });
 
-// The example Layer as loadLayers gives it, with every Agent on the Claude Harness, as gg init --harness claude writes
-// it: seven Vertices on one CLI.
+// The example Source as loadSources gives it, with every Agent on the Claude Harness, as gg init --harness claude
+// writes it: seven Vertices on one CLI.
 function claudeExample() {
-  const layer = exampleLayer.config();
-  layer.files = Object.fromEntries(
-    exampleLayer.WRITTEN_NAMES.filter((name) => name !== 'gg.json').map((name) => [
-      name,
-      file(exampleLayer.fixtureText(name)),
-    ]),
+  const source = exampleSource.config();
+  exampleSource.putAt(
+    source,
+    ['files'],
+    Object.fromEntries(
+      exampleSource.WRITTEN_NAMES.filter((name) => name !== 'gg.json').map((name) => [
+        name,
+        file(exampleSource.fixtureText(name)),
+      ]),
+    ),
   );
-  for (const agent of Object.values<Record<string, unknown>>(layer.agents)) agent.harness = 'claude';
-  return layer;
+  for (const agent of Object.values(source.agents)) agent.harness = 'claude';
+  return source;
 }
 
 // gg doctor over the Claude Harness shipped builds, its CLI answering as recorded, changed by `state`, and every

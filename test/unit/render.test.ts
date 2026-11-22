@@ -6,10 +6,10 @@ import * as render from '../../lib/render.ts';
 import * as marker from '../../lib/marker.ts';
 import type * as record from '../../lib/record.ts';
 import * as actionMarkerParts from '../support/action-marker-parts.ts';
-import * as exampleLayer from '../support/example-layer.ts';
+import * as exampleSource from '../support/example-source.ts';
 
 // A template of the example `gg init` writes.
-const shipped = (name: string) => exampleLayer.fixtureText(name);
+const shipped = (name: string) => exampleSource.fixtureText(name);
 
 const { asText } = actionMarkerParts;
 const parts = { ...actionMarkerParts.parts, visit: 1, action: 'commit', recovery: 0 };

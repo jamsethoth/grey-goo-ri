@@ -94,7 +94,7 @@ test('every JSON.parse in lib, bin, scripts and test is called where it is read,
     'a parse in lib/config.ts is found',
   );
   assert.ok(
-    calls.some(({ where }) => where.startsWith('test/support/example-layer.ts:')),
+    calls.some(({ where }) => where.startsWith('test/support/example-source.ts:')),
     'a parse in test/support is found',
   );
   assert.deepEqual(
