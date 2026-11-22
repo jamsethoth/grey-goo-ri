@@ -63,8 +63,10 @@ test('probe', () => {});
 `,
   'slow.js': `setTimeout(() => console.log('slow done ' + process.argv[2]), 20000);
 `,
-  // About 7,500 tokens a run, so three runs pass a 30,000-token auto-compact limit.
-  'print.js': `const words = 'amber birch cedar delta ember fjord grove harbor island juniper kestrel lantern'.split(' ');
+  // About 5,000 tokens a run as the model sees it (the output is truncated), so a run passes a 16,000-token
+  // auto-compact limit over the ~13,000-token start.
+  'print.js': `const words = 'amber birch cedar delta ember fjord grove harbor island juniper kestrel lantern'
+  .split(' ');
 let seed = Number(process.argv[2]) * 7919;
 for (let line = 1; line <= 400; line += 1) {
   const picked = [];
@@ -105,14 +107,15 @@ const MCP_SERVER = `const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline');
 const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\\n');
-const tool = { name: 'probe_word', description: 'Returns the probe word.', inputSchema: { type: 'object', properties: {} } };
+const tool = { name: 'probe_word', description: 'Returns the probe word.',
+  inputSchema: { type: 'object', properties: {} } };
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   const request = JSON.parse(line);
   fs.appendFileSync(path.join(__dirname, 'mcp-log.txt'), request.method + '\\n');
   if (request.id === undefined) return;
   if (request.method === 'initialize')
-    return send({ id: request.id, result: { protocolVersion: request.params.protocolVersion, capabilities: { tools: {} },
-      serverInfo: { name: 'probe', version: '1.0.0' } } });
+    return send({ id: request.id, result: { protocolVersion: request.params.protocolVersion,
+      capabilities: { tools: {} }, serverInfo: { name: 'probe', version: '1.0.0' } } });
   if (request.method === 'tools/list') return send({ id: request.id, result: { tools: [tool] } });
   if (request.method === 'tools/call')
     return send({ id: request.id, result: { content: [{ type: 'text', text: 'marigold' }] } });

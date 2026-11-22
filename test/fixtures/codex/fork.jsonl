@@ -1,4 +1,4 @@
-{"type":"thread.started","thread_id":"01a20433-be70-72e0-8f89-951ae1e85d39"}
+{"type":"thread.started","thread_id":"01a2044a-850a-7e90-875c-ede68ab6078e"}
 {"type":"turn.started"}
 {"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"{\"answer\":\"heliotrope\"}"}}
-{"type":"turn.completed","usage":{"input_tokens":67420,"cached_input_tokens":39040,"cache_write_input_tokens":0,"output_tokens":189,"reasoning_output_tokens":0}}
+{"type":"turn.completed","usage":{"input_tokens":113063,"cached_input_tokens":93568,"cache_write_input_tokens":0,"output_tokens":545,"reasoning_output_tokens":0}}

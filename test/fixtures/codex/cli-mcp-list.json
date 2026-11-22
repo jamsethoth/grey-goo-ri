@@ -1,0 +1,16 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "command": "cli-mcp-list",
+  "purpose": "the MCP servers gg's CODEX_HOME configures",
+  "argv": [
+    "mcp",
+    "list",
+    "--json"
+  ],
+  "home": "gg",
+  "repository": "plain",
+  "exitCode": 0,
+  "stdout": "[]\n",
+  "promptInput": null,
+  "stderr": ""
+}

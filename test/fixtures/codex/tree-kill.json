@@ -72,7 +72,7 @@
           {
             "pid": 66180,
             "exe": "node.exe",
-            "commandLine": "\"C:\\Program Files\\nodejs\\node.exe\" C:\\dev\\worktrees\\grey-goo-ri\\479-codex-probe\\lib\\containment-gate.ts"
+            "commandLine": "\"C:\\Program Files\\nodejs\\node.exe\" <gg>\\lib\\containment-gate.ts"
           },
           {
             "pid": 16900,

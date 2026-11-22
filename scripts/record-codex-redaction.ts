@@ -3,9 +3,12 @@
 // repository URL replaced by key; and a session file trimmed of OpenAI's base instructions, encrypted reasoning, and
 // the developer messages' text, which lists the user's own skills and plugins.
 import { homedir, userInfo } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 // The keys whose string value names the account or the machine.
 const ACCOUNT_KEYS = /account_id|user_id|^email$|repository_url|installation_id|^creator_/i;
+// The gg checkout the recorder runs from, which the job listing names (lib/containment-gate.ts).
+const CHECKOUT = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]$/, '');
 const TRIMMED_KEYS = new Set(['base_instructions', 'encrypted_content']);
 
 // The text replacements: as written, with forward slashes, JSON-escaped, as Git Bash writes a path, and as a
@@ -21,6 +24,7 @@ export function redactorOf(base: string) {
   };
   const pairs: [RegExp, string][] = [
     ...forms(base).map((form): [RegExp, string] => [new RegExp(form, 'gi'), '<recording>']),
+    ...forms(CHECKOUT).map((form): [RegExp, string] => [new RegExp(form, 'gi'), '<gg>']),
     ...forms(homedir()).map((form): [RegExp, string] => [new RegExp(form, 'gi'), '<home>']),
     [new RegExp(escape(userInfo().username), 'gi'), '<user>'],
     [/eyJ[\w-]+\.[\w-]+\.[\w-]+/g, '<jwt>'],

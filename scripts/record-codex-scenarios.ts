@@ -63,7 +63,9 @@ export const SCENARIOS: Scenario[] = [
     name: 'start',
     purpose:
       'a new thread, read-only, with --json, --output-schema and -o (F2): the stream, the rollout and where it lands',
-    prompt: 'Read README.md and answer with the word it names.',
+    prompt: `${RUN_EACH}
+1. Get-Content README.md
+Then answer with the word it names.`,
   },
   {
     name: 'resume-flags-before',
@@ -79,22 +81,22 @@ Then answer with whether it ran, what it printed, and the word you read from REA
   {
     name: 'resume-config-after',
     purpose:
-      'the start thread resumed with -c sandbox_mode="workspace-write" after resume, started from the directory ' +
-      'above the repository with no -C: which sandbox and cwd the resumed turn keeps',
+      'the thread, last run workspace-write, resumed with -c sandbox_mode="read-only" after resume, started from ' +
+      'the directory above the repository with no -C: does the -c take effect, and which cwd does the turn run in?',
     start: { kind: 'resume-config-after', from: 'start' },
     cwd: 'base',
-    config: ['sandbox_mode="workspace-write"'],
+    config: ['sandbox_mode="read-only"'],
     // Outside a git repository, resume refuses to start without it.
     extraArgv: ['--skip-git-repo-check'],
     prompt: `${RUN_EACH}
-1. node write.js resume-config.txt
+1. Set-Content -Path resume-config.txt -Value made
 2. Get-Location
 ${REPORT}`,
   },
   {
     name: 'fork',
     purpose:
-      "the start thread forked with --sandbox read-only on exec before fork: what --json emits, whether usage is " +
+      'the start thread forked with --sandbox read-only on exec before fork: what --json emits, whether usage is ' +
       "cumulative, whether the fork runs read-only, and whether the original thread's rollout is unchanged",
     start: { kind: 'fork', from: 'start' },
     prompt: 'Without any tool, answer with the word you read from README.md earlier in this conversation.',
@@ -160,7 +162,7 @@ ${REPORT}`,
   {
     name: 'tree-kill',
     purpose:
-      "a call whose job is terminated mid-turn while a command runs: the events, the exit code, what is left running",
+      'a call whose job is terminated mid-turn while a command runs: the events, the exit code, what is left running',
     sandbox: 'workspace-write',
     killOn: 'gg-kill-marker',
     prompt: `${RUN_EACH}
@@ -180,7 +182,7 @@ ${REPORT}`,
     purpose:
       'a low model_auto_compact_token_limit and three large outputs: does a compaction mid-exec emit anything in ' +
       '--json, and what does the rollout hold?',
-    config: ['model_auto_compact_token_limit=30000'],
+    config: ['model_auto_compact_token_limit=16000'],
     prompt: `${RUN_EACH}
 1. node print.js 1
 2. node print.js 2
@@ -195,7 +197,8 @@ Then answer with the last line command 3 printed.`,
     repository: 'sentinels',
     repositoryContent: true,
     hooks: { enabled: true, bypassTrust: true },
-    prompt: `${RUN_EACH}
+    prompt:
+      `${RUN_EACH}
 1. node outside.js
 Then answer with whether it ran and what it printed, and every word that begins with SENTINEL- that you can see ` +
       'anywhere in your instructions, context or tool results.',
@@ -207,7 +210,8 @@ Then answer with whether it ran and what it printed, and every word that begins 
     repositoryContent: true,
     trusted: true,
     hooks: { enabled: true, bypassTrust: true },
-    prompt: `${RUN_EACH}
+    prompt:
+      `${RUN_EACH}
 1. node outside.js
 Then answer with whether it ran and what it printed, and every word that begins with SENTINEL- that you can see ` +
       'anywhere in your instructions, context or tool results.',
@@ -229,8 +233,8 @@ Then answer with whether it ran and what it printed, and every word that begins 
   {
     name: 'usage-limit',
     purpose:
-      'a stand-in Responses API that answers 429 usage_limit_reached, in an empty CODEX_HOME: the usage-limit failure ' +
-      '(no real usage limit can be asked for)',
+      'a stand-in Responses API that answers 429 usage_limit_reached, in an empty CODEX_HOME: the usage-limit ' +
+      'failure (no real usage limit can be asked for)',
     home: 'empty',
     stub: true,
     modelCall: false,
@@ -270,7 +274,15 @@ export const COMMANDS: CliCommand[] = [
   },
   { name: 'cli-doctor', purpose: "codex's own doctor report, in gg's CODEX_HOME", argv: ['doctor', '--json'] },
   { name: 'cli-mcp-list', purpose: "the MCP servers gg's CODEX_HOME configures", argv: ['mcp', 'list', '--json'] },
-  { name: 'cli-plugin-list', purpose: "the plugins gg's CODEX_HOME knows", argv: ['plugin', 'list'] },
+  // Without --json the listing names every plugin of the remote catalog (over 1 MB); --json without --available
+  // names the installed ones.
+  { name: 'cli-plugin-list', purpose: "the plugins installed in gg's CODEX_HOME", argv: ['plugin', 'list', '--json'] },
+  {
+    name: 'cli-plugin-list-installed',
+    purpose: 'the plugins installed in a CODEX_HOME holding the probe plugin, disabled in its config',
+    argv: ['plugin', 'list', '--json'],
+    home: 'plugin',
+  },
   { name: 'cli-features', purpose: 'the feature flags and their stages', argv: ['features', 'list'] },
   { name: 'cli-exec-help', purpose: "exec's flags", argv: ['exec', '--help'] },
   { name: 'cli-exec-resume-help', purpose: "exec resume's flags", argv: ['exec', 'resume', '--help'] },
@@ -308,13 +320,13 @@ export const COMMANDS: CliCommand[] = [
   },
   ...['AGENTS.override.md', 'AGENTS.md', 'TEAM_GUIDE.md', '.agents.md'].flatMap((file): CliCommand[] => [
     {
-      name: `prompt-input-only-${file.replace(/^\./, '').replaceAll('.', '-').toLowerCase()}`,
+      name: `prompt-input-only-${file.replace(/^\./, 'dot-').replaceAll('.', '-').toLowerCase()}`,
       purpose: `decision 3: ${file} alone in the repository, with no empty-start key: does it load?`,
       argv: [...PROMPT_INPUT, 'hi'],
       repository: `only:${file}`,
     },
     {
-      name: `prompt-input-only-${file.replace(/^\./, '').replaceAll('.', '-').toLowerCase()}-max-bytes-0`,
+      name: `prompt-input-only-${file.replace(/^\./, 'dot-').replaceAll('.', '-').toLowerCase()}-max-bytes-0`,
       purpose: `decision 3: ${file} alone, under project_doc_max_bytes=0`,
       argv: [...PROMPT_INPUT, '-c', 'project_doc_max_bytes=0', 'hi'],
       repository: `only:${file}`,
@@ -327,7 +339,8 @@ export const COMMANDS: CliCommand[] = [
   },
   {
     name: 'prompt-input-plugin-listed',
-    purpose: 'decision 7: a plugin installed in CODEX_HOME and disabled there, enabled by -c as a table (plugins exact)',
+    purpose:
+      'decision 7: a plugin installed in CODEX_HOME and disabled there, enabled by -c as a table (plugins exact)',
     argv: [...PROMPT_INPUT, '-c', `plugins={${PLUGIN}={enabled=true}}`, 'hi'],
     home: 'plugin',
   },

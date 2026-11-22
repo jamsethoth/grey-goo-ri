@@ -24,7 +24,7 @@
     "items": [
       {
         "type": "additional_tools",
-        "id": "at_01a20432-4bb6-7a53-b14b-46463faa4eb2",
+        "id": "at_01a20446-db2b-7be3-95a7-dcbb59f04f13",
         "role": "developer",
         "tools": [
           "functions[exec,wait,request_user_input,request_user_input_async,send_message_to_user_async]",
@@ -34,7 +34,7 @@
       },
       {
         "type": "message",
-        "id": "msg_01a20432-4bb6-7a53-b14b-465a7d8d26a0",
+        "id": "msg_01a20446-db2b-7be3-95a7-dcc8800bd99b",
         "role": "developer",
         "content": [
           {
@@ -44,7 +44,7 @@
         ],
         "internal_chat_message_metadata_passthrough": {
           "turn_id": "auto-compact-0",
-          "create_time": 1795366734.77432,
+          "create_time": 1795368082.2192624,
           "content_item_kinds": [
             "model.base_instructions"
           ],
@@ -60,7 +60,7 @@
       },
       {
         "type": "message",
-        "id": "msg_01a20432-4bb6-7a53-b14b-46663591a7ed",
+        "id": "msg_01a20446-db2b-7be3-95a7-dcd0793754db",
         "role": "developer",
         "content": [
           {
@@ -86,7 +86,7 @@
         ],
         "internal_chat_message_metadata_passthrough": {
           "turn_id": "auto-compact-0",
-          "create_time": 1795366734.7743225,
+          "create_time": 1795368082.2192647,
           "content_item_kinds": [
             "host_skills.instructions",
             "permissions.instructions",
@@ -129,7 +129,7 @@
       },
       {
         "type": "message",
-        "id": "msg_01a20432-4bb6-7a53-b14b-467f4bc9be43",
+        "id": "msg_01a20446-db2b-7be3-95a7-dce07865d62e",
         "role": "developer",
         "content": [
           {
@@ -139,7 +139,7 @@
         ],
         "internal_chat_message_metadata_passthrough": {
           "turn_id": "auto-compact-0",
-          "create_time": 1795366734.774323,
+          "create_time": 1795368082.219265,
           "content_item_kinds": [
             "multi_agent.role_instructions"
           ],
@@ -155,7 +155,7 @@
       },
       {
         "type": "message",
-        "id": "msg_01a20432-4bb6-7a53-b14b-468470e2824d",
+        "id": "msg_01a20446-db2b-7be3-95a7-dcf8f629d9fb",
         "role": "developer",
         "content": [
           {
@@ -165,7 +165,7 @@
         ],
         "internal_chat_message_metadata_passthrough": {
           "turn_id": "auto-compact-0",
-          "create_time": 1795366734.774323,
+          "create_time": 1795368082.2192652,
           "content_item_kinds": [
             "multi_agent.mode_instructions"
           ],
@@ -181,7 +181,7 @@
       },
       {
         "type": "message",
-        "id": "msg_01a20432-4bb6-7a53-b14b-469051a7acac",
+        "id": "msg_01a20446-db2b-7be3-95a7-dd04ef5fa633",
         "role": "user",
         "content": [
           {
@@ -195,7 +195,7 @@
         ],
         "internal_chat_message_metadata_passthrough": {
           "turn_id": "auto-compact-0",
-          "create_time": 1795366734.7743235,
+          "create_time": 1795368082.2192655,
           "content_item_kinds": [
             "agents_md.instructions",
             "environments.environment_context"
@@ -217,7 +217,7 @@
       },
       {
         "type": "message",
-        "id": "msg_01a20432-4bb6-7a53-b14b-46a7ffde15be",
+        "id": "msg_01a20446-db2b-7be3-95a7-dd1cd6eb6b0a",
         "role": "user",
         "content": [
           {
@@ -227,7 +227,7 @@
         ],
         "internal_chat_message_metadata_passthrough": {
           "turn_id": "auto-compact-0",
-          "create_time": 1795366734.7748437,
+          "create_time": 1795368082.2196853,
           "content_item_kinds": [
             "user.text"
           ],

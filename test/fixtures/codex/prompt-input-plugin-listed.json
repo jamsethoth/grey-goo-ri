@@ -25,7 +25,7 @@
     "items": [
       {
         "type": "additional_tools",
-        "id": "at_01a20432-61d7-7e93-83d4-30d51e67c826",
+        "id": "at_01a20447-1067-75d1-a493-6263f76ea757",
         "role": "developer",
         "tools": [
           "functions[exec,wait,request_user_input,request_user_input_async,send_message_to_user_async]",
@@ -35,7 +35,7 @@
       },
       {
         "type": "message",
-        "id": "msg_01a20432-61d7-7e93-83d4-30e1cb5d8182",
+        "id": "msg_01a20447-1067-75d1-a493-627994799f6d",
         "role": "developer",
         "content": [
           {
@@ -45,7 +45,7 @@
         ],
         "internal_chat_message_metadata_passthrough": {
           "turn_id": "auto-compact-0",
-          "create_time": 1795366740.4393318,
+          "create_time": 1795368095.847743,
           "content_item_kinds": [
             "model.base_instructions"
           ],
@@ -61,7 +61,7 @@
       },
       {
         "type": "message",
-        "id": "msg_01a20432-61d7-7e93-83d4-30fc5ec8214c",
+        "id": "msg_01a20447-1067-75d1-a493-62883820ea06",
         "role": "developer",
         "content": [
           {
@@ -79,7 +79,7 @@
         ],
         "internal_chat_message_metadata_passthrough": {
           "turn_id": "auto-compact-0",
-          "create_time": 1795366740.439336,
+          "create_time": 1795368095.8477452,
           "content_item_kinds": [
             "host_skills.instructions",
             "permissions.instructions",
@@ -108,7 +108,7 @@
       },
       {
         "type": "message",
-        "id": "msg_01a20432-61d7-7e93-83d4-3102da2597fb",
+        "id": "msg_01a20447-1067-75d1-a493-62984601115f",
         "role": "developer",
         "content": [
           {
@@ -118,7 +118,7 @@
         ],
         "internal_chat_message_metadata_passthrough": {
           "turn_id": "auto-compact-0",
-          "create_time": 1795366740.4393365,
+          "create_time": 1795368095.8477454,
           "content_item_kinds": [
             "multi_agent.role_instructions"
           ],
@@ -134,7 +134,7 @@
       },
       {
         "type": "message",
-        "id": "msg_01a20432-61d7-7e93-83d4-3114aeae6d0f",
+        "id": "msg_01a20447-1067-75d1-a493-62a4956fe6df",
         "role": "developer",
         "content": [
           {
@@ -144,7 +144,7 @@
         ],
         "internal_chat_message_metadata_passthrough": {
           "turn_id": "auto-compact-0",
-          "create_time": 1795366740.4393373,
+          "create_time": 1795368095.8477457,
           "content_item_kinds": [
             "multi_agent.mode_instructions"
           ],
@@ -160,7 +160,7 @@
       },
       {
         "type": "message",
-        "id": "msg_01a20432-61d7-7e93-83d4-3125b39f870b",
+        "id": "msg_01a20447-1067-75d1-a493-62b7747894fa",
         "role": "user",
         "content": [
           {
@@ -170,7 +170,7 @@
         ],
         "internal_chat_message_metadata_passthrough": {
           "turn_id": "auto-compact-0",
-          "create_time": 1795366740.4393375,
+          "create_time": 1795368095.847746,
           "content_item_kinds": [
             "environments.environment_context"
           ],
@@ -186,7 +186,7 @@
       },
       {
         "type": "message",
-        "id": "msg_01a20432-61d8-7502-895d-e481dda51f39",
+        "id": "msg_01a20447-1068-7143-b67f-a260f5d9296d",
         "role": "user",
         "content": [
           {
@@ -196,7 +196,7 @@
         ],
         "internal_chat_message_metadata_passthrough": {
           "turn_id": "auto-compact-0",
-          "create_time": 1795366740.4401424,
+          "create_time": 1795368095.8482177,
           "content_item_kinds": [
             "user.text"
           ],
@@ -211,5 +211,5 @@
       }
     ]
   },
-  "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<home>\\\\AppData\\\\Local\\\\Temp\\\\\" (codex_home: AbsolutePathBuf(\"<home>\\\\AppData\\\\Local\\\\Temp\\\\gg-codex-xCy452\\\\prompt-input-plugin-listed\\\\home\"))\n"
+  "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<home>\\\\AppData\\\\Local\\\\Temp\\\\\" (codex_home: AbsolutePathBuf(\"<recording>\\\\home\"))\n"
 }

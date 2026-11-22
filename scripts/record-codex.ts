@@ -70,19 +70,25 @@ function profile(
 const fill = (text: string, values: Record<string, string>) =>
   text.replace(/\{(\w+)\}/g, (whole, key: string) => values[key] ?? whole);
 
+// How the call starts: a new thread, or the thread it continues resumed or forked, with --sandbox and -C on exec
+// before resume or fork (request 3.2) except for the resume that sets its sandbox by -c after resume.
+function headOf(scenario: Scenario, repo: string, threadId: string) {
+  const sandbox = ['-s', scenario.sandbox ?? 'read-only', '-C', repo];
+  const kind = scenario.start?.kind;
+  if (kind === 'resume-config-after') return ['exec', 'resume', threadId];
+  if (kind === 'resume-flags-before') return ['exec', ...sandbox, 'resume', threadId];
+  if (kind === 'fork') return ['exec', ...sandbox, 'fork', threadId];
+  return ['exec', ...sandbox];
+}
+
 // The call's argv: the start, resume or fork, then the profile, the scenario's own keys, and the stream, schema and
 // final-message flags, with the prompt on stdin.
-function argvOf(scenario: Scenario, directories: repository.Directories, values: Record<string, string>, from?: Recorded) {
-  const sandbox = ['-s', scenario.sandbox ?? 'read-only', '-C', directories.repo];
-  const kind = scenario.start?.kind;
-  const head =
-    kind === 'resume-flags-before'
-      ? ['exec', ...sandbox, 'resume', from?.threadId ?? '']
-      : kind === 'resume-config-after'
-        ? ['exec', 'resume', from?.threadId ?? '']
-        : kind === 'fork'
-          ? ['exec', ...sandbox, 'fork', from?.threadId ?? '']
-          : ['exec', ...sandbox];
+function argvOf(
+  scenario: Scenario,
+  directories: repository.Directories,
+  values: Record<string, string>,
+  from?: Recorded,
+) {
   const hooks = scenario.hooks
     ? [
         '-c',
@@ -94,7 +100,7 @@ function argvOf(scenario: Scenario, directories: repository.Directories, values:
     ? ['-c', `mcp_servers.probe={command="node",args=[${JSON.stringify(`${directories.base}/mcp-server.cjs`)}]}`]
     : [];
   return [
-    ...head,
+    ...headOf(scenario, directories.repo, from?.threadId ?? ''),
     ...profile(directories.repo, { ...scenario, hooks: scenario.hooks?.enabled }),
     ...(scenario.config ?? []).flatMap((key) => ['-c', fill(key, values)]),
     ...hooks,
@@ -164,15 +170,46 @@ function filesUnder(base: string) {
 
 const textOf = (path: string) => (existsSync(path) ? readFileSync(path, 'utf8') : null);
 
-function homeOf(scenario: Scenario, base: string) {
-  if (scenario.home !== 'empty') return GG_CODEX_HOME;
+// gg's CODEX_HOME, or an empty one in the call's directory that holds no login.
+function homeOf(home: 'gg' | 'empty' | 'plugin' | undefined, base: string) {
+  if (home !== 'empty') return GG_CODEX_HOME;
   mkdirSync(join(base, 'home'), { recursive: true });
   return join(base, 'home');
 }
 
-async function record(scenario: Scenario, cliVersion: string, base: string, from: Recorded | undefined) {
+// What a call left behind: files it created, the hook and MCP logs, the forked rollout's hash, the job's processes,
+// the home's changes, the stub's requests, and the home's log tail when it failed.
+function evidenceOf(call: {
+  base: string;
+  home: string;
+  output: contained.Output;
+  before: { files: string[]; forked: string | null };
+  forkedRollout: string | null;
+  homeChanges: ReturnType<ReturnType<typeof homeGuard.guard>['restore']>;
+  stubRequests: string[] | null;
+}) {
+  const { base, output, before, forkedRollout } = call;
+  return {
+    created: filesUnder(base).filter((path) => !before.files.includes(path)),
+    hookLog: textOf(join(base, 'hook-log.txt')),
+    mcpLog: textOf(join(base, 'mcp-log.txt')),
+    forkedRollout:
+      forkedRollout === null ? null : { unchanged: before.forked === hashOf(forkedRollout), path: forkedRollout },
+    job: output.job,
+    homeChanges: call.homeChanges,
+    stubRequests: call.stubRequests,
+    homeLogTail: output.exitCode === 0 ? null : homeGuard.logTail(call.home),
+  };
+}
+
+// The session file a fork continues, whose hash shows whether the fork left it unchanged.
+const forkedOf = (scenario: Scenario, home: string, from: Recorded | undefined) =>
+  scenario.start?.kind === 'fork' ? rolloutOf(home, from?.threadId ?? null) : null;
+
+// One call: its directories and home, the launch inside a job, and what it changed around it.
+async function call(scenario: Scenario, base: string, from: Recorded | undefined) {
   const directories = from?.directories ?? repository.prepare(base, scenario.repository ?? 'plain');
-  const home = from?.home ?? homeOf(scenario, directories.base);
+  const home = from?.home ?? homeOf(scenario.home, directories.base);
   writeFileSync(join(directories.run, 'schema.json'), JSON.stringify(SCHEMA));
   const requests: string[] = [];
   const stub = scenario.stub ? await startStub(requests) : undefined;
@@ -180,26 +217,29 @@ async function record(scenario: Scenario, cliVersion: string, base: string, from
   const argv = argvOf(scenario, directories, values, from);
   const env = { ...scenario.env, CODEX_HOME: home };
   const cwd = scenario.cwd === 'base' ? directories.base : directories.repo;
-  const forkedRollout = scenario.start?.kind === 'fork' ? rolloutOf(home, from?.threadId ?? null) : null;
+  const forkedRollout = forkedOf(scenario, home, from);
   const before = { files: filesUnder(directories.base), forked: hashOf(forkedRollout) };
   const guard = homeGuard.guard(home, scenario.hooks ? repository.hooksOf(directories.base, 'home') : null);
-  const output = await contained.run({ argv, cwd, env, prompt: scenario.prompt, watch: scenario.watch, killOn: scenario.killOn });
+  const { prompt, watch, killOn } = scenario;
+  const output = await contained.run({ argv, cwd, env, prompt, watch, killOn });
   const homeChanges = guard.restore();
   stub?.close();
-  const threadId = threadOf(output.lines);
-  const rollout = rolloutOf(home, threadId);
-  const after = filesUnder(directories.base);
-  const evidence = {
-    created: after.filter((path) => !before.files.includes(path)),
-    hookLog: textOf(join(directories.base, 'hook-log.txt')),
-    mcpLog: textOf(join(directories.base, 'mcp-log.txt')),
-    forkedRollout:
-      forkedRollout === null ? null : { unchanged: before.forked === hashOf(forkedRollout), path: forkedRollout },
-    job: output.job,
+  const evidence = evidenceOf({
+    base: directories.base,
+    home,
+    output,
+    before,
+    forkedRollout,
     homeChanges,
     stubRequests: stub ? requests : null,
-    homeLogTail: output.exitCode === 0 ? null : homeGuard.logTail(home),
-  };
+  });
+  return { directories, home, argv, env, output, evidence };
+}
+
+async function record(scenario: Scenario, cliVersion: string, base: string, from: Recorded | undefined) {
+  const { directories, home, argv, env, output, evidence } = await call(scenario, base, from);
+  const threadId = threadOf(output.lines);
+  const rollout = rolloutOf(home, threadId);
   const meta = {
     cliVersion,
     scenario: scenario.name,
@@ -219,8 +259,8 @@ async function record(scenario: Scenario, cliVersion: string, base: string, from
   };
   const redact = redaction.redactorOf(directories.base);
   save(scenario.name, redact, output.lines, meta);
-  const rolloutLines = rollout === null ? [] : readFileSync(rollout, 'utf8').split('\n').filter(Boolean);
-  if (rollout !== null) writeLines(`${scenario.name}.rollout.jsonl`, redact, rolloutLines);
+  if (rollout !== null)
+    writeLines(`${scenario.name}.rollout.jsonl`, redact, readFileSync(rollout, 'utf8').split('\n').filter(Boolean));
   console.log(`${scenario.name}: exit ${output.exitCode}, ${output.lines.length} lines, killed ${output.killed}`);
   return { directories, threadId, home };
 }
@@ -243,7 +283,12 @@ const environmentWith = (env: Record<string, string>) => ({
 
 function codexSync(argv: string[], options: { cwd?: string; env: Record<string, string> }) {
   const { command, args } = commandShim.argvOf('codex', argv);
-  return spawnSync(command, args, { ...options, env: environmentWith(options.env), encoding: 'utf8', timeout: 120_000 });
+  return spawnSync(command, args, {
+    ...options,
+    env: environmentWith(options.env),
+    encoding: 'utf8',
+    timeout: 120_000,
+  });
 }
 
 // An empty CODEX_HOME with the probe plugin installed from a local marketplace, then disabled in its config, so only
@@ -273,19 +318,15 @@ function promptInputFacts(stdout: string) {
 // One command that is no model call, in a directory of its own.
 function recordCommand(command: CliCommand, cliVersion: string, base: string) {
   const directories = repository.prepare(base, command.repository ?? 'plain');
-  const home =
-    command.home === 'plugin'
-      ? pluginHome(base)
-      : command.home === 'empty'
-        ? (mkdirSync(join(base, 'home'), { recursive: true }), join(base, 'home'))
-        : GG_CODEX_HOME;
-  const at = command.argv[0] === 'debug' ? 2 : 0;
+  const home = command.home === 'plugin' ? pluginHome(base) : homeOf(command.home, base);
+  // The profile's -c keys go after `debug prompt-input`, which takes them, and before any other command.
+  const split = command.argv[0] === 'debug' ? 2 : 0;
   const extra = command.profile || command.trusted ? profileFor(command, directories.repo) : [];
-  const argv = [...command.argv.slice(0, at), ...extra, ...command.argv.slice(at)].map((arg) =>
+  const argv = [...command.argv.slice(0, split), ...extra, ...command.argv.slice(split)].map((arg) =>
     fill(arg, { base: directories.base.replaceAll('\\', '/') }),
   );
   const ran = codexSync(argv, { cwd: directories.repo, env: { CODEX_HOME: home } });
-  const isPromptInput = at === 2 && ran.status === 0;
+  const isPromptInput = split === 2 && ran.status === 0;
   const meta = {
     cliVersion,
     command: command.name,

@@ -1,0 +1,16 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "command": "cli-plugin-list-installed",
+  "purpose": "the plugins installed in a CODEX_HOME holding the probe plugin, disabled in its config",
+  "argv": [
+    "plugin",
+    "list",
+    "--json"
+  ],
+  "home": "plugin",
+  "repository": "plain",
+  "exitCode": 0,
+  "stdout": "{\n  \"installed\": [\n    {\n      \"pluginId\": \"probe-plugin@gg-probe\",\n      \"name\": \"probe-plugin\",\n      \"marketplaceName\": \"gg-probe\",\n      \"version\": \"1.0.0\",\n      \"installed\": true,\n      \"enabled\": false,\n      \"source\": {\n        \"source\": \"local\",\n        \"path\": \"<recording>\\\\marketplace\\\\plugins\\\\probe-plugin\"\n      },\n      \"marketplaceSource\": {\n        \"sourceType\": \"local\",\n        \"source\": \"\\\\\\\\?\\\\<recording>\\\\marketplace\"\n      },\n      \"installPolicy\": \"AVAILABLE\",\n      \"authPolicy\": \"ON_INSTALL\"\n    }\n  ],\n  \"available\": []\n}\n",
+  "promptInput": null,
+  "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<home>\\\\AppData\\\\Local\\\\Temp\\\\\" (codex_home: AbsolutePathBuf(\"<recording>\\\\home\"))\n"
+}
