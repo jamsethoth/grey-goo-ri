@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type * as approval from './approval.ts';
 import type * as sideEffect from './effects/side-effect.ts';
 import type * as events from './events.ts';
+import * as contract from './harnesses/contract.ts';
 import * as jsonValue from './json-value.ts';
 import type * as marker from './marker.ts';
 import type * as visit from './visit.ts';
@@ -103,6 +104,15 @@ export interface SessionEntry {
   personaName: string;
   // Each Session the Action handed off past its contextBudget, oldest first, kept resumable for a question (#430).
   handedOff?: HandedOffSession[];
+}
+
+// A Session's cumulativeUsage is its last reported total, the baseline its next resumed call is given: a resumed call
+// that left a count null, as a Claude call stopped before its result line does, keeps the Session's earlier value
+// (#487 Q1 A).
+export function sessionTotal(earlier: events.Usage | undefined, usage: events.Usage): events.Usage {
+  if (!earlier) return usage;
+  const counts = contract.usageOf((field) => usage[field] ?? earlier[field]);
+  return 'costBasis' in usage ? { ...counts, costBasis: usage.costBasis ?? earlier.costBasis ?? null } : counts;
 }
 
 // A Session an agent handed off: its id and transcript, its total Usage, and the Attempt that ran it.

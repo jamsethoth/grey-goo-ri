@@ -240,7 +240,7 @@ function saveSession(
     harness: pinned.harness,
     personaHash: persona.hash,
     transcriptPath: result.transcriptPath,
-    cumulativeUsage: result.usage.cumulative,
+    cumulativeUsage: record.sessionTotal(resume ? before?.cumulativeUsage : undefined, result.usage.cumulative),
     vertex: actionIdentity.vertex,
     model: pinned.model,
     effort: pinned.effort,
