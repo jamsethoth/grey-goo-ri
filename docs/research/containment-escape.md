@@ -49,7 +49,7 @@ No test called `claude`. After the probes no process of theirs was running, on W
 
 Recommended: no breakaway; on Windows an Agent's shell is a PowerShell that is not packaged, checked by one shell check
 both Harnesses share; a Windows descendant watcher for a launch and a Check that adopts or ends each process outside
-gg's job, and records `none` when it can do neither; cgroups on Linux through #128 and #289. Codex's sandbox helper
+gg's job, and saves the call's containment as `none` when it first sees one; cgroups on Linux through #128 and #289. Codex's sandbox helper
 needs nothing of its own.
 
 ## 1. Why the escape happens
@@ -309,15 +309,18 @@ ADR 0030 proposes it; this is its outline.
    handle: into gg's job, else into a new kill-on-close job gg holds, else terminated. At cleanup gg ends its job and
    each adopted job, closes its handles, and confirms each linked process gone; one it cannot, or cannot open, is a
    survivor, with `confirmed: false`.
-4. **A call's recorded containment stays `job` only while 3 holds.** An escapee gg could neither adopt nor terminate
-   makes gg write the call's containment as `none`, so a resume rescues and holds it rather than reset in place.
+4. **A call's recorded containment stays `job` only while nothing it started has left gg's job.** The first linked
+   process the watcher sees outside gg's job makes gg save the call's containment as `none` before it adopts or ends
+   that process, and it stays `none`, so a crash after an escapee is seen leaves a call a resume rescues and holds
+   rather than reset in place. The rules of record.md and harness.md this changes raise `RECORD_SCHEMA_VERSION` (3 to
+   4) and `FAKE_HARNESS_VERSION` (5 to 6), with no rule for a `job` saved before the bump, since gg has none in use.
 5. **One shell check for both Harnesses:** the static check on every `gg doctor` and preflight, the live one under
    `gg doctor --probe`.
 6. **Linux** takes cgroups through #128 and #289, one mechanism; until then the stdio-closed double fork is the named
    residual risk there.
 
-What stays unseen, the residual risk this replaces the breakaway text with: on Windows, a process outside gg's job whose
-parent ended before a poll saw it, and a process a service, WMI or the task scheduler starts on a command's behalf,
+What stays unseen, the residual risk this replaces the breakaway text with: on Windows, a process outside gg's job that
+no poll saw before its parent ended or gg died, and a process a service, WMI or the task scheduler starts on a command's behalf,
 which no parent link ties to the command (`docs/testing.md:240` names the second already); on Linux without a cgroup, a
 process that leaves the group and closes its stdio.
 
@@ -340,12 +343,15 @@ same for a stdio-closed double fork.
 - **#69's trigger** ("a tool that broke away from the job object") is not rare: every Claude PowerShell command on a
   machine with the Store's pwsh, and every non-MSYS child of Git Bash under gg's current limits.
 
-**Under the recommended design.** `job` means again what N1 needs: every process the call started was in gg's job or
-in a job gg adopted it into, each with kill-on-close on a handle only gg holds, so gg's death ends them all; and a call
-with an escapee gg could not adopt or end records `none`, which `lib/rescue.ts:216` already rescues and holds. Neither
-`lib/rescue.ts` nor `confirmedUnder` changes; their premise becomes true. A Pending cleanup hold's `closeJob` must close
-the adopted jobs too. The residual gap above stays: an escapee unseen at gg's death is not ended, and a reset can run
-under it. #69 stays an alternative for file locks and rescued human edits; this design does not need it.
+**Under the recommended design.** `job` means again what N1 needs: no process the call started ever left gg's job, so
+kill-on-close on a handle only gg holds ends them all at gg's death. A call whose watcher saw an escapee saves `none`
+before gg adopts or ends it, write-ahead (ADR 0005), and keeps it, which `lib/rescue.ts:216` already rescues and holds:
+a crash while gg is adopting or ending the escapee cannot leave a `job` over it. Neither `lib/rescue.ts` nor
+`confirmedUnder` changes; their premise becomes true. A Pending cleanup hold's `closeJob` must close the adopted jobs
+too. The rule a saved `job` follows changes in record.md (:846-856) and harness.md (:163-166), with no shape change, so
+the implementing ticket raises `RECORD_SCHEMA_VERSION` and `FAKE_HARNESS_VERSION` (owner, 2026-11-22); no record of
+the previous version is in use, so none gets a rule of its own. The residual gap above stays: an escapee unseen at
+gg's death is not ended, its call stays `job`, and a reset can run under it. #69 stays an alternative for file locks and rescued human edits; this design does not need it.
 
 ## Not probed, and why
 
@@ -394,10 +400,15 @@ To file once the owner decides ADR 0030; none is filed yet. Each test fails toda
      replaced-function seam) so Git Bash's node leaves the job as a packaged app's child does: `a launch's escapee is
      ended` and `a runShell escapee is ended`, and, with that copy's kill of the escapee failing, `an escapee gg cannot
      end is a survivor with confirmed false`, for each. Today the node runs on and cleanup says `confirmed: true`.
-3. **A call with an escapee gg could not adopt or end records its containment as `none`.**
-   - Scope: the call intent's second write (`lib/agent-call.ts`, `lib/attempt.ts`), after ticket 2.
-   - Test that fails today (small, beside `test/unit/interpreter.retry.test.ts`): `an Interrupted Attempt whose call
-     left an escapee it could not end is rescued and held, not reset`. Today its payload says `job` and it is reset.
+3. **A call whose watcher sees an escapee saves its containment as `none` before gg adopts or ends it.**
+   - Scope: the call intent's second write (`lib/agent-call.ts`, `lib/attempt.ts`), from the watcher's first sight of
+     an escapee, after ticket 2; `RECORD_SCHEMA_VERSION` 3 to 4 and `FAKE_HARNESS_VERSION` 5 to 6, with record.md's
+     containment paragraph and harness.md's `started` rule restated (ADR 0030 decision 4). No rule for a `job` saved
+     before the bump, and no test of one.
+   - Tests that fail today (small, beside `test/unit/interpreter.retry.test.ts`): `a crash after an escapee is seen
+     holds the Interrupted Attempt`, the crash point between the `none` save and the adoption, and `an Interrupted
+     Attempt whose call had an escapee gg adopted is rescued and held, not reset`. Today its payload says `job` and it
+     is reset.
 4. **One shell check for both Harnesses: a packaged shell fails preflight, and `--probe` checks a command stays in
    gg's job.**
    - Scope: one check both Harnesses' `doctor` call, replacing `shellCheck` (`lib/harnesses/claude-doctor.ts:199`) and

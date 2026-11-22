@@ -40,11 +40,21 @@ with #484's.
    adopted in turn. At cleanup gg ends its job and every adopted job, closes its handles, and confirms each linked
    process gone; one it cannot confirm gone is a survivor, and the cleanup is not confirmed. The poll gap is the
    implementing ticket's choice: a snapshot costs about 38 ms, about 15% of one core at POSIX's 250 ms.
-4. **A call's containment is recorded as `job` only while 3 holds for it.** An escapee gg could neither adopt nor
-   terminate makes gg write the call's containment as `none`, so a resume rescues and holds it, never resets it in
-   place (N1). `lib/rescue.ts` and `confirmedUnder` keep their rules; their premise, that a `job` call's processes all
-   end with gg's handles, becomes true. A Pending cleanup hold's `closeJob` closes the adopted jobs too. No record or
-   Event shape changes: `RECORD_SCHEMA_VERSION` and `EVENT_SCHEMA_VERSION` stay.
+4. **A call's containment is recorded as `job` only while nothing it started has left gg's job.** The first linked
+   process the watcher sees outside gg's job makes gg save the call's containment as `none` before it adopts or ends
+   that process, and it stays `none` (the write-ahead order of ADR 0005): a crash at any point after an escapee is seen
+   leaves the call `none`, so a resume rescues and holds it, never resets it in place (N1). `job` then means no process
+   of the call ever left gg's job, so all of them end with gg's handle. `lib/rescue.ts` and `confirmedUnder` keep
+   their rules; their premise, that a `job` call's processes all end with gg's handles, becomes true but for 8's
+   residual risk. A Pending cleanup hold's `closeJob` closes the adopted jobs too.
+   No saved shape changes, but two frozen rules do: what a saved `job` proves (`docs/interfaces/record.md:846-856`)
+   and when a Harness reports its containment (`docs/interfaces/harness.md:163-166`, where the watcher's `none` is a
+   second `started` report). So the implementing ticket raises `RECORD_SCHEMA_VERSION` from 3 to 4 and
+   `FAKE_HARNESS_VERSION` from 5 to 6, as the freeze rule in AGENTS.md asks (owner, 2026-11-22). gg has no records in
+   use, so a row saved before the bump gets no rule of its own for its `job` (owner: "there are no old jobs, so we
+   should not design for them"); the reader accepts it under ADR 0024's rule as any previous version.
+   `EVENT_SCHEMA_VERSION` stays: `docs/interfaces/events.md` lists the containment kinds and says nothing of what `job`
+   proves.
 5. **One shell check serves both Harnesses** (#484's decision 1, epic #506's order). On every `gg doctor` and
    preflight (ADR 0028's cheap checks), the shell each Harness would start on win32, with an app execution alias
    followed to its target, must not lie under `\WindowsApps\`; it fails as a `harness-doctor-failed` Problem named
@@ -57,7 +67,8 @@ with #484's.
    kind `cgroup` with its identity is reserved in `docs/interfaces/record.md`). A `systemd-run --user --scope` held and
    ended a double-forked, stdio-closed process in WSL. Until a cgroup is available, the process group and watcher stay.
 8. **The residual risk, narrowed.** In place of "a tool that explicitly breaks away", gg accepts and names: on
-   Windows, a process outside gg's job whose parent ended before a poll saw it, and a process a service, WMI or the task
+   Windows, a process outside gg's job that no poll saw before its parent ended or gg died (its call stays `job`, so a
+   resume can reset under it), and a process a service, WMI or the task
    scheduler starts on a command's behalf, which no parent link ties to the command; on Linux without a cgroup, a
    process that leaves the process group and closes its stdio.
 
@@ -86,15 +97,16 @@ These texts stay as they are until the owner decides this ADR; the decision then
 - Not in the issue's list, found while writing: `docs/interfaces/record.md:852-856` says the job's kill-on-close "is
   what makes 'the writers are confirmed gone' true on Windows", and the comments at `lib/containment.ts:39` ("a child
   that asks is outside the job by design") and `:225` ("nothing the command starts is outside the job"). Edit:
-  record.md's prose names the adopted jobs and 4's rule, with no shape change and so no version bump; the comments
-  change with the code.
+  record.md's prose names the adopted jobs and 4's rule, with no shape change, under `RECORD_SCHEMA_VERSION` 4 (4);
+  the comments change with the code.
 - Found by a census of every text that claims all of a command's processes sit in gg's job (`rg -i "break.?away|outside
   the job|outside it|nothing .* is outside|every process in it|all it starts"`):
   - ADR 0016, `docs/adr/0016-the-suite-launcher-takes-a-stage-from-a-closed-set.md:68`: "nothing a stage starts is
     outside it". Edit: an inline amendment naming this ADR: a packaged app's process is not in the stage's job, and the
     census does not see it.
   - `docs/interfaces/harness.md:163-166`, the `started` rule: "`kind` is `job` when a Windows job ends them all with
-    gg". Edit: the rule names 4's; whether it bumps a version waits on the owner's decision on the frozen versions.
+    gg". Edit: the rule names 4's, a second `started` report of `none` when the watcher sees an escapee, under
+    `FAKE_HARNESS_VERSION` 6 (4).
   - Code comments, each changed with the follow-up that changes its code: `scripts/run-suite.ts:184` ("A child that
     asks to break away still can, unseen") with follow-up 1; `lib/containment.ts:1-2` ("every process it starts,
     orphans included, held in a job object") and `:246` ("nothing the argv starts is outside the job"),
@@ -130,8 +142,9 @@ These texts stay as they are until the owner decides this ADR; the decision then
 ## Consequences
 
 - Four follow-up tickets, listed ready to file in the research note's last section, carry the failing tests: no
-  breakaway; the Windows watcher with adoption, for a launch and a Check; a call's containment recorded as `none` when
-  an escapee could not be ended; the shared shell check with its `--probe` half.
+  breakaway; the Windows watcher with adoption, for a launch and a Check; a call's containment saved as `none` when the
+  watcher first sees an escapee, with the two version bumps; the shared shell check with its `--probe` half.
+- An interrupted call that had an escapee, even one gg adopted, is held for a person rather than reset and retried.
 - A machine whose only PowerShell 7 is the Store's, the owner's among them, fails preflight until an unpackaged one
   is installed or put first on PATH.
 - A Windows launch or Check pays for a process snapshot each poll, and a job per packaged process it adopts.
