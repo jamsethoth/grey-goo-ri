@@ -49,10 +49,10 @@ async function endedTree(t: TestContext, { cli, changes, cancels }: Ending) {
   const fake = fakeCli(t, { ...cli, orphan: true });
   const controller = new AbortController();
   const started = () => {
+    // The case's own end cancels too, so a case that times out before the pid comes still ends the call's tree.
     if (cancels) {
-      void processProbe
-        .waitFor(() => processProbe.pidIn(fake.orphanPidFile) > 0, t.signal)
-        .then(() => controller.abort());
+      const abort = () => controller.abort();
+      void processProbe.waitFor(() => processProbe.pidIn(fake.orphanPidFile) > 0, t.signal).then(abort, abort);
     }
   };
   const { result } = await fake.harness.run(claudeCall(fake, changes), hooksOf({ started, signal: controller.signal }));

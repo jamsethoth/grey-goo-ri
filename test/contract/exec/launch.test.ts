@@ -248,9 +248,11 @@ test('an aborted signal stops the process and says cancelled', UNSANDBOXED_CASE,
     command: process.execPath,
     args: [childScripts.LONG_LIVED, pidFile, 'started'],
     signal: controller.signal,
-    // The child prints before it writes its pid, so the abort waits for the pid the case checks.
+    // The child prints before it writes its pid, so the abort waits for the pid the case checks; the case's own end
+    // aborts too, so a case that times out still ends its child.
     onLine: () => {
-      void processProbe.waitFor(() => processProbe.pidIn(pidFile) > 0, t.signal).then(() => controller.abort());
+      const abort = () => controller.abort();
+      void processProbe.waitFor(() => processProbe.pidIn(pidFile) > 0, t.signal).then(abort, abort);
     },
   });
   assert.deepEqual(stopOf(result, pidFile), { timedOut: null, cancelled: true, ...GONE });
