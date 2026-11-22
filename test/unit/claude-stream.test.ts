@@ -360,8 +360,9 @@ test('every error value maps to its one Failure Class from either source', () =>
   assert.deepEqual(got, expected);
 });
 
-// A drive then a slash at any escape depth, or a Git Bash path under any drive's root (#486).
-const ABSOLUTE_LOCAL_PATH = /\b[A-Za-z]:[\\/]|(?<![\w.<>-])\/[a-z]\/(?=[\w.~-])/;
+// A drive then a slash at any escape depth, or a Git Bash path under any drive's root (#486); a slash before the
+// Git Bash form rules it out, since a URL's host and path segments always follow one.
+const ABSOLUTE_LOCAL_PATH = /\b[A-Za-z]:[\\/]|(?<![\w.<>/-])\/[a-z]\/(?=[\w.~-])/;
 
 test('the recording scan flags a local path in any form and leaves a URL or a relative path', () => {
   const samples = {
@@ -370,6 +371,9 @@ test('the recording scan flags a local path in any form and leaves a URL or a re
     '/c/Users/someone': true,
     'C:\\\\dev\\\\repo': true,
     'https://docs.anthropic.com/en/docs/x': false,
+    'https://a/b': false,
+    'http://x/y/z': false,
+    'https://example.com//a/b': false,
     '<recording>/c/x': false,
     'see ./a/b': false,
   };
