@@ -218,6 +218,8 @@ export async function doctor({ config: configuration, harnesses, gh, cwd, common
   const flows = [...checked.flows.values()];
   const lines: string[] = [];
   for (const { declared, source } of flows) lines.push(...flowLines(declared, source));
+  // Passed checks print before the warnings, so the errors stay above the summary, which counts none of them (#494).
+  for (const pass of checked.passes) lines.push(`passed: ${pass}`);
   for (const warning of warnings) lines.push(report.line('warning', warning));
   // The labels' read fails for the cause the owner/name's did, so one cause gives one finding (#372).
   const labelProblems =
