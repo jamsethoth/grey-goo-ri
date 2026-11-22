@@ -201,7 +201,8 @@ test("every Effect's reader reads its own intent's payload and refuses every oth
 });
 
 // Each `as` cast of a payload in a module's source, as `path:line`: a payload named alone or as a property, through
-// any parentheses, `!` or `?.` around it, or any value cast to a payload type, bare or qualified, whatever it is named.
+// any parentheses, `!` or `?.` around it, or any value cast to a type holding a payload type, bare or qualified,
+// whatever it is named.
 function payloadCasts(path: string, text: string): string[] {
   const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
   const sites: string[] = [];
@@ -210,10 +211,12 @@ function payloadCasts(path: string, text: string): string[] {
     if (ts.isIdentifier(node)) return node.text === 'payload';
     return ts.isPropertyAccessExpression(node) && node.name.text === 'payload';
   };
-  const isPayloadType = (type: ts.TypeNode): boolean => {
-    if (!ts.isTypeReferenceNode(type)) return false;
-    const name = ts.isQualifiedName(type.typeName) ? type.typeName.right : type.typeName;
-    return ['Payload', 'CallPayload', 'Consumption'].includes(name.text);
+  const isPayloadType = (type: ts.Node): boolean => {
+    if (ts.isTypeReferenceNode(type)) {
+      const name = ts.isQualifiedName(type.typeName) ? type.typeName.right : type.typeName;
+      if (['Payload', 'CallPayload', 'Consumption'].includes(name.text)) return true;
+    }
+    return ts.forEachChild(type, isPayloadType) ?? false;
   };
   const visit = (node: ts.Node) => {
     if (
@@ -241,6 +244,7 @@ test("no module in lib/ casts an intent's payload: each reads it through its eff
         'const h = value as push.Payload;',
         'const i = <writeAhead.CallPayload>entry;',
         'const j = decision as Consumption;',
+        'const k = p as Readonly<push.Payload> | undefined;',
       ].join('\n'),
     ),
     [
@@ -252,6 +256,7 @@ test("no module in lib/ casts an intent's payload: each reads it through its eff
       'lib/sample.ts:7',
       'lib/sample.ts:8',
       'lib/sample.ts:9',
+      'lib/sample.ts:10',
     ],
   );
   assert.deepEqual(payloadCasts('lib/sample.ts', 'const e = evidence as E;\nconst f = readPayload(payload);'), []);
