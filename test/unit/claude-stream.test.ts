@@ -360,8 +360,24 @@ test('every error value maps to its one Failure Class from either source', () =>
   assert.deepEqual(got, expected);
 });
 
-// A drive then a slash at any escape depth, or a Git Bash path from a drive's root (#486).
-const ABSOLUTE_LOCAL_PATH = /\b[A-Za-z]:[\\/]|(?<![\w.<>-])\/[a-z]\/(?:Users|Program Files|Windows)\b/;
+// A drive then a slash at any escape depth, or a Git Bash path under any drive's root (#486).
+const ABSOLUTE_LOCAL_PATH = /\b[A-Za-z]:[\\/]|(?<![\w.<>-])\/[a-z]\/(?=[\w.~-])/;
+
+test('the recording scan flags a local path in any form and leaves a URL or a relative path', () => {
+  const samples = {
+    '"cwd":"/c/dev/repo"': true,
+    'cd /d/scratch && ls': true,
+    '/c/Users/someone': true,
+    'C:\\\\dev\\\\repo': true,
+    'https://docs.anthropic.com/en/docs/x': false,
+    '<recording>/c/x': false,
+    'see ./a/b': false,
+  };
+  assert.deepEqual(
+    Object.fromEntries(Object.keys(samples).map((text) => [text, ABSOLUTE_LOCAL_PATH.test(text)])),
+    samples,
+  );
+});
 
 test('no recording holds an absolute local path', () => {
   const recordings = new URL('../fixtures/claude/', import.meta.url);
