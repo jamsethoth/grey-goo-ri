@@ -74,7 +74,12 @@ These go to the owner as one decision batch before #481.
    `mcp_tool_call` status `failed`). With `-c mcp_servers.probe.default_tools_approval_mode="approve"` passed after
    the server's `-c mcp_servers.probe={...}` table, the same call runs: `mcp_tool_call` status `completed` with the
    tool's word, the server's log ends `tools/call`, and the final message is schema-valid JSON (`mcp-approve`). The
-   per-tool key (`mcp_servers.<id>.tools.<tool>.approval_mode`) was not tried.
+   per-tool key (`mcp_servers.<id>.tools.<tool>.approval_mode`) was not tried. A listed server runs outside the
+   sandbox: both calls ran `-s read-only`, and in both the probe server appended its log beside the repository, not in
+   it (evidence.mcpLog). Owner D17 A: #481's Launch Profile passes, after each listed server's `-c
+   mcp_servers.<id>={...}` table, `-c mcp_servers.<id>.default_tools_approval_mode="approve"` on every call and
+   declares `mcp` `exact`; so a read-only Agent's listed server can still write, and the Agent's listing is the owner's
+   consent for that server.
 6. **A fork takes the thread's last sandbox unless `-s` is given**: forked with no `-s` after a `workspace-write` last
    turn (`fork-unflagged-parent` rollout line 32, on the thread `fork-unflagged`'s `forked_from_id` names), the fork
    ran `workspace-write`, where exec's default is read-only (`fork-unflagged`: one `turn_context`, `workspace-write`).
@@ -84,6 +89,8 @@ These go to the owner as one decision batch before #481.
    `read-only`, `forked_from_id` `01a20433-8960-…`), its `node write.js` printed EPERM and created nothing
    (`fork-kept-read-only.json` evidence.created empty), and the parent's rollout was left unchanged
    (evidence.forkedRollout.unchanged). #485's read-only fork passes `-s read-only` before `fork`, and that holds.
+   Owner D18 A: #485 passes `-s read-only` (and `-C`) before `fork` alone, with no check of the fork's sandbox, and its
+   tests replay `fork-kept-read-only`.
 
 ## The nine open questions of facts-codex-cli.md
 
@@ -177,4 +184,7 @@ These go to the owner as one decision batch before #481.
 - Whether the per-tool MCP key (`mcp_servers.<id>.tools.<tool>.approval_mode`) lets one tool run under `never`
   (finding 5): only the per-server key was recorded.
 - Where the two `mcp__openai_api_*` tool namespaces come from, and whether D11 A's `plugins` table removes them
-  (finding 1): `debug prompt-input` does not show them, so only a real call can.
+  (finding 1): `debug prompt-input` does not show them, so only a real call can. Owner D19 A: #481 shows, on a
+  recorded real call, that its `plugins` table leaves no `mcp__openai_api_*` namespace, and its empty-start tests
+  replay that call's rollout, not `prompt-input-profile` alone; if a namespace remains, the empty start returns to the
+  owner.
