@@ -58,7 +58,7 @@ const FIRST_TOTAL = {
   cacheWriteTokens: 0,
   outputTokens: 7,
   reasoningTokens: null,
-  costUsd: null,
+  costUsd: 0.5,
   peakContextTokens: 0,
   turns: 3,
   toolCalls: 0,
@@ -80,6 +80,10 @@ test("a resumed call after a timed-out one computes its delta from the last repo
   const run = fixture.harness.run;
   fixture.harness.run = async (call, hooks) => {
     const answer = await run(call, hooks);
+    // The golden fake reports no cost; Claude's Harness gives a reported total its cost and basis.
+    if (call.attempt === 1)
+      for (const half of ['cumulative', 'delta'] as const)
+        answer.result.usage[half] = { ...answer.result.usage[half], costUsd: 0.5, costBasis: 'reported' };
     if (call.attempt === 2)
       for (const half of ['cumulative', 'delta'] as const)
         answer.result.usage[half] = { ...answer.result.usage[half], ...UNREPORTED };
@@ -103,7 +107,7 @@ test("a resumed call after a timed-out one computes its delta from the last repo
     {
       stoppedStatus: stopped.signals.harnessResult?.status,
       stoppedEvent: { cumulative: unreportedOf(stopped.usage.cumulative), delta: unreportedOf(stopped.usage.delta) },
-      savedAfterTheStop: countsOf(saved),
+      savedAfterTheStop: { ...countsOf(saved), costBasis: saved.costBasis },
       thirdCall: {
         resume: fixture.harness.calls[2]?.resume,
         previousUsage: countsOf(fixture.harness.calls[2]?.previousUsage),
@@ -112,7 +116,7 @@ test("a resumed call after a timed-out one computes its delta from the last repo
     {
       stoppedStatus: 'timed-out',
       stoppedEvent: { cumulative: UNREPORTED, delta: UNREPORTED },
-      savedAfterTheStop: FIRST_TOTAL,
+      savedAfterTheStop: { ...FIRST_TOTAL, costBasis: 'reported' },
       thirdCall: { resume: 'fake-session-1', previousUsage: FIRST_TOTAL },
     },
   );
