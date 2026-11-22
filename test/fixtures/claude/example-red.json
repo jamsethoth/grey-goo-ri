@@ -1,0 +1,79 @@
+{
+  "cliVersion": "2.1.330 (Claude Code)",
+  "scenario": "example-red",
+  "purpose": "call 1 of the example's first-visit pass, recorded through gg (#486)",
+  "launchProfile": {
+    "name": "claude-headless",
+    "version": 3
+  },
+  "command": {
+    "executable": "claude",
+    "argv": [
+      "-p",
+      "--setting-sources",
+      "",
+      "--strict-mcp-config",
+      "--settings",
+      "<recording>\\main\\.git\\gg\\runs\\20261015T000000Z-abc123\\claude-settings-6742566812d6d851408a2370a52479b17711cd20adcaa092f669429ff8245c40.json",
+      "--permission-mode",
+      "acceptEdits",
+      "--permission-prompts",
+      "none",
+      "--system-prompt-snapshot",
+      "off",
+      "--append-system-prompt-file",
+      "<recording>\\main\\.git\\gg\\runs\\20261015T000000Z-abc123\\persona-29a2712349a3f45edb156bd885f144a57b0769b5a76bc22c6d419ca470e39039.md",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--json-schema",
+      "{\"type\":\"object\",\"properties\":{\"claim\":{\"type\":\"string\",\"enum\":[\"ok\",\"blocked\"]},\"reason\":{\"type\":\"string\",\"enum\":[\"none\",\"misscoped\",\"needs-input\",\"environment\",\"no-test-needed\"]},\"summary\":{\"type\":\"string\"},\"tests\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"notes\":{\"type\":\"string\"},\"diagnosis\":{\"type\":\"string\"}},\"required\":[\"claim\",\"reason\",\"summary\",\"tests\",\"notes\",\"diagnosis\"],\"additionalProperties\":false}",
+      "--model",
+      "haiku",
+      "--effort",
+      "low",
+      "--tools",
+      "PowerShell,Read,Grep,Glob,Edit,Write"
+    ],
+    "env": {
+      "CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1",
+      "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+      "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+      "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
+    },
+    "stdin": "RED VISIT for GitHub issue #15: Add two numbers\n\nYou are on branch ticket/15-add-two-numbers, created from main. Work only here.\n\n## Ticket\nAdd `add(a, b)`.\n\n## Declared Commands\n- test: `npm test`\n\n## Rules\n- Do not run git add, git commit, git push or gh: the orchestrator runs the tests, commits and handles GitHub.\n- Run Declared Commands plainly, without command substitution or heredocs: they are permission-checked.\n- Stay inside the ticket's scope.\n\nWrite the failing tests that prove this ticket's definition of done (start from \"Tests to write first\").\nDo NOT write any implementation code. Run the test command and confirm the new tests fail for the right reason.\nReturn the Structured Response: claim ok with reason none; in \"tests\", the exact names of the failing tests you\nwrote, as the test runner prints them; in \"notes\", why they fail.\nIf the ticket changes nothing a test can observe, claim blocked with reason no-test-needed and say why in \"notes\" and\n\"diagnosis\"; the reviewer judges that claim.\nIf you cannot write the tests, claim blocked and say why in \"diagnosis\", with reason misscoped when the ticket itself\nis wrong or contradictory, or needs-input or environment when something outside the ticket is missing.\n"
+  },
+  "exitCode": 0,
+  "signal": null,
+  "killed": null,
+  "lineTimesMs": [
+    808,
+    1782,
+    1935,
+    2000,
+    2242,
+    2268,
+    2427,
+    3058,
+    3236,
+    3343,
+    4136,
+    4812,
+    6176,
+    7408,
+    8563,
+    8992,
+    8993,
+    10182,
+    10351,
+    10393,
+    11640,
+    13843,
+    13852,
+    13870
+  ],
+  "stderr": "",
+  "changes": {
+    "add.test.js": "const { test } = require('node:test');\nconst assert = require('node:assert/strict');\n\n// Required inside each test so every case reports its own failure.\nconst load = () => require('./add.js').add;\n\ntest('add returns the sum of two positive integers', () => {\n  const add = load();\n  assert.equal(add(2, 3), 5);\n});\n\ntest('add returns zero when both operands are zero', () => {\n  const add = load();\n  assert.equal(add(0, 0), 0);\n});\n\ntest('add handles negative operands', () => {\n  const add = load();\n  assert.equal(add(-4, 1), -3);\n  assert.equal(add(-4, -6), -10);\n});\n\ntest('add handles non-integer operands', () => {\n  const add = load();\n  assert.equal(add(0.5, 0.25), 0.75);\n});\n"
+  }
+}
