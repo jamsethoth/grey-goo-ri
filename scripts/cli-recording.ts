@@ -55,8 +55,9 @@ export function environmentOf(inherited: RegExp, env: Record<string, string>): R
 }
 
 // What a recorder replaces in the text it commits: each path, as written, with either slash, escaped in JSON once or
-// more, as Git Bash writes it and as a directory name made of it, by its label; the user's name where it stands whole;
-// email addresses; and each of `patterns`, a recorder's own keys and tokens.
+// more, as Git Bash writes it and as a directory name made of it, by its label; each of `patterns`, a recorder's own
+// keys and tokens, before the name, so a name inside a key cannot break the key's match; the user's name wherever it
+// appears; and email addresses.
 export function redactorOf(redacted: {
   paths: [string, string][];
   username: string;
@@ -77,14 +78,28 @@ export function redactorOf(redacted: {
     ...redacted.paths.flatMap(([path, label]) =>
       forms(path).map((form): [RegExp, string] => [new RegExp(form, 'gi'), label]),
     ),
-    // Not joined to letters, digits, `_` or `-`: inside a longer name, as Ubuntu CI's `runner` is in a tool's name, it
-    // is that name's text (#479).
-    [new RegExp(`(?<![\\w-])${escape(redacted.username)}(?![\\w-])`, 'gi'), '<user>'],
     ...(redacted.patterns ?? []),
+    [new RegExp(escape(redacted.username), 'gi'), '<user>'],
     [/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '<email>'],
   ];
+  // No pass rewrites a label an earlier pass wrote, so a username equal to a label's text (`user`, `home`) leaves it
+  // whole. shortcut: a replacement is written as is, without `$1` groups; none of today's patterns uses one.
+  const labels = [...new Set(pairs.flatMap(([, replacement]) => replacement.match(/<[^<>]+>/g) ?? []))];
+  const inLabel = (text: string, start: number, end: number) =>
+    labels.some((label) => {
+      for (let found = text.indexOf(label); found !== -1; found = text.indexOf(label, found + 1))
+        if (found <= start && end <= found + label.length) return true;
+      return false;
+    });
   return (text) =>
-    pairs.reduce((redactedText, [pattern, replacement]) => redactedText.replace(pattern, replacement), text);
+    pairs.reduce(
+      (redactedText, [pattern, replacement]) =>
+        redactedText.replace(pattern, (match: string, ...rest: unknown[]) => {
+          const start = rest.find((arg) => typeof arg === 'number') as number;
+          return inLabel(redactedText, start, start + match.length) ? match : replacement;
+        }),
+      text,
+    );
 }
 
 // An answer of the stand-in API server.
