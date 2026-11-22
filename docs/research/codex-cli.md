@@ -6,7 +6,8 @@ Update it on each re-record. Every claim names the fixture under `test/fixtures/
 created, the hook and MCP logs, the Windows job's processes), `<name>.rollout.jsonl` its session file, trimmed of
 its base instructions, encrypted reasoning and each developer message's text, which keeps its kind, size and first
 line (owner Q4 A, D3 A), and redacted; a command that is no model call is `<name>.json` alone.
-`scripts/record-codex.ts` re-records them by hand.
+`scripts/record-codex.ts` re-records them by hand, all but `fork-unflagged-parent`, which no scenario writes (finding
+6).
 
 Every call ran under gg's `CODEX_HOME` (`GG_HOME/codex`, owner Q5 A), on `gpt-6-luna` at low effort with
 `approval_policy="never"`, `windows.sandbox="mxc"` and the project set untrusted unless a scenario says otherwise,
@@ -49,11 +50,14 @@ These go to the owner as one decision batch before #481.
    starts and lists its tools (`mcp-schema.json` evidence.mcpLog), but the call fails "MCP tool call requires
    approval, but approval policy is never" (`mcp-schema.jsonl`, `mcp_tool_call` status `failed`). `mcp` exact needs a
    per-server or per-tool approval key; none was found in this session.
-6. **A fork without `-s` takes the thread's last sandbox**: forked with no `-s` after a `workspace-write` last turn,
-   the fork ran `workspace-write`, where exec's default is read-only (`fork-unflagged`: one `turn_context`,
-   `workspace-write`). Whether `-s` overrides a writable parent is unsettled: `fork` passed `-s read-only` after a
-   read-only last turn (`resume-config-after` rollout line 53), so it shows nothing either way. #485's read-only fork
-   still passes `-s read-only` before `fork`, harmless whether or not it overrides.
+6. **A fork without `-s` takes the thread's last sandbox**: forked with no `-s` after a `workspace-write` last turn
+   (`fork-unflagged-parent` rollout line 32, on the thread `fork-unflagged`'s `forked_from_id` names), the fork ran
+   `workspace-write`, where exec's default is read-only (`fork-unflagged`: one `turn_context`, `workspace-write`). The
+   parent is the first recording run's `resume-flags-before`, which a later run overwrote, kept beside the fork; no
+   scenario writes it, and a re-record of the chain supersedes it. Whether `-s` overrides a writable parent is
+   unsettled: `fork` passed `-s read-only` after a read-only last turn (`resume-config-after` rollout line 53), so it
+   shows nothing either way. #485's read-only fork still passes `-s read-only` before `fork`, harmless whether or not
+   it overrides.
 
 ## The nine open questions of facts-codex-cli.md
 
@@ -90,7 +94,8 @@ These go to the owner as one decision batch before #481.
    unelevated sandbox's "CreateProcessAsUserW failed" in `unelevated-read-only` is the nearest recorded).
 6. **Fork and compaction in `--json`**: a fork emits `thread.started` with the new id, then the usual events;
    nothing fork-specific (`fork.jsonl`). With no `-s` a fork runs under the thread's last sandbox, not exec's
-   read-only default (`fork-unflagged`, finding 6); whether `-s` overrides a writable parent is unsettled. Usage is
+   read-only default (`fork-unflagged`, its writable parent turn in `fork-unflagged-parent`, finding 6); whether
+   `-s` overrides a writable parent is unsettled. Usage is
    cumulative over the original thread on a fork as on a resume (`fork`: 113,063 input tokens on a one-message turn, after the thread's 97,898). The fork writes a new rollout
    with `forked_from_id` and leaves the original's unchanged (`fork.json` evidence.forkedRollout.unchanged). A
    compaction emits nothing in `--json`: under `model_auto_compact_token_limit=16000` the rollout holds three
@@ -119,7 +124,7 @@ These go to the owner as one decision batch before #481.
 | Hooks under exec (Q10), `features.hooks` each way | fire and inject when on and bypassed; none when off or untrusted | `hooks-on`, `hooks-off`, `hooks-untrusted` |
 | One config MCP server with the schema | the request 3.2 regression fixture; the tool refused under `never` (finding 5) | `mcp-schema` |
 | Usage limit, auth error, mid-turn tree kill | question 5 above | `usage-limit`, `auth-invalid`, `auth-missing`, `tree-kill`, `tree-kill-resume` |
-| Compaction and fork in `--json` | question 6 above | `compaction`, `fork`, `fork-unflagged` |
+| Compaction and fork in `--json` | question 6 above | `compaction`, `fork`, `fork-unflagged`, `fork-unflagged-parent` |
 | Where the rollout lands, what it holds | `CODEX_HOME/sessions/YYYY/MM/DD/rollout-<local time>-<thread id>.jsonl`; a resume appends to the thread's file. It holds `turn_context` (cwd, `sandbox_policy`, approval, model, effort) per turn and `token_count` events with `total_token_usage`, `last_token_usage` and `rate_limits` (`primary` used percent, window minutes, reset time) | `start.json` rolloutPath, `compaction.rollout.jsonl` |
 | The cheap commands #484 reads | `codex --version`; `login status` prints "Logged in using ChatGPT" (exit 0) or "Not logged in" (exit 1); `doctor --json` (schema 1, a status per check); `mcp list --json`; `plugin list --json` (the installed plugins; without `--json` it lists the whole remote catalog); `features list` | `cli-*` |
 
