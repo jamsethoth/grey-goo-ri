@@ -303,7 +303,7 @@ test('a Vertex whose Procedure recovers, on a Harness that cannot resume a Sessi
     Object.entries(config.procedures).flatMap(([name, procedure]) => ('recover' in procedure ? [name] : [])),
   );
   const vertices = Object.entries(config.flows.default.ticket.vertices);
-  const recovers = (vertex: { procedure: string }) => recoveringProcedures.has(vertex.procedure);
+  const recovers = (vertex: (typeof vertices)[number][1]) => recoveringProcedures.has(vertex.procedure);
   const recovering = vertices
     .filter(([, vertex]) => recovers(vertex))
     .map(([id]) => ({ at: `${VERTICES}.${id}`, code: 'session-resume-unsupported' }));

@@ -466,21 +466,22 @@ test('a response condition whose is fits no value of its enum field keeps its co
 });
 
 // Every path to a value of the example Source, as keys and list indices.
-function valuePaths(value: unknown, path: (string | number)[] = []): (string | number)[][] {
+function valuePaths<Value>(value: Value, path: (string | number)[] = []): (string | number)[][] {
   const children: [string | number, unknown][] = Array.isArray(value)
     ? value.map((item, index) => [index, item])
     : Object.entries(value !== null && typeof value === 'object' ? value : {});
   return [...(path.length ? [path] : []), ...children.flatMap(([key, item]) => valuePaths(item, [...path, key]))];
 }
+// The value at `path` in `node`, read through objects and lists.
+const valueAt = <Node>(node: Node, path: (string | number)[]) =>
+  path.reduce<unknown>(
+    (value, key) => (value !== null && typeof value === 'object' ? Reflect.get(value, key) : undefined),
+    node,
+  );
 // A key's value left out, or replaced by a number, which every key but a count refuses.
 function mutated(path: (string | number)[], leftOut: boolean) {
   const config = exampleSource.config();
-  const parent = path
-    .slice(0, -1)
-    .reduce<unknown>(
-      (value, key) => (value !== null && typeof value === 'object' ? Reflect.get(value, key) : undefined),
-      config,
-    );
+  const parent = valueAt(config, path.slice(0, -1));
   const key = path.at(-1) as string | number;
   if (leftOut && Array.isArray(parent)) parent.splice(key as number, 1);
   else exampleSource.putAt(config, path.map(String), leftOut ? undefined : 3);

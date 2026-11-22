@@ -506,7 +506,7 @@ test("a Vertex's maxVisits is an unknown key: its Bound is max, as on an edge", 
 });
 
 // The configuration keys #229 renamed: a Source still written with an old key fails admission as any unknown key does.
-const oldKeyOf = (action: unknown, oldKey: string, newKey: string) => {
+const oldKeyOf = <Action extends object>(action: Action, oldKey: string, newKey: string) => {
   assert.ok(referencePaths.isRecord(action));
   exampleSource.putAt(action, [oldKey], action[newKey] ?? action[oldKey]);
   exampleSource.putAt(action, [newKey]);

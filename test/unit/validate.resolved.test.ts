@@ -147,13 +147,15 @@ function procedureForms(add: Add, procedure: procedures.Procedure) {
       else add('condition', typeof condition);
 }
 
+type WrittenVertices = exampleSource.Source['flows']['default']['ticket']['vertices'];
+
 // The forms of a Vertex's values, by the closed set each is drawn from. Its Agent resolves merged, so whether the
 // Vertex sets its own access over the Agent it uses is read from the source as written.
-function vertexForms(add: Add, vertex: model.ResolvedVertexJson, written: object) {
+function vertexForms(add: Add, vertex: model.ResolvedVertexJson, written: WrittenVertices[keyof WrittenVertices]) {
   add('agent', agentForm(vertex));
   add('vertex access', vertex.access);
   add('vertex max', presence(vertex.max));
-  if (vertex.use !== null) add('access of a used Agent', Object.hasOwn(written, 'access') ? 'overridden' : 'inherited');
+  if (vertex.use !== null) add('access of a used Agent', 'access' in written ? 'overridden' : 'inherited');
   if (vertex.agent !== null)
     for (const key of ['model', 'effort', 'network'] as const) add(`agent ${key}`, presence(vertex.agent[key]));
   for (const routing of Object.values(vertex.routing)) {
@@ -178,12 +180,12 @@ function formsOf(flow: model.ResolvedFlowJson, source: exampleSource.Source) {
     if (value.exhausted !== undefined) target('edge exhausted', value.exhausted);
   };
   Object.values(flow.ticket.routes).forEach(routeTarget('flow route'));
-  const written = new Map(Object.entries(source.flows.default.ticket.vertices));
+  const written = Object.entries(source.flows.default.ticket.vertices);
   for (const [id, vertex] of Object.entries(flow.ticket.vertices)) {
     Object.values(vertex.route).forEach(routeTarget('vertex route'));
     if (vertex.exhausted === null) add('vertex exhausted', 'absent');
     else target('vertex exhausted', vertex.exhausted);
-    vertexForms(add, vertex, written.get(id)!);
+    vertexForms(add, vertex, written.find(([writtenId]) => writtenId === id)![1]);
   }
   for (const procedure of Object.values(flow.procedures)) procedureForms(add, procedure);
   return found;
