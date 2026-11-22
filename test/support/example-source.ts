@@ -46,7 +46,7 @@ export const schemas = () =>
 
 // Puts `value` at `path` in a parsed fixture, or removes the key when `value` is undefined: a case edits a fixture
 // into any shape, the strict subset's or not, through objects and lists it checks, with no `any`. A list's item is
-// named by its index.
+// named by its index, and is never removed: a delete would leave a hole in the list (#358, D2 A).
 export function putAt(fixture: unknown, path: string[], value?: unknown) {
   const parent = path
     .slice(0, -1)
@@ -59,6 +59,7 @@ export function putAt(fixture: unknown, path: string[], value?: unknown) {
     throw new Error(`no object or list at ${path.join('.')}`);
   const edited = parent as Record<string, unknown>;
   const key = path.at(-1)!;
+  if (value === undefined && Array.isArray(parent)) throw new Error(`a list item cannot be removed: ${path.join('.')}`);
   if (value === undefined) delete edited[key];
   else edited[key] = value;
 }
