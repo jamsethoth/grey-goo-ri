@@ -607,7 +607,10 @@ test('gg doctor prints one passed line per passed check, before the warnings, an
   caseEnv.caseEnv(t, { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-case-token' });
   onlyOnPath(t, GG_FILE);
   let passedSeen = 0;
-  for (const [state, cliState] of CLI_STATES)
+  for (const [state, cliState] of [
+    ...CLI_STATES,
+    ['a --bare refusal on no API key', { bare: onNone((line) => line) }] as const,
+  ])
     for (const probe of [false, true]) {
       const where = `${state}, probe ${probe}`;
       const { checks } = await claude.createCli(recordedCli.recordedCli(cliState)).doctor({ probe });
