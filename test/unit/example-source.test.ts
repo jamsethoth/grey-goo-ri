@@ -450,15 +450,14 @@ test('no file under test/ names the configuration word ADR 0022 retired', () => 
     }),
     ['a.ts: 2', 'b.md: 1'],
   );
-  // A recorded CLI's output is its own text, not gg's: the Codex help names the word for how a profile applies.
   const testFiles = readdirSync(`${root}test`, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
-    .map((entry) => `${entry.parentPath.replaceAll('\\', '/')}/${entry.name}`.slice(root.length))
-    .filter((path) => !/^test\/fixtures\/(?:claude|codex)\//.test(path));
+    .map((entry) => `${entry.parentPath.replaceAll('\\', '/')}/${entry.name}`.slice(root.length));
   assert.ok(testFiles.includes('test/support/golden.ts'), 'the files under test/ are read');
   assert.deepEqual(
     retiredWordsIn(Object.fromEntries(testFiles.map((path) => [path, readFileSync(root + path, 'utf8')]))),
-    [],
+    // The Codex help's own text for --profile, recorded as printed: a re-record that rewords it updates this line.
+    ['test/fixtures/codex/cli-exec-help.json: 1'],
     'say Source: example-source.ts, exampleSource, source, sourceFile',
   );
 });
