@@ -1,7 +1,7 @@
 {
   "cliVersion": "codex-cli 0.171.0",
   "scenario": "login-shell-off",
-  "purpose": "allow_login_shell=false: does a shell command still load the user's PowerShell profile?",
+  "purpose": "allow_login_shell=false, the command asked for with no other shell tool argument, so the key alone decides the login shell (D9 B; the first try's model passed login:false itself): does a shell command still load the user's PowerShell profile?",
   "modelCall": true,
   "command": {
     "executable": "codex",
@@ -46,25 +46,24 @@
     "env": {
       "CODEX_HOME": "<home>\\.agents\\gg\\codex"
     },
-    "stdin": "This is a probe in a throwaway repository. Run each command below exactly as written, one shell call each, in order, and carry on after one is refused or fails; never change a command or try another way.\n1. Get-Location\nThen answer with one line per command: its number, whether it ran or was refused, and what it printed."
+    "stdin": "Run the command `Get-Location` once with your shell tool, giving the tool the command alone and no other argument. Then answer with what it printed."
   },
   "start": null,
-  "threadId": "01a20485-7789-7b40-baa3-d36b9b875af7",
+  "threadId": "01a20551-6cca-7f21-b7d1-931bbcd8a2b1",
   "exitCode": 0,
   "signal": null,
   "killed": null,
   "lineTimesMs": [
-    1604,
-    1777,
-    4604,
-    5609,
-    6143,
-    8098,
-    8246
+    738,
+    944,
+    3318,
+    3889,
+    5584,
+    5736
   ],
   "stderr": "",
-  "lastMessage": "{\"answer\":\"1. Ran — printed the current location: `<recording>\\\\repo`.\"}",
-  "rolloutPath": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T13-29-46-01a20485-7789-7b40-baa3-d36b9b875af7.jsonl",
+  "lastMessage": "{\"answer\":\"Path\\n----\\n<recording>\\\\repo\"}",
+  "rolloutPath": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T17-12-32-01a20551-6cca-7f21-b7d1-931bbcd8a2b1.jsonl",
   "evidence": {
     "created": [],
     "hookLog": null,

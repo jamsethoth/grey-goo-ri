@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"01a20551-528c-7050-b45d-6fe2a684d2bf"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I’ll call the probe server’s `probe_word` tool once and report the word it returns."}}
+{"type":"item.started","item":{"id":"item_1","type":"mcp_tool_call","server":"probe","tool":"probe_word","arguments":{},"result":null,"error":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"probe","tool":"probe_word","arguments":{},"result":{"content":[{"type":"text","text":"marigold"}],"structured_content":null},"error":null,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"{\"answer\":\"marigold\"}"}}
+{"type":"turn.completed","usage":{"input_tokens":39360,"cached_input_tokens":25728,"cache_write_input_tokens":0,"output_tokens":100,"reasoning_output_tokens":0}}
