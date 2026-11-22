@@ -66,10 +66,10 @@ export function atLeastMinimum(version: string, minimum: string): boolean {
   return index === -1 || found[index]! > least[index]!;
 }
 
-// The version a CLI's --version printed, against the pinned minimum, and how to update it when older. The version is
-// the first one on the line, wherever it starts, since a CLI may print its name first.
+// The version a CLI's --version printed, against the pinned minimum, and how to update it when older. The version
+// starts the first line; a first line that starts with anything else gives none.
 export function versionCheck(ran: Said, cli: { command: string; minimum: string; update: string }): Check {
-  const version = /\d+\.\d+\.\d+/.exec(ran.lines[0] ?? '')?.[0];
+  const version = /^\d+\.\d+\.\d+/.exec(ran.lines[0] ?? '')?.[0];
   if (version === undefined)
     return failed(
       'version',

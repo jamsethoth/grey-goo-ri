@@ -66,6 +66,19 @@ test('a version at or past the pinned minimum passes, naming it', async () => {
   });
 });
 
+test('a first line that does not start with a version fails, saying what it printed', async () => {
+  const ran = await cliDoctor.said(printing({ lines: ['stand-in 9.0.0'] }), {
+    command: 'stand-in',
+    args: ['--version'],
+  });
+  assert.deepEqual(cliDoctor.versionCheck(ran, STAND_IN), {
+    name: 'version',
+    ok: false,
+    severity: 'error',
+    message: 'stand-in --version printed "stand-in 9.0.0"',
+  });
+});
+
 test('each part of a version compares as a number, so 2.10.0 meets the minimum 2.9.1', () => {
   assert.equal(cliDoctor.atLeastMinimum('2.10.0', '2.9.1'), true);
   assert.equal(cliDoctor.atLeastMinimum('2.9.0', '2.9.1'), false);
