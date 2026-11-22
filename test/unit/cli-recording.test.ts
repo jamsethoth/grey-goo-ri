@@ -87,13 +87,46 @@ test('a path is redacted as written, slashed, JSON-escaped, as Git Bash writes i
   ]);
 });
 
-test("the user's name is redacted where it stands whole, not inside a longer name", () => {
+test("the user's name is redacted wherever it appears, inside a longer name too, in any case", () => {
   assert.deepEqual(['by standin.', 'StandIn ran', 'standin-runner.exe', 'xstandin'].map(redact), [
     'by <user>.',
     '<user> ran',
-    'standin-runner.exe',
-    'xstandin',
+    '<user>-runner.exe',
+    'x<user>',
   ]);
+});
+
+test('a username equal to a label or a part of a key leaves no name or key readable and no label broken', () => {
+  const key = [/sk-ant-[\w-]+/g, 'sk-ant-<redacted>'] as [RegExp, string];
+  const labels = ['<recording>', '<home>', '<user>', '<email>', '<redacted>'];
+  // Each label's text and each part of the key's prefix, as a username.
+  const usernames = [...labels.map((label) => label.slice(1, -1)), ...'sk-ant'.split('-')];
+  const broken = usernames.flatMap((username) => {
+    const redactName = cliRecording.redactorOf({
+      paths: [
+        [String.raw`C:\rec\stand in`, '<recording>'],
+        [`C:/Users/${username}`, '<home>'],
+      ],
+      username,
+      patterns: [key],
+    });
+    const samples = [
+      `hello ${username}`,
+      `${username.toUpperCase()} ran`,
+      `x_${username}_y and ${username}123`,
+      `in C:/rec/stand in/${username}`,
+      `at C:/Users/${username}/b.txt`,
+      'key sk-ant-abc123',
+      `mail ${username}.b@example.com`,
+    ];
+    return samples.flatMap((sample) => {
+      const redacted = redactName(sample);
+      const outsideLabels = labels.reduce((text, label) => text.replaceAll(label, ' '), redacted).toLowerCase();
+      const readable = [username, 'abc123', '<', '>'].filter((part) => outsideLabels.includes(part));
+      return readable.length ? [`${username}: ${sample} -> ${redacted}`] : [];
+    });
+  });
+  assert.deepEqual(broken, []);
 });
 
 test("email addresses and the recorder's own patterns are redacted", () => {

@@ -72,9 +72,18 @@ test('a hang leaves out the result line and is ended by the stall clock', CASE, 
 });
 
 test("a hang's clocks count from its last line, however slowly the fake starts", CASE, async (t) => {
-  const fake = cliReplay.fakeCli(t, { ...STAND_IN, scenario: 'said', mode: 'hang' });
-  const { ended, lines } = await launchOver(fake, { stallMs: 1 });
-  assert.deepEqual({ lines, timedOut: ended.timedOut }, { lines: SAID.slice(0, 2), timedOut: 'stall' });
+  // Every mode of the fake that hangs (FakeCliOptions.mode).
+  const hangs = ['hang', 'hang-no-transcript'];
+  const ended = [];
+  for (const mode of hangs) {
+    const fake = cliReplay.fakeCli(t, { ...STAND_IN, scenario: 'said', mode });
+    const launched = await launchOver(fake, { stallMs: 1 });
+    ended.push({ mode, lines: launched.lines, timedOut: launched.ended.timedOut });
+  }
+  assert.deepEqual(
+    ended,
+    hangs.map((mode) => ({ mode, lines: SAID.slice(0, 2), timedOut: 'stall' })),
+  );
 });
 
 test('the fake writes the transcript where it is told, from the file it is told', CASE, async (t) => {
