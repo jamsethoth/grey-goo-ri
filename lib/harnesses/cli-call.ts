@@ -28,10 +28,33 @@ export interface CliCallEnded<Stream extends StreamRead> {
   ended: exec.LaunchResult | null;
 }
 
-export function run<Stream extends StreamRead>(
-  _runner: Pick<exec.Exec, 'launch'>,
-  _hooks: runContext.HarnessHooks,
+// A launch that cannot start is an unknown failure, never a throw (request section 4); a stop or a cancel is no failure
+// of the stream's; a failed call keeps what the CLI printed to stderr in the message the Execution Record saves (#426
+// Q1 A), without its last newline: trimEnd, not trim, since a tail cut short may start with the CLI's indentation.
+export async function run<Stream extends StreamRead>(
+  runner: Pick<exec.Exec, 'launch'>,
+  hooks: runContext.HarnessHooks,
   options: CliCallOptions<Stream>,
 ): Promise<CliCallEnded<Stream>> {
-  return Promise.resolve({ status: 'completed', stream: options.read([]), failure: null, ended: null });
+  const lines: string[] = [];
+  const launched = await runner
+    .launch({
+      ...options.launch,
+      signal: hooks.signal,
+      onStarted: (containment) => hooks.started({ kind: containment.kind === 'job' ? 'job' : 'none' }),
+      onLine: (line) => lines.push(line),
+      onIdle: () => options.lastActivity?.(lines) ?? null,
+    })
+    .catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))));
+  const stream = options.read(lines);
+  if (launched instanceof Error)
+    return { status: 'failed', stream, failure: { failureClass: 'unknown', message: launched.message }, ended: null };
+  const streamFailure = launched.cancelled || launched.timedOut ? null : stream.failure;
+  const stderrTail = launched.stderrTail.trimEnd();
+  const failure =
+    streamFailure && stderrTail
+      ? { ...streamFailure, message: `${streamFailure.message}\nstderr: ${stderrTail}` }
+      : streamFailure;
+  const stopped = launched.cancelled ? 'killed' : launched.timedOut && 'timed-out';
+  return { status: stopped || (failure ? 'failed' : 'completed'), stream, failure, ended: launched };
 }

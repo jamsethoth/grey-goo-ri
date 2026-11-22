@@ -94,7 +94,12 @@ export const emptyUsage = (capabilities: Record<string, unknown> | null | undefi
 // A call's Usage delta (request 3.7): each count its Session's total less the total before it, a count the total
 // leaves null staying null; peakContextTokens, a maximum, is the call's own.
 export const usageDelta = (
-  _cumulative: events.Usage,
-  _previous: events.Usage | null,
-  _peakContextTokens: number | null,
-): events.Usage => usageOf(() => 0);
+  cumulative: events.Usage,
+  previous: events.Usage | null,
+  peakContextTokens: number | null,
+): events.Usage =>
+  usageOf((field) => {
+    if (field === 'peakContextTokens') return peakContextTokens;
+    const total = cumulative[field];
+    return total === null ? null : total - (previous?.[field] ?? 0);
+  });
