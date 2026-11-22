@@ -1,0 +1,83 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "scenario": "login-shell-off",
+  "purpose": "allow_login_shell=false: does a shell command still load the user's PowerShell profile?",
+  "modelCall": true,
+  "command": {
+    "executable": "codex",
+    "argv": [
+      "exec",
+      "-s",
+      "read-only",
+      "-C",
+      "<recording>\\repo",
+      "-c",
+      "model=\"gpt-6-luna\"",
+      "-c",
+      "model_reasoning_effort=\"low\"",
+      "-c",
+      "approval_policy=\"never\"",
+      "-c",
+      "windows.sandbox=\"mxc\"",
+      "-c",
+      "projects={\"<recording>\\\\repo\"={trust_level=\"untrusted\"}}",
+      "-c",
+      "features.hooks=false",
+      "-c",
+      "features.apps=false",
+      "-c",
+      "features.tool_suggest=false",
+      "-c",
+      "check_for_update_on_startup=false",
+      "-c",
+      "project_doc_max_bytes=0",
+      "-c",
+      "skills.include_instructions=false",
+      "-c",
+      "allow_login_shell=false",
+      "--json",
+      "--output-schema",
+      "<recording>\\run\\schema.json",
+      "-o",
+      "<recording>\\run\\login-shell-off.last.txt",
+      "-"
+    ],
+    "cwd": "repo",
+    "env": {
+      "CODEX_HOME": "<home>\\.agents\\gg\\codex"
+    },
+    "stdin": "This is a probe in a throwaway repository. Run each command below exactly as written, one shell call each, in order, and carry on after one is refused or fails; never change a command or try another way.\n1. Get-Location\nThen answer with one line per command: its number, whether it ran or was refused, and what it printed."
+  },
+  "start": null,
+  "threadId": "01a20485-7789-7b40-baa3-d36b9b875af7",
+  "exitCode": 0,
+  "signal": null,
+  "killed": null,
+  "lineTimesMs": [
+    1604,
+    1777,
+    4604,
+    5609,
+    6143,
+    8098,
+    8246
+  ],
+  "stderr": "",
+  "lastMessage": "{\"answer\":\"1. Ran — printed the current location: `<recording>\\\\repo`.\"}",
+  "rolloutPath": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T13-29-46-01a20485-7789-7b40-baa3-d36b9b875af7.jsonl",
+  "evidence": {
+    "created": [],
+    "hookLog": null,
+    "mcpLog": null,
+    "forkedRollout": null,
+    "job": {
+      "contained": true,
+      "whileMarked": null,
+      "afterKill": null,
+      "leftAfterExit": []
+    },
+    "homeChanges": null,
+    "stubRequests": null,
+    "homeLogTail": null
+  }
+}

@@ -3,13 +3,15 @@
 Findings record of the Codex recording session (owner Q3 A), at **codex-cli 0.171.0** on native Windows, 2026-11-22.
 Update it on each re-record. Every claim names the fixture under `test/fixtures/codex/` that shows it:
 `<name>.jsonl` is a call's `--json` stream, `<name>.json` its command, line times, last message and evidence (files it
-created, the hook and MCP logs, the Windows job's processes), `<name>.rollout.jsonl` its session file, trimmed and
-redacted; a command that is no model call is `<name>.json` alone. `scripts/record-codex.ts` re-records them by hand.
+created, the hook and MCP logs, the Windows job's processes), `<name>.rollout.jsonl` its session file, trimmed of
+its base instructions, encrypted reasoning and each developer message's text, which keeps its kind, size and first
+line (owner Q4 A, D3 A), and redacted; a command that is no model call is `<name>.json` alone.
+`scripts/record-codex.ts` re-records them by hand.
 
 Every call ran under gg's `CODEX_HOME` (`GG_HOME/codex`, owner Q5 A), on `gpt-6-luna` at low effort with
 `approval_policy="never"`, `windows.sandbox="mxc"` and the project set untrusted unless a scenario says otherwise,
-inside a Windows job started as `lib/containment.ts` starts a launch. 28 of the 30 authorised model calls were spent
-(owner Q1 A), retries included.
+inside a Windows job started as `lib/containment.ts` starts a launch. 29 of the 30 authorised model calls were spent
+(owner Q1 A), retries included; the 29th tried `allow_login_shell=false` (owner D4 B).
 
 ## Findings that change a planned choice
 
@@ -18,12 +20,18 @@ These go to the owner as one decision batch before #481.
 1. **The empty start needs three keys and leaves one leak** (decision 2, Q8 A). gg's `CODEX_HOME` holds the login
    (`cli-login-status`), but with no override three things from the user's side still reach the model
    (`prompt-input-default`): the user's `~/.agents/skills` (skill root r0, read from the profile, not from
-   `CODEX_HOME`), the ChatGPT account's apps (`mcp__codex_apps__*`) and `<recommended_plugins>`. The keys
-   `skills.include_instructions=false`, `features.apps=false` and `features.tool_suggest=false` remove all three
-   (`prompt-input-profile`). One leak has no key yet: every shell command runs PowerShell without `-NoProfile`
-   (`pwsh.exe -Command` in the stream; 0.163 passed `-NoProfile`), so the user's PowerShell profile is tried on each
-   command and its "AuthorizationManager check failed" error lands in every command's output (`start.jsonl`,
-   `mxc-workspace-write.json` last message).
+   `CODEX_HOME`), a deferred tools section (`<tools>`, 2,272 characters) and `<recommended_plugins>`. The fixtures
+   keep each such section's kind and size, not its text (D3 A), so which of the account's apps the tools section
+   names is not recorded. The keys `skills.include_instructions=false`, `features.apps=false` and
+   `features.tool_suggest=false` remove all three (`prompt-input-profile`: no `<tools>` or `<recommended_plugins>`
+   section). One leak has no settled key: most shell commands run PowerShell without `-NoProfile` (`pwsh.exe
+   -Command` in the stream), so the user's PowerShell profile is tried and its "AuthorizationManager check failed"
+   error lands in the command's output (`start.jsonl`, `mxc-workspace-write.json` last message). A command runs
+   `-NoProfile`, with no profile error, when the model passes `login:false` to its shell tool (`compaction`: all six
+   commands). Under `-c allow_login_shell=false` the one command ran `-NoProfile` with no profile error, but the model
+   passed `login:false` itself (`login-shell-off`, its rollout), so whether the key stops the profile when the model
+   leaves `login` out is unsettled. The 0.163 planning notes record `-NoProfile` on every command; no 0.163 fixture
+   exists.
 2. **gg's `CODEX_HOME` holds ten remote plugins, installed and enabled** (`cli-plugin-list`: `github`, `superpowers`,
    `build-web-apps` and seven more from `openai-curated-remote`). Under the profile keys none of them shows in the
    prompt input, but `plugins` exact (decision 7) means gg disables every plugin an Agent does not list: by a
@@ -58,11 +66,12 @@ These go to the owner as one decision batch before #481.
    resumed read-only and its write was refused (`resume-config-after`). The resumed turn runs in the invocation's
    cwd, not the thread's: started one directory up with no `-C`, its `turn_context.cwd` and `Get-Location` were that
    directory. Outside a git repository, `exec resume` refuses to start without `--skip-git-repo-check` ("Not inside a
-   trusted directory", exit 1, before any request). So gg passes `-s` and `-C` before `resume` on every resume.
+   trusted directory", exit 1, before any request: `resume-outside-git`). So gg passes `-s` and `-C` before `resume`
+   on every resume.
 3. **What `--ignore-user-config` drops**: unsettled beyond its help text ("Do not load `$CODEX_HOME/config.toml`;
    auth still uses `CODEX_HOME`"), and moot: gg's own `CODEX_HOME` works (finding 1), so the fallback that needed it
-   is not taken. `codex debug prompt-input` does not take the flag; `exec`, `resume` and
-   `fork` do (`cli-exec-help`, `cli-exec-resume-help`, `cli-exec-fork-help`).
+   is not taken. `exec`, `resume` and `fork` take the flag (`cli-exec-help`, `cli-exec-resume-help`,
+   `cli-exec-fork-help`); no recording shows whether `codex debug prompt-input` does.
 4. **Hooks under exec**: settled. `SessionStart` and `PostToolUse` hooks fire under `exec`, both inline
    (`-c hooks={...}` with `commandWindows`) and from `CODEX_HOME/hooks.json`, and their `additionalContext` reaches
    the model (`hooks-on`: the answer names all four sentinels; evidence.hookLog has each payload's keys).
@@ -81,17 +90,18 @@ These go to the owner as one decision batch before #481.
    unelevated sandbox's "CreateProcessAsUserW failed" in `unelevated-read-only` is the nearest recorded).
 6. **Fork and compaction in `--json`**: a fork emits `thread.started` with the new id, then the usual events;
    nothing fork-specific (`fork.jsonl`). With no `-s` a fork runs under the thread's last sandbox, not exec's
-   read-only default (`fork-unflagged`, finding 6); whether `-s` overrides a writable parent is unsettled. Usage is cumulative over the original thread on a fork as on a resume
-   (`fork`: 113,063 input tokens on a one-message turn, after the thread's 97,898). The fork writes a new rollout
+   read-only default (`fork-unflagged`, finding 6); whether `-s` overrides a writable parent is unsettled. Usage is
+   cumulative over the original thread on a fork as on a resume (`fork`: 113,063 input tokens on a one-message turn, after the thread's 97,898). The fork writes a new rollout
    with `forked_from_id` and leaves the original's unchanged (`fork.json` evidence.forkedRollout.unchanged). A
    compaction emits nothing in `--json`: under `model_auto_compact_token_limit=16000` the rollout holds three
    `compacted` items and the stream only the usual events (`compaction`).
-7. **0.171 against 0.163**: the stream's events are the same (`thread.started`, `turn.started`, `item.started` and
-   `item.completed` of `command_execution`, `agent_message`, `mcp_tool_call` and `error`, `turn.completed`, `error`,
-   `turn.failed`). Changed: commands run `pwsh.exe -Command` without `-NoProfile` (finding 1); the model's tool is
-   code mode's `exec`, while the stream still reports `command_execution` items; `exec resume` outside a git
-   repository needs `--skip-git-repo-check`; and beside 0.163's flags `exec` lists `--remote`,
-   `--remote-auth-token-env`, `--trust` and `--cyber-access-program` (`cli-exec-help`).
+7. **0.171 against 0.163** (by the 0.163 planning notes; no 0.163 fixture exists): the stream's events are the same
+   (`thread.started`, `turn.started`, `item.started` and `item.completed` of `command_execution`, `agent_message`,
+   `mcp_tool_call` and `error`, `turn.completed`, `error`, `turn.failed`). Changed: most commands run `pwsh.exe
+   -Command` without `-NoProfile` (finding 1); the model's tool is code mode's `exec`, while the stream still reports
+   `command_execution` items; `exec resume` outside a git repository needs `--skip-git-repo-check`
+   (`resume-outside-git`); and beside 0.163's flags `exec` lists `--remote`, `--remote-auth-token-env`, `--trust` and
+   `--cyber-access-program` (`cli-exec-help`).
 8. **A blocked command under `never`**: not `declined`. Under MXC read-only a write the sandbox blocks shows only in
    the command's output: `node write.js` printed EPERM and completed with exit 0; `Set-Content` failed with exit 1,
    status `failed` (`mxc-read-only.jsonl`). The call itself completes.
@@ -111,19 +121,19 @@ These go to the owner as one decision batch before #481.
 | Usage limit, auth error, mid-turn tree kill | question 5 above | `usage-limit`, `auth-invalid`, `auth-missing`, `tree-kill`, `tree-kill-resume` |
 | Compaction and fork in `--json` | question 6 above | `compaction`, `fork`, `fork-unflagged` |
 | Where the rollout lands, what it holds | `CODEX_HOME/sessions/YYYY/MM/DD/rollout-<local time>-<thread id>.jsonl`; a resume appends to the thread's file. It holds `turn_context` (cwd, `sandbox_policy`, approval, model, effort) per turn and `token_count` events with `total_token_usage`, `last_token_usage` and `rate_limits` (`primary` used percent, window minutes, reset time) | `start.json` rolloutPath, `compaction.rollout.jsonl` |
-| The cheap commands #484 reads | `codex --version`; `login status` prints "Logged in using ChatGPT" (exit 0) or "Not logged in" (exit 1); `doctor --json` (schema 1, a status per check); `mcp list --json`; `plugin list --json` (the installed plugins; without `--json` it lists the whole remote catalog, over 1 MB); `features list` | `cli-*` |
+| The cheap commands #484 reads | `codex --version`; `login status` prints "Logged in using ChatGPT" (exit 0) or "Not logged in" (exit 1); `doctor --json` (schema 1, a status per check); `mcp list --json`; `plugin list --json` (the installed plugins; without `--json` it lists the whole remote catalog); `features list` | `cli-*` |
 
 ## Planned choices
 
 | Choice | Verdict | Evidence |
 | --- | --- | --- |
-| Empty start (Q8 A) | changed: gg's `CODEX_HOME` plus three keys; the PowerShell profile leaks with no key found (finding 1); remote plugins installed there (finding 2) | `prompt-input-default`, `prompt-input-profile`, `cli-plugin-list` |
-| Repository content (Q18 A) | changed: `project_doc_max_bytes=0` keeps every instruction file out; `.agents/skills` needs `skills.include_instructions=false` (finding 3). Of the four names, only `AGENTS.override.md`, else `AGENTS.md`, loads by default; `TEAM_GUIDE.md` and `.agents.md` load only when configured as fallbacks. `.codex/config.toml` and project hooks load only when trusted; untrusted, a `.codex/rules` allow did not run its command outside the sandbox. gg also has `--ignore-rules` | `prompt-input-only-*`, `prompt-input-sentinels-*`, `repository-untrusted`, `repository-trusted` |
+| Empty start (Q8 A) | changed: gg's `CODEX_HOME` plus three keys; the PowerShell profile leaks with no settled key (finding 1); remote plugins installed there (finding 2) | `prompt-input-default`, `prompt-input-profile`, `cli-plugin-list` |
+| Repository content (Q18 A) | changed: `project_doc_max_bytes=0` keeps every instruction file out; `.agents/skills` needs `skills.include_instructions=false` (finding 3). Of the four names, only `AGENTS.override.md`, else `AGENTS.md`, loads by default; `TEAM_GUIDE.md` and `.agents.md` do not (`prompt-input-only-team_guide-md`, `prompt-input-only-dot-agents-md`); configuring them as fallback names was not tried. `.codex/config.toml` and project hooks load only when trusted; untrusted, a `.codex/rules` allow did not run its command outside the sandbox. gg also has `--ignore-rules` | `prompt-input-only-*`, `prompt-input-sentinels-*`, `repository-untrusted`, `repository-trusted` |
 | Both access intents | confirmed: read-only and workspace-write under MXC behave as question 8 and Decision 4 say | `mxc-read-only`, `mxc-workspace-write` |
 | Resume flags (request 3.2) | confirmed: `-s` and `-C` before `resume` hold; gg passes them on every resume, as the cwd is the invocation's | `resume-flags-before`, `resume-config-after` |
 | MXC fallback to `unelevated` | changed: not viable (finding 4) | `unelevated-*` |
-| Hooks (Q10) | confirmed, with `--dangerously-bypass-hook-trust` on every call that needs gg's hook (or trust persisted in gg's `CODEX_HOME`) | `hooks-*` |
-| Capabilities (Q15 A) | `plugins` exact through a `-c` table: `{enabled=true}` adds a plugin its `CODEX_HOME` disables and `{enabled=false}` excludes one it enables (`plugins={"x@y"={enabled=true}}`; the dotted key is silently ignored; `--disable plugins` wins over the table). `mcp` exact: changed (finding 5). `skills` hint: `skills.config` can only disable a discovered skill, not add one, so a declared skill reaches Codex from a skill root, a plugin, or as text | `prompt-input-plugin-*`, `cli-plugin-list-installed`, `mcp-schema`, `prompt-input-skills-config-add` |
+| Hooks (Q10) | confirmed, with `--dangerously-bypass-hook-trust` on every call that needs gg's hook; trust persisted in gg's `CODEX_HOME` was not tried | `hooks-*` |
+| Capabilities (Q15 A) | `plugins` exact through a `-c` table: `{enabled=true}` adds a plugin its `CODEX_HOME` disables and `{enabled=false}` excludes one it enables (`plugins={"x@y"={enabled=true}}`; the dotted key is silently ignored; `--disable plugins` wins over the table). `mcp` exact: changed (finding 5). `skills` hint: `skills.config` does not add a skill outside the skill roots (disabling a discovered skill was not recorded), so a declared skill reaches Codex from a skill root, a plugin, or as text | `prompt-input-plugin-*`, `cli-plugin-list-installed`, `mcp-schema`, `prompt-input-skills-config-add` |
 | Job containment (F7) | confirmed: while a command ran, the job held the MXC helper (`codex.exe --__codex-windows-mxc`), `powershell.exe`, the command's `node`, `codex-code-mode-host.exe` and a `node` MCP host; every process naming the marker was in the job; nothing was left after exit or after a tree kill | `mxc-workspace-write.json`, `tree-kill.json` evidence.job |
 | Rewrite refusal (decision 6) | confirmed on Claude Code 2.1.330 (the Claude recorder, owner Q2 A): under `-p` with the launch profile on PowerShell, a listed plugin's PreToolUse hook that prefixes the Declared Command `node --version` with a wrapper, giving `updatedInput` and no permission decision, has the rewritten command refused against the allow list (`permission_denied`, its `permission_denials` entry holding the rewritten command); `git status`, not rewritten, ran under its rule | `test/fixtures/claude/rewrite-refusal` |
 
@@ -136,4 +146,5 @@ These go to the owner as one decision batch before #481.
 - Whether `-s` on `exec` before `fork` overrides a parent thread last run `workspace-write` (finding 6): the recorded
   `fork` followed a read-only last turn.
 - An approval key that lets a config MCP server's tool run under `never` (finding 5).
-- A key that stops PowerShell loading the user's profile (finding 1).
+- A key that stops PowerShell loading the user's profile (finding 1): under `allow_login_shell=false` the model
+  passed `login:false` itself, so the key's own effect was not seen (`login-shell-off`).

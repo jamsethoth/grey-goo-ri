@@ -88,6 +88,14 @@ Then answer with whether it ran, what it printed, and the word you read from REA
     prompt: 'Without any tool, answer with the word you read from README.md earlier in this conversation.',
   },
   {
+    name: 'resume-outside-git',
+    purpose: 'the thread resumed from above its repository with no -C or --skip-git-repo-check: does it start?',
+    start: { kind: 'resume-config-after', from: 'start' },
+    cwd: 'base',
+    config: ['sandbox_mode="workspace-write"'],
+    prompt: `${RUN_EACH}\n1. node write.js resume-config.txt\n2. Get-Location\n${REPORT}`,
+  },
+  {
     name: 'resume-config-after',
     purpose:
       'the thread, last run workspace-write, resumed with -c sandbox_mode="read-only" after resume, started from ' +
@@ -199,6 +207,12 @@ ${REPORT}`,
 Then answer with the last line command 3 printed.`,
   },
   {
+    name: 'login-shell-off',
+    purpose: "allow_login_shell=false: does a shell command still load the user's PowerShell profile?",
+    config: ['allow_login_shell=false'],
+    prompt: `${RUN_EACH}\n1. Get-Location\n${REPORT}`,
+  },
+  {
     name: 'repository-untrusted',
     purpose:
       "every repository sentinel of decision 3 with the project untrusted and gg's empty-start keys left out: which " +
@@ -283,8 +297,7 @@ export const COMMANDS: CliCommand[] = [
   },
   { name: 'cli-doctor', purpose: "codex's own doctor report, in gg's CODEX_HOME", argv: ['doctor', '--json'] },
   { name: 'cli-mcp-list', purpose: "the MCP servers gg's CODEX_HOME configures", argv: ['mcp', 'list', '--json'] },
-  // Without --json the listing names every plugin of the remote catalog (over 1 MB); --json without --available
-  // names the installed ones.
+  // Without --json the listing names the whole remote catalog; --json names the installed plugins.
   { name: 'cli-plugin-list', purpose: "the plugins installed in gg's CODEX_HOME", argv: ['plugin', 'list', '--json'] },
   {
     name: 'cli-plugin-list-installed',
