@@ -7,7 +7,8 @@
 // it. FAKE_CLI_MODE changes the replay: `no-result` leaves out each line whose `type` is FAKE_CLI_RESULT_TYPE,
 // `garbage` sends a line that is not JSON after the first line, `hang` leaves out the result line and then outlives
 // any case, so only a kill ends it, `hang-no-transcript` hangs as `hang` does (its launcher gives it no transcript),
-// and `signal` leaves out the result line and then ends itself with SIGTERM. FAKE_CLI_STDERR is written to stderr
+// and `signal` leaves out the result line and then ends itself with SIGTERM; a hang writes its pid to FAKE_CLI_SENT
+// once its lines are sent, which its launcher's clocks wait for. FAKE_CLI_STDERR is written to stderr
 // first. FAKE_CLI_ORPHAN starts a descendant before the replay, through a middle process that exits once the
 // descendant has written its pid to that file, so the descendant is an orphan the CLI left: detached on Windows, which
 // keeps it out of the job libuv gives node's children; elsewhere in the CLI's process group, as a CLI's own children
@@ -103,10 +104,11 @@ async function replay(recordingPath: string, mode: string) {
     signal: noResult,
   }[mode];
   if (!sent) throw new Error(`the fake CLI has no mode ${mode}`);
-  process.stdout.write(
-    sent.map((line) => `${line}\n`).join(''),
-    () => mode === 'signal' && process.kill(process.pid, 'SIGTERM'),
-  );
+  process.stdout.write(sent.map((line) => `${line}\n`).join(''), () => {
+    if (mode === 'signal') process.kill(process.pid, 'SIGTERM');
+    else if (mode.startsWith('hang') && process.env.FAKE_CLI_SENT)
+      writeFileSync(process.env.FAKE_CLI_SENT, String(process.pid));
+  });
   if (mode.startsWith('hang')) setTimeout(() => {}, LIVES_MS);
   else if (mode !== 'signal') process.exitCode = exitCode;
 }

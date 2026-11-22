@@ -166,9 +166,10 @@ export function fakeCli(t: TestContext, options: FakeCliOptions) {
     const recording = replays.recordingAt(call);
     const transcript =
       mode === 'hang-no-transcript' ? null : options.transcript?.({ launched: asked, recording, home });
+    const sentFile = join(directory, `call ${call} sent.pid`);
     const launched = {
       ...asked,
-      ...(orphan && { testHooks: { signal: processProbe.pidWritten(orphanPidFile, t.signal) } }),
+      ...clockHold(mode, { sent: sentFile, orphan: orphan ? orphanPidFile : null }, t.signal),
       command,
       args: [fakeScript, ...asked.args],
       env: {
@@ -180,6 +181,7 @@ export function fakeCli(t: TestContext, options: FakeCliOptions) {
         FAKE_CLI_RESULT_TYPE: options.resultType,
         FAKE_CLI_RECEIVED: replays.receivedFile(call),
         FAKE_CLI_PID: cliPidFile,
+        FAKE_CLI_SENT: sentFile,
         ...(transcript && { FAKE_CLI_TRANSCRIPT: transcript.path, FAKE_CLI_TRANSCRIPT_FROM: transcript.from }),
         ...(orphan && { FAKE_CLI_ORPHAN: orphanPidFile }),
         ...(stderr !== undefined && { FAKE_CLI_STDERR: stderr }),
@@ -195,3 +197,10 @@ export function fakeCli(t: TestContext, options: FakeCliOptions) {
 }
 
 export type FakeCli = ReturnType<typeof fakeCli>;
+
+// What launch's stall and wall clocks wait for, so no slow start of the fake beats them (#475): a hang's, until it has
+// sent its lines; an orphan's, until the orphan has written its pid; else nothing.
+function clockHold(mode: string, pidFiles: { sent: string; orphan: string | null }, signal: AbortSignal) {
+  const held = mode.startsWith('hang') ? pidFiles.sent : pidFiles.orphan;
+  return held === null ? {} : { testHooks: { signal: processProbe.pidWritten(held, signal) } };
+}

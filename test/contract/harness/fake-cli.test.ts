@@ -71,6 +71,12 @@ test('a hang leaves out the result line and is ended by the stall clock', CASE, 
   assert.deepEqual({ lines, timedOut: ended.timedOut }, { lines: SAID.slice(0, 2), timedOut: 'stall' });
 });
 
+test("a hang's clocks count from its last line, however slowly the fake starts", CASE, async (t) => {
+  const fake = cliReplay.fakeCli(t, { ...STAND_IN, scenario: 'said', mode: 'hang' });
+  const { ended, lines } = await launchOver(fake, { stallMs: 1 });
+  assert.deepEqual({ lines, timedOut: ended.timedOut }, { lines: SAID.slice(0, 2), timedOut: 'stall' });
+});
+
 test('the fake writes the transcript where it is told, from the file it is told', CASE, async (t) => {
   const fake = cliReplay.fakeCli(t, {
     ...STAND_IN,
