@@ -414,8 +414,9 @@ under it. #69 stays an alternative for file locks and rescued human edits; this 
 To file now the owner has accepted ADR 0030 (2026-11-22); none is filed yet. Each test fails today.
 
 1. **gg's job lets no process break away.**
-   - Scope: `lib/containment.ts`'s `createJob` limits and the comment at `:39`; the text edits ADR 0030 lists for ADR
-     0021, `docs/testing.md:239` and GLOSSARY.md; the suite launcher shares the limits (`scripts/run-suite.ts:191`).
+   - Scope: `lib/containment.ts`'s `createJob` limits and the comment at `:39`; the texts ADR 0030's Supersedes assigns
+     to this ticket (ADR 0016's and ADR 0021's breakaway lines, `docs/testing.md:239` and GLOSSARY.md's "or breaks away
+     from the job"); the suite launcher shares the limits (`scripts/run-suite.ts:191`).
    - Test that fails today (`test/contract/exec/`, on `windows-2025`, the real job): `a Git Bash command's background
      node ends with its launch` and `… with runShell`:
      `bash.exe -c 'node -e "setTimeout(() => {}, 60000)" <marker> &'` leaves no marked process once the result is in.
@@ -441,8 +442,8 @@ To file now the owner has accepted ADR 0030 (2026-11-22); none is filed yet. Eac
 3. **A call whose watcher sees an escapee saves its containment as `none` before gg adopts or ends it.**
    - Scope: the call intent's second write (`lib/agent-call.ts`, `lib/attempt.ts`), from the watcher's first sight of
      an escapee, after ticket 2; `RECORD_SCHEMA_VERSION` 3 to 4 and `FAKE_HARNESS_VERSION` 5 to 6, with record.md's
-     containment paragraph and harness.md's `started` rule restated (ADR 0030 decision 4). No rule for a `job` saved
-     before the bump, and no test of one.
+     containment paragraph and harness.md's `started` rule restated (ADR 0030 decision 4), and the other texts ADR
+     0030's Supersedes assigns to this ticket. No rule for a `job` saved before the bump, and no test of one.
    - Tests that fail today (small, beside `test/unit/interpreter.retry.test.ts`): `a crash after the none save commits
      holds the Interrupted Attempt`, the crash point between the committed `none` save and the adoption; `a none save
      that is interrupted stops the Run before the escapee is adopted or ended`, which pins the order (the call stays
@@ -452,7 +453,8 @@ To file now the owner has accepted ADR 0030 (2026-11-22); none is filed yet. Eac
 4. **One shell check for both Harnesses: a packaged shell fails preflight, and `--probe` checks a command stays in
    gg's job.**
    - Scope: one check both Harnesses' `doctor` call, replacing `shellCheck` (`lib/harnesses/claude-doctor.ts:199`) and
-     serving #484's `pwsh` check; with #480's shared doctor helpers and #494's passed-check line.
+     serving #484's `pwsh` check: whichever of this ticket and #484 lands first builds it, and the other calls it; with
+     #480's shared doctor helpers and #494's passed-check line.
    - Tests that fail today (small, `test/unit/doctor.cli-checks.test.ts`): `a first pwsh on PATH that is an alias to an
      app under WindowsApps fails the shell check` (today it passes, "PowerShell is on PATH"), and `under --probe, a
      shell whose command's child is outside gg's job fails the containment probe` (no such probe today).

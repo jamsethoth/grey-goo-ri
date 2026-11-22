@@ -82,40 +82,42 @@ with #484's.
 
 ## Supersedes
 
-These texts stay as they are until the follow-up tickets (the research note's last section), which make each edit
-below.
+These texts stay as they are until the follow-up tickets (the research note's last section); each edit below names
+the follow-up, by its number there, that makes it.
 
 - Decisions L6, `docs/research/user-defined-procedures-decisions.md:920-921`: "a process that starts its own session
-  or explicitly breaks away is an accepted residual risk". Edit: a new dated section of that document amends L6, N1
-  and L14 by this ADR, as the 2026-11-02 section did; the old lines stay as written.
+  or explicitly breaks away is an accepted residual risk". Edit, by follow-up 3: a new dated section of that document
+  amends L6, N1 and L14 by this ADR, as the 2026-11-02 section did; the old lines stay as written.
 - Decision N1's research, the same document `:834-835`: "a job object with `BREAKAWAY_OK` loses only processes that
-  explicitly break away (an accepted residual risk)". Amended by the same section.
+  explicitly break away (an accepted residual risk)". Amended by the same section (follow-up 3).
 - The N1 and L14 amendment, the same document `:1261-1262`: "a tool that explicitly breaks away from the job stays an
-  accepted residual risk". Amended by the same section.
+  accepted residual risk". Amended by the same section (follow-up 3).
 - ADR 0011, `docs/adr/0011-interrupted-attempts-are-rescued-and-retried.md:60`: "A tool that explicitly breaks away
-  from the job is an accepted residual risk." Edit: an inline amendment naming this ADR, with 4's rule and 8's
-  residual risk.
+  from the job is an accepted residual risk." Edit, by follow-up 3: an inline amendment naming this ADR, with 4's
+  rule and 8's residual risk.
 - ADR 0021, `docs/adr/0021-windows-commands-run-in-a-job-object-through-node-ffi.md:26-27`: "gg creates a job with
-  kill-on-close and breakaway-OK" and "Nothing the command starts is outside the job". Edit: an inline amendment: no
-  breakaway (1), and a packaged app is created outside the job, which the watcher (3) adopts or ends.
+  kill-on-close and breakaway-OK" and "Nothing the command starts is outside the job". Edit: inline amendments naming
+  this ADR: no breakaway (1), by follow-up 1, and a packaged app is created outside the job, which the watcher (3)
+  adopts or ends, by follow-up 2.
 - GLOSSARY.md, Command Cleanup (`:214-215`): "a process that starts its own session or breaks away from the job
-  escapes, an accepted residual risk". Edit: the watcher on Windows and 8's residual risk. Containment (`:200-203`)
-  gains the adopted jobs.
-- `docs/testing.md:239`: "A child that asked to break away: not seen, since it left the job." Edit: such a child fails
-  to start under the suite launcher's job, and a packaged app's process is not seen.
+  escapes, an accepted residual risk". Edit, in three steps: follow-up 1 drops "or breaks away from the job";
+  follow-up 2 adds the watcher on Windows, and Containment (`:200-203`) gains the adopted jobs; follow-up 3 names 8's
+  residual risk.
+- `docs/testing.md:239`: "A child that asked to break away: not seen, since it left the job." Edit, by follow-up 1:
+  such a child fails to start under the suite launcher's job, and a packaged app's process is not seen.
 - Not in the issue's list, found while writing: `docs/interfaces/record.md:852-856` says the job's kill-on-close "is
   what makes 'the writers are confirmed gone' true on Windows", and the comments at `lib/containment.ts:39` ("a child
   that asks is outside the job by design") and `:225` ("nothing the command starts is outside the job"). Edit:
-  record.md's prose names the adopted jobs and 4's rule, with no shape change, under `RECORD_SCHEMA_VERSION` 4 (4);
-  the comments change with the code.
+  record.md's prose names the adopted jobs and 4's rule, with no shape change, under `RECORD_SCHEMA_VERSION` 4 (4),
+  by follow-up 3; the comments change with the code, `:39` by follow-up 1 and `:225` by follow-up 2.
 - Found by a census of every text that claims all of a command's processes sit in gg's job (`rg -i "break.?away|outside
   the job|outside it|nothing .* is outside|every process in it|all it starts"`):
   - ADR 0016, `docs/adr/0016-the-suite-launcher-takes-a-stage-from-a-closed-set.md:68`: "nothing a stage starts is
-    outside it". Edit: an inline amendment naming this ADR: a packaged app's process is not in the stage's job, and the
+    outside it". Edit, by follow-up 1: an inline amendment naming this ADR: a packaged app's process is not in the stage's job, and the
     census does not see it.
   - `docs/interfaces/harness.md:163-166`, the `started` rule: "`kind` is `job` when a Windows job ends them all with
-    gg". Edit: the rule names 4's, a second `started` report of `none` when the watcher sees an escapee, under
-    `FAKE_HARNESS_VERSION` 6 (4).
+    gg". Edit, by follow-up 3: the rule names 4's, a second `started` report of `none` when the watcher sees an
+    escapee, under `FAKE_HARNESS_VERSION` 6 (4).
   - Code comments, each changed with the follow-up that changes its code: `scripts/run-suite.ts:184` ("A child that
     asks to break away still can, unseen") with follow-up 1; `lib/containment.ts:1-2` ("every process it starts,
     orphans included, held in a job object") and `:246` ("nothing the argv starts is outside the job"),
@@ -162,8 +164,8 @@ below.
   is installed or put first on PATH (2's fix).
 - A Windows launch or Check pays for a process snapshot each poll, and a job per packaged process it adopts.
 - #289's and #128's cgroup work gains the stdio-closed double fork as a case; Linux keeps its residual risk until then.
-- #420 keeps PowerShell as the default and adds Bash under 1's containment; #484 builds 5's check once, for both
-  Harnesses; #483 tests its orphan case in the job.
+- #420 keeps PowerShell as the default and adds Bash under 1's containment; whichever of #484 and follow-up 4 lands
+  first builds 5's check, once for both Harnesses, and the other calls it; #483 tests its orphan case in the job.
 - The real PowerShell 7.7.0 ZIP build stays in: under a real Claude call in a job without breakaway (the research
   note's call 8), Claude Code 2.1.330 took it from the front of PATH, it and the command it ran were members of gg's
   job, and nothing was left at the job's close. The 7.6 LTS MSI was not run. Ticket 4's `--probe` half checks the
