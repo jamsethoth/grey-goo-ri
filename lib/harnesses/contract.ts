@@ -90,3 +90,11 @@ export const emptyUsage = (capabilities: Record<string, unknown> | null | undefi
     const capability = USAGE_CAPABILITY[field];
     return capability && !capabilities?.[capability] ? null : 0;
   });
+
+// A call's Usage delta (request 3.7): each count its Session's total less the total before it, a count the total
+// leaves null staying null; peakContextTokens, a maximum, is the call's own.
+export const usageDelta = (
+  _cumulative: events.Usage,
+  _previous: events.Usage | null,
+  _peakContextTokens: number | null,
+): events.Usage => usageOf(() => 0);
