@@ -313,7 +313,12 @@ test(
   async (t) => {
     const olderFile = join(scratch, 'older-under-reused.pid');
     t.after(() => processProbe.endProcessIn(olderFile));
-    spawn(process.execPath, [childScripts.LONG_LIVED, olderFile], { stdio: 'ignore', windowsHide: true });
+    const olderChild = spawn(process.execPath, [childScripts.LONG_LIVED, olderFile], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    // At the case's timeout too: the pid file the after hook ends it by may not be written yet.
+    t.signal.addEventListener('abort', () => olderChild.kill());
     await waitFor(() => pidIn(olderFile) > 0, t.signal);
     const older = pidIn(olderFile);
     const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'nojob-older');
