@@ -7,15 +7,15 @@
 // pass through gg (scripts/record-claude-example.ts, #486), alone.
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:http';
-import { homedir, tmpdir, userInfo } from 'node:os';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { homedir, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import * as commandShim from '../lib/command-shim.ts';
 import * as exec from '../lib/exec.ts';
 import * as claude from '../lib/harnesses/claude.ts';
+import * as cliRecording from './cli-recording.ts';
 import * as recordClaudeExample from './record-claude-example.ts';
 import { type CliCommand, COMMANDS, SCENARIOS, type Scenario } from './record-claude-scenarios.ts';
 
@@ -105,9 +105,6 @@ function setUp(base: string, scenario: Scenario): Directories {
   return directories;
 }
 
-const fill = (text: string, values: Record<string, string>) =>
-  text.replace(/\{(\w+)\}/g, (whole, key: string) => values[key] ?? whole);
-
 // The launch profile's argv, environment and files for the scenario, with its probe's changes.
 function launchOf(scenario: Scenario, directories: Directories, values: Record<string, string>, resume: string | null) {
   const access = scenario.access ?? 'read-only';
@@ -130,16 +127,17 @@ function launchOf(scenario: Scenario, directories: Directories, values: Record<s
   const launch = claude.launchArgs(call, tools);
   const schemaAt = launch.argv.indexOf('--json-schema');
   if (scenario.noSchema) launch.argv.splice(schemaAt, 2);
-  launch.argv.push(...(scenario.extraArgv ?? []).map((arg) => fill(arg, values)));
-  const env = Object.fromEntries(Object.entries(scenario.env ?? {}).map(([key, value]) => [key, fill(value, values)]));
+  launch.argv.push(...(scenario.extraArgv ?? []).map((arg) => cliRecording.fill(arg, values)));
+  const env = Object.fromEntries(
+    Object.entries(scenario.env ?? {}).map(([key, value]) => [key, cliRecording.fill(value, values)]),
+  );
   return { ...launch, env: { ...launch.env, ...env } };
 }
 
 // One call: the prompt on stdin, each stdout line with its arrival time, killed after the init event when the
 // scenario asks, or at the call limit.
 function spawnCall(launch: claude.Launch, cwd: string, prompt: string, untilInit: boolean): Promise<Output> {
-  const inherited = Object.entries(process.env).filter(([key]) => !INHERITED.test(key));
-  const env = { ...Object.fromEntries(inherited), ...launch.env };
+  const env = cliRecording.environmentOf(INHERITED, launch.env);
   const { command, args } = commandShim.argvOf('claude', launch.argv);
   const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
   const started = Date.now();
@@ -200,55 +198,30 @@ function evidenceOf(directories: Directories) {
   };
 }
 
-// The local paths, the user's name, email addresses and keys, replaced wherever they appear. A path's segments match
-// across any run of slashes or backslashes, since a tool result's JSON nested in a stream line escapes it twice, and
-// its drive as written or as Git Bash writes it; its dash form is how Claude names a project directory.
+// The local paths, the user's name, email addresses and keys, replaced wherever they appear (scripts/cli-recording.ts).
 function redactorOf(base: string) {
-  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const forms = (path: string) => {
-    const [drive = '', ...segments] = path.split(/[\\/]+/);
-    const head = `(?:${escape(drive)}|/${escape(drive.charAt(0).toLowerCase())})`;
-    return [[head, ...segments.map(escape)].join('[\\\\/]+'), escape(path.replace(/[^A-Za-z0-9]/g, '-'))];
-  };
-  const paths: [string, string][] = [
-    [base, '<recording>'],
-    [homedir(), '<home>'],
-    [process.env.ProgramFiles ?? 'C:\\Program Files', '<program-files>'],
-  ];
-  const pairs: [RegExp, string][] = [
-    ...paths.flatMap(([path, label]) => forms(path).map((form): [RegExp, string] => [new RegExp(form, 'gi'), label])),
-    [new RegExp(escape(userInfo().username), 'gi'), '<user>'],
-    [/sk-ant-[\w-]+/g, 'sk-ant-<redacted>'],
-    [/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '<email>'],
-  ];
-  return (text: string) =>
-    pairs.reduce((redacted, [pattern, replacement]) => redacted.replace(pattern, replacement), text);
+  return cliRecording.redactorOf({
+    paths: [
+      [base, '<recording>'],
+      [homedir(), '<home>'],
+      [process.env.ProgramFiles ?? 'C:\\Program Files', '<program-files>'],
+    ],
+    username: userInfo().username,
+    patterns: [[/sk-ant-[\w-]+/g, 'sk-ant-<redacted>']],
+  });
 }
 
 // A stand-in for the Messages API that answers overloaded once, then rate-limited with a one-second retry-after, so
 // the CLI's own retries and their api_retry events are recorded (no real rate limit can be asked for).
-async function startStub(requests: string[]) {
+function startStub() {
   const answers = { messages: 0 };
-  const server = createServer((request, response) => {
-    request.resume();
-    request.on('end', () => {
-      const path = (request.url ?? '').split('?')[0] ?? '';
-      if (!path.includes('/messages')) {
-        requests.push(`${request.method} ${path} 404`);
-        response.writeHead(404).end();
-        return;
-      }
-      answers.messages += 1;
-      const [status, type] = answers.messages === 1 ? [529, 'overloaded_error'] : [429, 'rate_limit_error'];
-      requests.push(`${request.method} ${path} ${status}`);
-      const headers = { 'content-type': 'application/json', 'retry-after': '1', 'request-id': 'req_recording' };
-      response.writeHead(status, headers).end(JSON.stringify({ type: 'error', error: { type, message: type } }));
-    });
+  return cliRecording.startStandIn((path) => {
+    if (!path.includes('/messages')) return null;
+    answers.messages += 1;
+    const [status, type] = answers.messages === 1 ? [529, 'overloaded_error'] : [429, 'rate_limit_error'];
+    const headers = { 'content-type': 'application/json', 'retry-after': '1', 'request-id': 'req_recording' };
+    return { status, headers, body: JSON.stringify({ type: 'error', error: { type, message: type } }) };
   });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  const port = typeof address === 'object' && address !== null ? address.port : 0;
-  return { url: `http://127.0.0.1:${port}`, close: () => server.close() };
 }
 
 interface Recorded {
@@ -258,12 +231,11 @@ interface Recorded {
 
 async function record(scenario: Scenario, cliVersion: string, base: string, resumed: Recorded | undefined) {
   const directories = resumed?.directories ?? setUp(base, scenario);
-  const requests: string[] = [];
-  const stub = scenario.stub ? await startStub(requests) : undefined;
+  const stub = scenario.stub ? await startStub() : undefined;
   const values = { base: directories.base, outside: directories.base.replaceAll('\\', '/'), stub: stub?.url ?? '' };
   const launch = launchOf(scenario, directories, values, resumed?.sessionId ?? null);
   for (const [path, text] of Object.entries(launch.files)) writeFileSync(path, text);
-  const prompt = fill(scenario.prompt, values);
+  const prompt = cliRecording.fill(scenario.prompt, values);
   const output = await spawnCall(launch, directories.repo, prompt, scenario.untilInit ?? false);
   stub?.close();
   const sessionId = sessionOf(output.lines);
@@ -280,18 +252,15 @@ async function record(scenario: Scenario, cliVersion: string, base: string, resu
     lineTimesMs: output.timesMs,
     stderr: output.stderr,
     evidence: { ...evidenceOf(directories), transcriptPath: transcriptOf(sessionId, configDirectory) },
-    stubRequests: stub ? requests : null,
+    stubRequests: stub ? stub.requests : null,
   };
   save(scenario.name, redactorOf(directories.base), output.lines, meta);
   console.log(`${scenario.name}: exit ${output.exitCode}, ${output.lines.length} lines, killed ${output.killed}`);
   return { directories, sessionId };
 }
 
-function save(name: string, redact: (text: string) => string, lines: string[], meta: object) {
-  const text = lines.map(redact).join('\n');
-  writeFileSync(join(OUTPUT, `${name}.jsonl`), text && `${text}\n`);
-  writeFileSync(join(OUTPUT, `${name}.json`), `${redact(JSON.stringify(meta, null, 2))}\n`);
-}
+const save = (name: string, redact: (text: string) => string, lines: string[], meta: object) =>
+  cliRecording.save(OUTPUT, name, { redact, lines, meta });
 
 // The keys of auth status --json kept as the CLI printed them: every other string in its output names the account.
 const ACCOUNT_KEPT = new Set(['authMethod', 'apiProvider']);
@@ -309,10 +278,15 @@ function redactAccount(stdout: string) {
 // One command that is no model call, in a directory of its own, whose config directory is empty.
 function recordCommand(command: CliCommand, cliVersion: string, base: string) {
   mkdirSync(join(base, 'config'), { recursive: true });
-  const env = Object.fromEntries(Object.entries(command.env ?? {}).map(([key, value]) => [key, fill(value, { base })]));
-  const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !INHERITED.test(key)));
+  const env = Object.fromEntries(
+    Object.entries(command.env ?? {}).map(([key, value]) => [key, cliRecording.fill(value, { base })]),
+  );
   const argv = commandShim.argvOf('claude', command.argv);
-  const ran = spawnSync(argv.command, argv.args, { env: { ...inherited, ...env }, encoding: 'utf8', timeout: 60_000 });
+  const ran = spawnSync(argv.command, argv.args, {
+    env: cliRecording.environmentOf(INHERITED, env),
+    encoding: 'utf8',
+    timeout: 60_000,
+  });
   const meta = {
     cliVersion,
     command: command.name,
@@ -349,30 +323,26 @@ async function main(names: string[]) {
     const { command, args } = commandShim.argvOf('claude', ['--version']);
     return recordExample(execFileSync(command, args, { encoding: 'utf8' }).trim());
   }
-  const named = [...SCENARIOS, ...COMMANDS].map((recorded) => recorded.name);
-  const unknown = names.filter((name) => !named.includes(name));
-  if (unknown.length || names.includes('--help')) {
-    console.error(unknown.length ? `unknown name: ${unknown.join(', ')}\n${USAGE}` : USAGE);
+  const picked = cliRecording.chosenOf(names, {
+    scenarios: SCENARIOS,
+    commands: COMMANDS,
+    continuesOf: (scenario) => scenario.resumes,
+    usage: USAGE,
+  });
+  if ('error' in picked) {
+    console.error(picked.error);
     return 2;
   }
-  const chosen = SCENARIOS.filter((scenario) => !names.length || names.includes(scenario.name));
-  const missing = chosen.filter(
-    (scenario) => scenario.resumes && !chosen.some((other) => other.name === scenario.resumes),
-  );
-  if (missing.length) {
-    console.error(`${missing.map((scenario) => `${scenario.name} resumes ${scenario.resumes}`).join('; ')}\n${USAGE}`);
-    return 2;
-  }
+  const { scenarios: chosen, commands } = picked;
   const { command, args } = commandShim.argvOf('claude', ['--version']);
   const cliVersion = execFileSync(command, args, { encoding: 'utf8' }).trim();
-  const temporary = realpathSync.native(mkdtempSync(join(tmpdir(), 'gg-claude-')));
+  const temporary = cliRecording.temporary('gg-claude-');
   mkdirSync(OUTPUT, { recursive: true });
   const recorded = new Map<string, Recorded>();
   for (const scenario of chosen) {
     const resumed = scenario.resumes === undefined ? undefined : recorded.get(scenario.resumes);
     recorded.set(scenario.name, await record(scenario, cliVersion, join(temporary, scenario.name), resumed));
   }
-  const commands = COMMANDS.filter((cliCommand) => !names.length || names.includes(cliCommand.name));
   for (const cliCommand of commands) recordCommand(cliCommand, cliVersion, join(temporary, cliCommand.name));
   console.log(
     `recorded ${chosen.length} calls and ${commands.length} commands of ${cliVersion} into ${OUTPUT}; ` +
