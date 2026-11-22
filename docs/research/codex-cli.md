@@ -19,18 +19,29 @@ each on its first try: `mcp-approve`, `login-shell-off` re-recorded, and `fork-k
 
 These go to the owner as one decision batch before #481.
 
-1. **The empty start needs four keys** (decision 2, Q8 A). gg's `CODEX_HOME` holds the login
-   (`cli-login-status`), but with no override three things from the user's side still reach the model
+1. **The empty start needs four keys, and two account tool namespaces remain** (decision 2, Q8 A). gg's `CODEX_HOME`
+   holds the login (`cli-login-status`), but with no override three things from the user's side still reach the model
    (`prompt-input-default`): the user's `~/.agents/skills` (skill root r0, read from the profile, not from
    `CODEX_HOME`), a deferred tools section (`<tools>`, 2,272 characters) and `<recommended_plugins>`. The fixtures
    keep each such section's kind and size, not its text (D3 A), so which of the account's apps the tools section
    names is not recorded. The keys `skills.include_instructions=false`, `features.apps=false` and
    `features.tool_suggest=false` remove all three (`prompt-input-profile`: no `<tools>` or `<recommended_plugins>`
-   section). A fourth leak needs `allow_login_shell=false`: without it most shell commands run PowerShell without
-   `-NoProfile` (`pwsh.exe -Command` in the stream), so the user's PowerShell profile is tried and its
-   "AuthorizationManager check failed" error lands in the command's output (`start.jsonl`, `mxc-workspace-write.json`
-   last message, `fork-kept-read-only.jsonl`). A command runs `-NoProfile`, with no profile error, when the model passes
-   `login:false` to its shell tool (`compaction`: all six commands). Under `-c allow_login_shell=false` the command
+   section). `debug prompt-input` does not show all a real call gets: every recorded `exec` call under gg's login,
+   under these keys or all four (`login-shell-off`), still hands the model a `<tools>` developer message
+   (`tools.deferred_namespaces`, 316 characters; 329 with the probe MCP server) and a `world_state` naming two tool
+   namespaces from the account, `mcp__openai_api_credit_promo` and `mcp__openai_api_key_local_confirmation` (API-key
+   onboarding tools; `start.rollout.jsonl` line 9). The `auth-*` and `usage-limit` calls, in an empty `CODEX_HOME`,
+   carry neither, and the rollouts of `fork` and `fork-unflagged` hold no `<tools>` message of their own. The latest
+   call, `fork-kept-read-only`, sets `mcp__openai_api_credit_promo` to null in its first `world_state` beside an
+   81-character `<tools>` message (rollout line 8) and back mid-turn beside a 79-character one (line 19), so the set
+   changes between calls and within one. Which installed plugin or account setting adds them is not recorded. The
+   skills and plugin suggestions do not reach a real call under the keys: skills instructions appear only in the two
+   `repository-*` calls, which run without `skills.include_instructions=false`. A fourth leak needs
+   `allow_login_shell=false`: without it most shell commands run PowerShell without `-NoProfile` (`pwsh.exe -Command`
+   in the stream), so the user's PowerShell profile is tried and its "AuthorizationManager check failed" error lands in
+   the command's output (`start.jsonl`, `mxc-workspace-write.jsonl`, `fork-kept-read-only.jsonl`). A command runs
+   `-NoProfile`, with no profile error, when the model passes `login:false` to its shell tool (`compaction`: all three
+   commands). Under `-c allow_login_shell=false` the command
    runs `-NoProfile`, with no profile error, when the model leaves `login` out: asked for the command alone, its tool
    call carried only `cmd:"Get-Location"` (`login-shell-off` rollout line 14) and the stream's command is `pwsh.exe
    -NoProfile -Command Get-Location` (`login-shell-off.jsonl`). The 0.163 planning notes record `-NoProfile` on every
@@ -39,8 +50,9 @@ These go to the owner as one decision batch before #481.
    with `project_doc_max_bytes=0`, so a declared skill reaches Codex as text only.
 2. **gg's `CODEX_HOME` holds ten remote plugins, installed and enabled** (`cli-plugin-list`: `github`, `superpowers`,
    `build-web-apps` and seven more from `openai-curated-remote`). Under the profile keys none of them shows in the
-   prompt input, but `plugins` exact (decision 7) means gg disables every plugin an Agent does not list: by a
-   `plugins={...}` table naming each installed one, or `--disable plugins` when none is listed. The table excludes a
+   prompt input, but a real call still names two tool namespaces whose source is unshown (finding 1). `plugins` exact
+   (decision 7) means gg disables every plugin an Agent does not list: by a `plugins={...}` table naming each
+   installed one, or `--disable plugins` when none is listed. The table excludes a
    plugin its `CODEX_HOME` enables: the probe plugin, installed and enabled, reaches the prompt input with no `-c`
    (`prompt-input-plugin-enabled-default`: `SENTINEL-PLUGINSKILL`) and not under `{enabled=false}`
    (`prompt-input-plugin-excluded`: no sentinel). Owner D11 A: #481 runs `codex plugin list --json` (no model call)
@@ -146,7 +158,7 @@ These go to the owner as one decision batch before #481.
 
 | Choice | Verdict | Evidence |
 | --- | --- | --- |
-| Empty start (Q8 A) | changed: gg's `CODEX_HOME` plus four keys, `allow_login_shell=false` among them to keep the PowerShell profile out (finding 1); remote plugins installed there (finding 2) | `prompt-input-default`, `prompt-input-profile`, `login-shell-off`, `cli-plugin-list` |
+| Empty start (Q8 A) | changed: gg's `CODEX_HOME` plus four keys, `allow_login_shell=false` among them to keep the PowerShell profile out (finding 1); remote plugins installed there (finding 2); two account tool namespaces still reach every real call (finding 1) | `prompt-input-default`, `prompt-input-profile`, `login-shell-off`, `cli-plugin-list`, `start.rollout.jsonl` |
 | Repository content (Q18 A) | changed: `project_doc_max_bytes=0` keeps every instruction file out; `.agents/skills` needs `skills.include_instructions=false` (finding 3). Of the four names, only `AGENTS.override.md`, else `AGENTS.md`, loads by default; `TEAM_GUIDE.md` and `.agents.md` do not (`prompt-input-only-team_guide-md`, `prompt-input-only-dot-agents-md`); configuring them as fallback names was not tried. `.codex/config.toml` and project hooks load only when trusted; untrusted, a `.codex/rules` allow did not run its command outside the sandbox. gg also has `--ignore-rules` | `prompt-input-only-*`, `prompt-input-sentinels-*`, `repository-untrusted`, `repository-trusted` |
 | Both access intents | confirmed: read-only and workspace-write under MXC behave as question 8 and Decision 4 say | `mxc-read-only`, `mxc-workspace-write` |
 | Resume flags (request 3.2) | confirmed: `-s` and `-C` before `resume` hold; gg passes them on every resume, as the cwd is the invocation's | `resume-flags-before`, `resume-config-after` |
@@ -164,3 +176,5 @@ These go to the owner as one decision batch before #481.
   model answered that it could not run commands, so the rule's effect was not seen. gg never trusts a project.
 - Whether the per-tool MCP key (`mcp_servers.<id>.tools.<tool>.approval_mode`) lets one tool run under `never`
   (finding 5): only the per-server key was recorded.
+- Where the two `mcp__openai_api_*` tool namespaces come from, and whether D11 A's `plugins` table removes them
+  (finding 1): `debug prompt-input` does not show them, so only a real call can.

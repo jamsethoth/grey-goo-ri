@@ -224,8 +224,8 @@ Then answer with the last line command 3 printed.`,
     name: 'login-shell-off',
     purpose:
       'allow_login_shell=false, the command asked for with no other shell tool argument, so the key alone decides ' +
-      "the login shell (D9 B; the first try's model passed login:false itself): does a shell command still load the " +
-      "user's PowerShell profile?",
+      "the login shell (D9 B; it replaces the 29th call's recording, whose model passed login:false itself): " +
+      "does a shell command still load the user's PowerShell profile?",
     config: ['allow_login_shell=false'],
     prompt:
       'Run the command `Get-Location` once with your shell tool, giving the tool the command alone and no other ' +

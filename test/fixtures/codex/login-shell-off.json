@@ -1,7 +1,7 @@
 {
   "cliVersion": "codex-cli 0.171.0",
   "scenario": "login-shell-off",
-  "purpose": "allow_login_shell=false, the command asked for with no other shell tool argument, so the key alone decides the login shell (D9 B; the first try's model passed login:false itself): does a shell command still load the user's PowerShell profile?",
+  "purpose": "allow_login_shell=false, the command asked for with no other shell tool argument, so the key alone decides the login shell (D9 B; it replaces the 29th call's recording, whose model passed login:false itself): does a shell command still load the user's PowerShell profile?",
   "modelCall": true,
   "command": {
     "executable": "codex",
