@@ -22,7 +22,7 @@ const MEDIUM: [RegExp, string][] = [
   ],
   [/\b(?:committingRepo|emptyWorktree|twoWorktrees)\(/, 'calls a support helper that spawns'],
   [/\b(?:rescueFixture|rescueRefs|inRef)\(/, 'calls a support helper that spawns'],
-  [/\b(?:claudeOverFakeCli|runOverRecordings|claudeFixture)\(/, 'calls a support helper that spawns'],
+  [/\b(?:claudeOverFakeCli|runOverRecordings|claudeFixture|fakeCli)\(/, 'calls a support helper that spawns'],
 ];
 // This file is left out: its samples below spell every marker, and it only reads files.
 const unitFiles = readdirSync(new URL('./', import.meta.url), { recursive: true, encoding: 'utf8' })
@@ -44,6 +44,7 @@ const marked = [
   ["claudeOverFakeCli.claudeOverFakeCli(t, { scenario: 'success' })", 'calls a support helper that spawns'],
   ['exampleOnClaude.runOverRecordings(t)', 'calls a support helper that spawns'],
   ['exampleOnClaude.claudeFixture(t, claude)', 'calls a support helper that spawns'],
+  ["cliReplay.fakeCli(t, { recordings, scenario: 'said', resultType: 'done' })", 'calls a support helper that spawns'],
 ];
 for (const [text, what] of marked) {
   test(`the size check flags a unit file that ${what}: ${text}`, () => {
@@ -193,18 +194,45 @@ const filesOutsideHarnesses = [...repoFiles('lib/'), ...repoFiles('bin/')].filte
   (path) => !path.startsWith('lib/harnesses/'),
 );
 const HARNESS_NAMES = /claude|codex|CLAUDE\.md|\.codex/i;
+// Each line of `text` that names a Harness, as `<path>:<line>: <text>`.
+const namingHarness = (path: string, text: string) =>
+  text.split('\n').flatMap((line, i) => (HARNESS_NAMES.test(line) ? [`${path}:${i + 1}: ${line.trim()}`] : []));
 
 test('no module outside lib/harnesses names a Harness', () => {
   assert.ok(
     filesOutsideHarnesses.includes('lib/interpreter.ts') && filesOutsideHarnesses.includes('bin/gg.ts'),
     `scanned ${filesOutsideHarnesses.join(', ')}`,
   );
-  const named = filesOutsideHarnesses.flatMap((path) =>
-    readFileSync(root + path, 'utf8')
-      .split('\n')
-      .flatMap((line, i) => (HARNESS_NAMES.test(line) ? [`${path}:${i + 1}: ${line.trim()}`] : [])),
+  assert.deepEqual(
+    filesOutsideHarnesses.flatMap((path) => namingHarness(path, readFileSync(root + path, 'utf8'))),
+    [],
   );
-  assert.deepEqual(named, []);
+});
+
+// The modules every Harness shares, wherever each lives (#480, Q1 A): each names no Harness, so a fix to one lands
+// once for both. A new shared module joins this list by hand.
+const SHARED_HARNESS_MODULES = [
+  'lib/harnesses/contract.ts',
+  'lib/harnesses/cli-call.ts',
+  'lib/harnesses/cli-doctor.ts',
+  'test/support/cli-replay.ts',
+  'test/support/child-scripts/fake-cli.ts',
+  'scripts/cli-recording.ts',
+];
+
+test('no module every Harness shares names a Harness', () => {
+  assert.deepEqual(namingHarness('lib/harnesses/a.ts', '// one call\n// as codex does'), [
+    'lib/harnesses/a.ts:2: // as codex does',
+  ]);
+  assert.deepEqual(
+    SHARED_HARNESS_MODULES.filter((path) => !existsSync(root + path)),
+    [],
+    'a shared module the list names exists',
+  );
+  assert.deepEqual(
+    SHARED_HARNESS_MODULES.flatMap((path) => namingHarness(path, readFileSync(root + path, 'utf8'))),
+    [],
+  );
 });
 
 // A Harness starts its CLI only through the exec shipped builds it from (ADR 0019, #423): a launcher it imported could

@@ -188,6 +188,7 @@ leverage and a change lands in one place (locality).
 | `lib/publish.ts` | **stub** (`export {}`): `gg publish` (to be ported) |
 | `scripts/run-suite.ts` | the suite launcher Codex may run outside its sandbox (ADR 0010); the full and fast stages' census of what they leave running (`docs/testing.md`) |
 | `scripts/record-claude.ts` | the one command that calls the real `claude` (#425): each call `scripts/record-claude-scenarios.ts` lists, run once with the Claude Harness's launch profile in a temporary repository, redacted into `test/fixtures/claude/` with its command, line times and what it left behind; run by hand to re-record a new Claude version, never by a test |
+| `scripts/cli-recording.ts` | what every recorder of an Agent CLI does the same way: the names it records and the chain of calls that continue one another, the text a value fills, the environment a nested CLI starts with, the redaction of what it commits, the stand-in API server, the temporary directory and a call's saved files (#480) |
 | `examples/` | each Harness's harness, model and effort for the Agents of the example, which `gg init --harness <name>` writes |
 
 ## Misleading areas
