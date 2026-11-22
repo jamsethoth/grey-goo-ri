@@ -175,7 +175,7 @@ second packaged pwsh whose parent is `claude.exe`.
 
 | option | sees | privileges | cost | reliability |
 | --- | --- | --- | --- | --- |
-| Descendant watcher: a Toolhelp snapshot, polled, joined by parent pid where the child started no earlier than its parent (`linkedDescendants`, `lib/containment.ts:89`, over `commandCleanup.linkedPids`; today only on the uncontained path) | every escapee probed: the packaged pwsh's parent is the job's `cmd.exe` or `claude.exe`, each of its children's is pwsh | none | 38 ms a snapshot of 497 processes on a 20-thread machine, 67 ms with every process's creation time and command line; about 15% of one core at POSIX's 250 ms poll gap (`lib/process-tree.ts:11`), about 4% at 1 s | misses a process started and orphaned between two polls, as the POSIX watcher does; the creation-time rule closes pid reuse |
+| Descendant watcher: a Toolhelp snapshot, polled, joined by parent pid where the child started no earlier than its parent (`linkedDescendants`, `lib/containment.ts:89`, over `commandCleanup.linkedPids`; today only on the uncontained path) | every escapee probed: the packaged pwsh's parent is the job's `cmd.exe` or `claude.exe`, each of its children's is pwsh | none | 38 ms a snapshot of 497 processes on a 20-thread machine, 67 ms with every process's creation time and command line; about 15% of one core at POSIX's 250 ms poll gap (`lib/process-tree.ts:11`), about 4% at 1 s | misses a process started and orphaned between two polls, as the POSIX watcher does; the creation-time rule rejects a reused pid only at first sight, so a held handle per seen process keeps its pid from reuse (below) |
 | Watcher with adoption (question 2) | as the watcher; adds kill-on-close for what it adopted, so gg's death ends it | none | a job per packaged escapee | the same gap; one seen but neither adopted nor ended is a survivor |
 | WMI `Win32_ProcessStartTrace` | every process start, from the kernel | administrator: refused with "Access to a CIM resource was not available to the client." | - | - |
 | WMI `__InstanceCreationEvent WITHIN 1` on `Win32_Process` | a start, with pid, parent pid and creation date | none (it saw the marked node) | WMI polls the whole process table at the `WITHIN` interval in its own service | the same gap as the watcher, run by `WmiPrvSE` |
@@ -191,6 +191,36 @@ GLOSSARY.md's warning that "a Windows parent pid cannot prove a process its chil
 one call a dead parent's pid was reused by an unrelated `node.exe` (call 5) and `cmd.exe` (call 6). The creation-time
 rule #297 put in `linkedPids` (a child joins only if it started no earlier than the parent it names) rejects such a
 pid as a parent, since the reused process started after the child.
+
+That rule decides a link at first sight only. A watcher that keeps a seen process as a seed after its parent exits,
+as gg's POSIX `observe` does (`lib/command-cleanup.ts:181-192`) and the job probe did, links whatever later holds the
+seed's pid: if the seed exits and an unrelated process takes its pid between two polls, the replacement's children
+start after it, pass the rule, and are linked. A copy of `lib/command-cleanup.ts` at 2c01d56 fed two listings (poll 1:
+root 100 starts 200; poll 2: 200 is gone, an unrelated process holds pid 200 and starts 300):
+
+```
+node reuse-probe.ts
+after poll 2, seen: [ 200, 300 ] row 300: [300,200,"2026-11-22 10:00:21",999,"UNRELATED child",21]
+linkedPids seeded at the reused pid 200: [ 300 ]
+leftover plan kills: {"kill":[300],...}
+```
+
+Windows keeps a process's pid from reuse while any handle to it is open (Raymond Chen, "When does a process ID become
+available for reuse?", The Old New Thing, 2011-01-07). A probe kept the handles of 30 exited processes, released 30
+others, then started 600 short processes of its own:
+
+```
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File pin-probe.ps1
+pinned (handle kept, exited): 30; their pids reused by the 600: 0
+control (handle released, exited): 30; their pids reused by the 600: 7
+distinct pids among the 600: 570
+```
+
+So the watcher holds a handle to each process it links (the creation-time rule still decides the link at first
+sight), seeds only from processes whose handle has not signalled, and adopts or ends each through its handle, so
+nothing acts on a stale pid; a process gg cannot open is a survivor. Comparing a retained pid's creation time each poll
+is the fallback for such a process, not the rule: alone it races, since the pid can be reused between the check and
+`AssignProcessToJobObject`. On Linux a pidfd is the same idea (`pidfd_open`, question 4).
 
 ## 4. Linux parity
 
@@ -274,9 +304,11 @@ ADR 0030 proposes it; this is its outline.
    #420 adds Bash as a choice). Where the MSI PowerShell 7 is installed, Claude already takes it. Where Claude would
    resolve a packaged one, preflight fails, naming the fix, since gg cannot steer Claude off it.
 3. **A Windows launch and a Check's shell runner watch their descendants, as POSIX's do,** linked by parent pid and
-   creation time to the job's members and the descendants already seen. A linked process outside gg's job is adopted
-   when seen: into gg's job, else into a new kill-on-close job gg holds, else terminated. At cleanup gg ends its job
-   and each adopted job, and confirms each linked process gone; one it cannot is a survivor, with `confirmed: false`.
+   creation time to the job's members and the descendants already seen, each held by an open handle so its pid cannot
+   be reused while gg seeds from it (question 3). A linked process outside gg's job is adopted when seen, through its
+   handle: into gg's job, else into a new kill-on-close job gg holds, else terminated. At cleanup gg ends its job and
+   each adopted job, closes its handles, and confirms each linked process gone; one it cannot, or cannot open, is a
+   survivor, with `confirmed: false`.
 4. **A call's recorded containment stays `job` only while 3 holds.** An escapee gg could neither adopt nor terminate
    makes gg write the call's containment as `none`, so a resume rescues and holds it rather than reset in place.
 5. **One shell check for both Harnesses:** the static check on every `gg doctor` and preflight, the live one under
@@ -343,18 +375,25 @@ To file once the owner decides ADR 0030; none is filed yet. Each test fails toda
    - Test that fails today (`test/contract/exec/`, on `windows-2025`, the real job): `a Git Bash command's background
      node ends with its launch` and `… with runShell`:
      `bash.exe -c 'node -e "setTimeout(() => {}, 60000)" <marker> &'` leaves no marked process once the result is in.
-     Today the node runs on, under `confirmed: true`.
+     Today the node runs on, under `confirmed: true`. The contract test `test/contract/exec/exec.job.test.ts:150-180`,
+     "a child that asks to break away from the job still starts", asserts the breakaway this removes: it becomes `a
+     child that asks to break away fails to start`, over the same `test/support/child-scripts/breakaway-child.ts`, and
+     `scripts/run-suite.ts:184`'s comment changes with it.
 2. **A Windows launch and a Check watch their descendants, and adopt or end each one outside gg's job.**
    - Scope: the watcher on win32 (`lib/exec.ts:193`, `:363`, `lib/process-tree.ts`), adoption into gg's job or a new
      nested kill-on-close job (`lib/containment.ts`), the kill plan and report (`lib/command-cleanup.ts`), and
-     `closeJob` closing the adopted jobs; the poll gap and a snapshot shared by concurrent watchers are this ticket's
-     choices, at the costs above.
+     `closeJob` closing the adopted jobs, with a handle held per linked process (question 3); the POSIX `observe`
+     (`lib/command-cleanup.ts:181-192`), which links an unrelated child through a seed whose pid was reused; and the
+     comments ADR 0030's Supersedes assigns to this ticket. The poll gap and a snapshot shared by concurrent watchers
+     are this ticket's choices, at the costs above.
    - Tests that fail today: small, in `test/unit/command-cleanup.test.ts`, `a linked process outside the job's members
-     is ended and its cleanup is confirmed only once it is gone`; medium, in `test/contract/exec/` on `windows-2025`,
-     with a kernel32 copy whose `SetInformationJobObject` adds `BREAKAWAY_OK` back (ADR 0021's replaced-function seam)
-     so Git Bash's node leaves the job as a packaged app's child does: `a launch's escapee is ended` and `a runShell
-     escapee is ended`, and, with that copy's kill of the escapee failing, `an escapee gg cannot end is a survivor
-     with confirmed false`, for each. Today the node runs on and cleanup says `confirmed: true`.
+     is ended and its cleanup is confirmed only once it is gone`, and `a seen descendant's pid reused between two polls
+     by an unrelated process is not linked, adopted or ended`, for the Windows watcher and the POSIX `observe` (today
+     `observe` links pid 300 and the leftover plan kills it, question 3); medium, in `test/contract/exec/` on
+     `windows-2025`, with a kernel32 copy whose `SetInformationJobObject` adds `BREAKAWAY_OK` back (ADR 0021's
+     replaced-function seam) so Git Bash's node leaves the job as a packaged app's child does: `a launch's escapee is
+     ended` and `a runShell escapee is ended`, and, with that copy's kill of the escapee failing, `an escapee gg cannot
+     end is a survivor with confirmed false`, for each. Today the node runs on and cleanup says `confirmed: true`.
 3. **A call with an escapee gg could not adopt or end records its containment as `none`.**
    - Scope: the call intent's second write (`lib/agent-call.ts`, `lib/attempt.ts`), after ticket 2.
    - Test that fails today (small, beside `test/unit/interpreter.retry.test.ts`): `an Interrupted Attempt whose call

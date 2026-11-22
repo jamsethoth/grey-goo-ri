@@ -29,11 +29,17 @@ with #484's.
 3. **A Windows launch and a Check's shell runner watch their descendants, as on POSIX.** A polled process snapshot
    links a process to the job's members and the descendants already seen by its parent pid, when it started no
    earlier than that parent (#297's rule, which pid reuse needs: it was seen in two of the six real calls).
+   That rule decides a link at first sight only: a seen process whose pid is reused between two polls would still seed
+   the tree, and its replacement's children pass the rule. So the watcher opens a handle to each process it links,
+   which keeps its pid from reuse while the handle is open (Raymond Chen, "When does a process ID become available for
+   reuse?", The Old New Thing, 2011-01-07; the probe held 30 exited processes' handles and none of their pids was
+   reused, where 7 of 30 released ones were), seeds only from processes whose handle has not signalled, and adopts or
+   ends each through its handle. A process gg cannot open is a survivor.
    Each linked process outside gg's job is adopted when seen: into gg's job, else into a new kill-on-close job gg
    holds, nested in the job it is already in, else terminated. A packaged process's children escape again, so each is
-   adopted in turn. At cleanup gg ends its job and every adopted job, and confirms each linked process gone; one it
-   cannot confirm gone is a survivor, and the cleanup is not confirmed. The poll gap is the implementing ticket's
-   choice: a snapshot costs about 38 ms, about 15% of one core at POSIX's 250 ms.
+   adopted in turn. At cleanup gg ends its job and every adopted job, closes its handles, and confirms each linked
+   process gone; one it cannot confirm gone is a survivor, and the cleanup is not confirmed. The poll gap is the
+   implementing ticket's choice: a snapshot costs about 38 ms, about 15% of one core at POSIX's 250 ms.
 4. **A call's containment is recorded as `job` only while 3 holds for it.** An escapee gg could neither adopt nor
    terminate makes gg write the call's containment as `none`, so a resume rescues and holds it, never resets it in
    place (N1). `lib/rescue.ts` and `confirmedUnder` keep their rules; their premise, that a `job` call's processes all
@@ -82,6 +88,22 @@ These texts stay as they are until the owner decides this ADR; the decision then
   that asks is outside the job by design") and `:225` ("nothing the command starts is outside the job"). Edit:
   record.md's prose names the adopted jobs and 4's rule, with no shape change and so no version bump; the comments
   change with the code.
+- Found by a census of every text that claims all of a command's processes sit in gg's job (`rg -i "break.?away|outside
+  the job|outside it|nothing .* is outside|every process in it|all it starts"`):
+  - ADR 0016, `docs/adr/0016-the-suite-launcher-takes-a-stage-from-a-closed-set.md:68`: "nothing a stage starts is
+    outside it". Edit: an inline amendment naming this ADR: a packaged app's process is not in the stage's job, and the
+    census does not see it.
+  - `docs/interfaces/harness.md:163-166`, the `started` rule: "`kind` is `job` when a Windows job ends them all with
+    gg". Edit: the rule names 4's; whether it bumps a version waits on the owner's decision on the frozen versions.
+  - Code comments, each changed with the follow-up that changes its code: `scripts/run-suite.ts:184` ("A child that
+    asks to break away still can, unseen") with follow-up 1; `lib/containment.ts:1-2` ("every process it starts,
+    orphans included, held in a job object") and `:246` ("nothing the argv starts is outside the job"),
+    `lib/containment-gate.ts:1-3` ("the argv and everything it starts begin inside the job"), and `lib/exec.ts:96`
+    and `:269-270` ("the command and all it starts") and `:185-186` ("Nothing is left running when it resolves") with
+    follow-up 2, since a packaged app's process is outside the job until the watcher adopts or ends it.
+  - The contract test `test/contract/exec/exec.job.test.ts:150-180`, "a child that asks to break away from the job
+    still starts", asserts the breakaway 1 removes. Follow-up 1 replaces it with "a child that asks to break away fails
+    to start", over the same `test/support/child-scripts/breakaway-child.ts`.
 
 ## Considered options
 
