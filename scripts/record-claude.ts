@@ -366,7 +366,7 @@ async function main(names: string[]) {
     return recordExample(execFileSync(command, args, { encoding: 'utf8' }).trim());
   }
   const named = [...SCENARIOS, ...COMMANDS].map((recorded) => recorded.name);
-  const unknown = names.filter((name) => !named.includes(name));
+  const unknown = names.filter((name) => name !== '--help' && !named.includes(name));
   if (unknown.length || names.includes('--help')) {
     console.error(unknown.length ? `unknown name: ${unknown.join(', ')}\n${USAGE}` : USAGE);
     return 2;

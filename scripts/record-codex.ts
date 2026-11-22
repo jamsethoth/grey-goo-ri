@@ -356,7 +356,7 @@ function profileFor(command: CliCommand, repo: string) {
 
 function chosenOf(names: string[]) {
   const named = [...SCENARIOS, ...COMMANDS].map((recorded) => recorded.name);
-  const unknown = names.filter((name) => !named.includes(name));
+  const unknown = names.filter((name) => name !== '--help' && !named.includes(name));
   if (unknown.length || names.includes('--help'))
     return { error: unknown.length ? `unknown name: ${unknown.join(', ')}\n${USAGE}` : USAGE };
   const scenarios = SCENARIOS.filter((scenario) => !names.length || names.includes(scenario.name));
