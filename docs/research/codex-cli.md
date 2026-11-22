@@ -118,7 +118,7 @@ These go to the owner as one decision batch before #481.
 | Hooks (Q10) | confirmed, with `--dangerously-bypass-hook-trust` on every call that needs gg's hook (or trust persisted in gg's `CODEX_HOME`) | `hooks-*` |
 | Capabilities (Q15 A) | `plugins` exact through a `-c` table (`plugins={"x@y"={enabled=true}}`; the dotted key is silently ignored; `--disable plugins` wins over the table). `mcp` exact: changed (finding 5). `skills` hint: `skills.config` can only disable a discovered skill, not add one, so a declared skill reaches Codex from a skill root, a plugin, or as text | `prompt-input-plugin-*`, `cli-plugin-list-installed`, `mcp-schema`, `prompt-input-skills-config-add` |
 | Job containment (F7) | confirmed: while a command ran, the job held the MXC helper (`codex.exe --__codex-windows-mxc`), `powershell.exe`, the command's `node`, `codex-code-mode-host.exe` and a `node` MCP host; every process naming the marker was in the job; nothing was left after exit or after a tree kill | `mxc-workspace-write.json`, `tree-kill.json` evidence.job |
-| Rewrite refusal (decision 6) | not recorded here: it is one scenario in the Claude recorder, built after #486 merges (owner Q2 A) | none |
+| Rewrite refusal (decision 6) | confirmed on Claude Code 2.1.330 (the Claude recorder, owner Q2 A): under `-p` with the launch profile on PowerShell, a listed plugin's PreToolUse hook that prefixes the Declared Command `node --version` with a wrapper, giving `updatedInput` and no permission decision, has the rewritten command refused against the allow list (`permission_denied`, its `permission_denials` entry holding the rewritten command); `git status`, not rewritten, ran under its rule | `test/fixtures/claude/rewrite-refusal` |
 
 ## Unsettled
 
