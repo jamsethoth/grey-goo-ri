@@ -1,7 +1,7 @@
 {
   "cliVersion": "codex-cli 0.171.0",
   "scenario": "fork-unflagged",
-  "purpose": "the start thread, last run workspace-write, forked with no --sandbox or -C: which sandbox the fork runs under (exec's default is read-only), what --json emits, whether usage is cumulative, and whether the original thread's rollout is unchanged",
+  "purpose": "the start thread, last run workspace-write, forked with no --sandbox or -C: which sandbox the fork runs under (exec's default is read-only), what --json emits, whether usage is cumulative, and whether the original thread's rollout is unchanged; the recorded parent turn is fork-unflagged-parent (resume-flags-before.json is a later run's thread)",
   "modelCall": true,
   "command": {
     "executable": "codex",
