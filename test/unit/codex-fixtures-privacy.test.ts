@@ -32,3 +32,36 @@ test("the privacy test's check redacts the user name only standing whole", () =>
     'codex-command-runner.exe; runner_x; <user> said; D:/<user>/x',
   );
 });
+
+// The recorder redacts the account's ids and the repository URL by key (owner Q4 A), at any depth of any line.
+test('no Codex recording holds an account id or repository URL by key', () => {
+  const recordings = new URL('../fixtures/codex/', import.meta.url);
+  const leaks: string[] = [];
+  const walk = (file: string, value: unknown) => {
+    if (Array.isArray(value)) {
+      for (const child of value) walk(file, child);
+      return;
+    }
+    if (typeof value !== 'object' || value === null) return;
+    for (const [key, child] of Object.entries(value)) {
+      if (redaction.ACCOUNT_KEYS.test(key) && typeof child === 'string' && child !== '<redacted>')
+        leaks.push(`${file} ${key}`);
+      else walk(file, child);
+    }
+  };
+  for (const file of readdirSync(recordings)) {
+    const text = readFileSync(new URL(file, recordings), 'utf8');
+    for (const line of file.endsWith('.jsonl') ? text.split('\n').filter((each) => each.trim()) : [text])
+      walk(file, JSON.parse(line));
+  }
+  assert.deepEqual(leaks, []);
+});
+
+// The recorder's own calls keep the substring rule: only this test reads the name standing whole (owner D6 A).
+test('the recorder never asks for the whole-name rule', () => {
+  const scripts = new URL('../../scripts/', import.meta.url);
+  const asking = readdirSync(scripts)
+    .filter((file) => file.startsWith('record-codex') && file !== 'record-codex-redaction.ts')
+    .filter((file) => readFileSync(new URL(file, scripts), 'utf8').includes('wholeName'));
+  assert.deepEqual(asking, []);
+});

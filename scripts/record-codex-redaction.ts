@@ -6,7 +6,7 @@ import { homedir, userInfo } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 // The keys whose string value names the account or the machine.
-const ACCOUNT_KEYS = /account_id|user_id|^email$|repository_url|installation_id|^creator_/i;
+export const ACCOUNT_KEYS = /account_id|user_id|^email$|repository_url|installation_id|^creator_/i;
 // The gg checkout the recorder runs from, which the job listing names (lib/containment-gate.ts).
 const CHECKOUT = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]$/, '');
 const TRIMMED_KEYS = new Set(['base_instructions', 'encrypted_content']);
