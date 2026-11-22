@@ -200,18 +200,23 @@ function evidenceOf(directories: Directories) {
   };
 }
 
-// The local paths, the user's name, email addresses and keys, replaced wherever they appear: as written, with
-// forward slashes, JSON-escaped, as Git Bash writes them, and as Claude names a project directory.
+// The local paths, the user's name, email addresses and keys, replaced wherever they appear. A path's segments match
+// across any run of slashes or backslashes, since a tool result's JSON nested in a stream line escapes it twice, and
+// its drive as written or as Git Bash writes it; its dash form is how Claude names a project directory.
 function redactorOf(base: string) {
-  const forms = (path: string) => {
-    const forward = path.replaceAll('\\', '/');
-    const bash = forward.replace(/^([A-Za-z]):/, (_whole, drive: string) => `/${drive.toLowerCase()}`);
-    return [path.replaceAll('\\', '\\\\'), path, forward, bash, path.replace(/[^A-Za-z0-9]/g, '-')];
-  };
   const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const forms = (path: string) => {
+    const [drive = '', ...segments] = path.split(/[\\/]+/);
+    const head = `(?:${escape(drive)}|/${escape(drive.charAt(0).toLowerCase())})`;
+    return [[head, ...segments.map(escape)].join('[\\\\/]+'), escape(path.replace(/[^A-Za-z0-9]/g, '-'))];
+  };
+  const paths: [string, string][] = [
+    [base, '<recording>'],
+    [homedir(), '<home>'],
+    [process.env.ProgramFiles ?? 'C:\\Program Files', '<program-files>'],
+  ];
   const pairs: [RegExp, string][] = [
-    ...forms(base).map((form): [RegExp, string] => [new RegExp(escape(form), 'gi'), '<recording>']),
-    ...forms(homedir()).map((form): [RegExp, string] => [new RegExp(escape(form), 'gi'), '<home>']),
+    ...paths.flatMap(([path, label]) => forms(path).map((form): [RegExp, string] => [new RegExp(form, 'gi'), label])),
     [new RegExp(escape(userInfo().username), 'gi'), '<user>'],
     [/sk-ant-[\w-]+/g, 'sk-ant-<redacted>'],
     [/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '<email>'],

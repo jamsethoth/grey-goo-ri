@@ -2,6 +2,7 @@
 // line kind gives, the failure each error source gives, and the streams that end without a result.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
 import * as claudeStream from '../../lib/harnesses/claude-stream.ts';
 import * as claudeRecordings from '../support/claude-recordings.ts';
 
@@ -357,4 +358,15 @@ test('every error value maps to its one Failure Class from either source', () =>
       expected[`${source}: ${error}`] = failureClass;
     }
   assert.deepEqual(got, expected);
+});
+
+// A drive then a slash at any escape depth, or a Git Bash path from a drive's root (#486).
+const ABSOLUTE_LOCAL_PATH = /\b[A-Za-z]:[\\/]|(?<![\w.<>-])\/[a-z]\/(?:Users|Program Files|Windows)\b/;
+
+test('no recording holds an absolute local path', () => {
+  const recordings = new URL('../fixtures/claude/', import.meta.url);
+  const withPath = readdirSync(recordings)
+    .filter((file) => /\.jsonl?$/.test(file))
+    .filter((file) => ABSOLUTE_LOCAL_PATH.test(readFileSync(new URL(file, recordings), 'utf8')));
+  assert.deepEqual(withPath, []);
 });
