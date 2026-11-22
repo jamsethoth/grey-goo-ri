@@ -21,6 +21,10 @@ const TERMINAL_IDENTITY = { ...IDENTITY, procedure: null };
 
 // A reset's payload, which these cases only pass through.
 const resetTo = (baseline: string): reset.Payload => ({ baseline, history: { kind: 'rescued', text: 'reset' } });
+// An agent call's payload: the baseline its intent saves (#384), which these cases only pass through.
+const CALL_PAYLOAD: writeAhead.CallPayload = {
+  baseline: { head: 'abc', own: { head: 'abc', index: 'index', tree: 'tree' }, idle: {}, untracked: {}, tests: {} },
+};
 
 // The reset Effect with the perform a case gives: these cases are about the Attempt, not the reset.
 // A call's evidence holds the Usage it spent; these calls spent none.
@@ -220,7 +224,7 @@ test('a crash at each crash point leaves an Attempt that resumes to the same res
 test('a complete marker returns its saved result without running the work', async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
   const actionMarker = context.markerOf(IDENTITY);
-  record.intent(executionRecord, actionMarker, 'call', resetTo('abc'));
+  record.intent(executionRecord, actionMarker, 'call', CALL_PAYLOAD);
   record.complete(executionRecord, actionMarker, {
     evidence: { ...tableResolution('advance'), sessionId: 's1', usageDelta: NO_USAGE },
   });
@@ -350,7 +354,7 @@ test('exactly one Action Event per Attempt', async (t) => {
 test('a held completion replaces the saved result with its Event, or leaves none for the Visit to route', async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
   const actionMarker = context.markerOf(IDENTITY);
-  record.intent(executionRecord, actionMarker, 'call', resetTo('abc'));
+  record.intent(executionRecord, actionMarker, 'call', CALL_PAYLOAD);
   record.complete(executionRecord, actionMarker, {
     evidence: { ...tableResolution('stop'), row: 'cleanup-unconfirmed', usageDelta: NO_USAGE },
   });
@@ -393,7 +397,7 @@ test('a held completion replaces the saved result with its Event, or leaves none
 test('a crash after a held completion leaves its replaced result saved, with its one Event', async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
   const actionMarker = context.markerOf(IDENTITY);
-  record.intent(executionRecord, actionMarker, 'call', resetTo('abc'));
+  record.intent(executionRecord, actionMarker, 'call', CALL_PAYLOAD);
   record.complete(executionRecord, actionMarker, {
     evidence: { ...tableResolution('stop'), row: 'cleanup-unconfirmed', usageDelta: NO_USAGE },
   });

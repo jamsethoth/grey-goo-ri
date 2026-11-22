@@ -3,6 +3,7 @@
 // what reads an intent back from the record looks it up here, so an unknown name is held, never read as absent (N3).
 import type * as integrityModule from '../integrity.ts';
 import * as marker from '../marker.ts';
+import type * as recordReadNode from '../record-read-node.ts';
 import type * as record from '../record.ts';
 import * as writeAhead from '../write-ahead.ts';
 import * as close from './close.ts';
@@ -62,10 +63,12 @@ export interface ProofContext {
   integrity: integrityModule.Integrity;
 }
 
-export interface Effect<Payload, Context> {
+export interface Effect<Payload, Context, Saved = Payload> {
   // The name its intent persists, which existing State Databases hold (decision 4).
   name: string;
   remote: Remote;
+  // Reads the payload an intent of this effect saves, the one form it may hold, refusing any other by its path (#384).
+  readPayload: recordReadNode.Read<Saved>;
   // Makes the effect from its payload; `redo` when an open intent is made again.
   perform: (context: Context, payload: Payload, launch: { redo: boolean }) => Promise<Evidence>;
   // How an open intent is settled at resume: found by its Action Marker, or safe to repeat. A reset has neither: it is
@@ -76,7 +79,7 @@ export interface Effect<Payload, Context> {
   proves?: (entry: writeAhead.WriteAheadEntry, worktree: string, context: ProofContext) => Promise<boolean>;
 }
 // An Effect as the record names it: what Reconciliation and a remote retry read, without its perform.
-export type Resumable = Omit<Effect<never, never>, 'perform'>;
+export type Resumable = Omit<Effect<never, never, writeAhead.Payload>, 'perform'>;
 
 // What an intent saves ahead of its effect, by its Effect: enough to redo the effect, or to find it done.
 export type Payload =

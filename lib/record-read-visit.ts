@@ -1,6 +1,6 @@
 // The readers of what an Execution Record's row nests for its Visits (lib/visit.ts): the Configuration Snapshot, the
 // Visit's progress with its call, Checks and Resolution, each Action's outputs, and the worktree snapshots and cleanup
-// reports those hold. Only lib/record-read.ts imports it.
+// reports those hold, for lib/record-read.ts and the payload readers of lib/write-ahead.ts and lib/effects/.
 import type * as visit from './visit.ts';
 import * as recordReadNode from './record-read-node.ts';
 import * as referencePaths from './reference-paths.ts';

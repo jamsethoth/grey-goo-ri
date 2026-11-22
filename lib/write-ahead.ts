@@ -5,7 +5,10 @@ import type * as approvalAction from './approval-action.ts';
 import type * as effects from './effects/index.ts';
 import type * as integrity from './integrity.ts';
 import type * as events from './events.ts';
+import * as jsonValue from './json-value.ts';
 import type * as record from './record.ts';
+import * as recordReadNode from './record-read-node.ts';
+import * as recordReadVisit from './record-read-visit.ts';
 import type * as visit from './visit.ts';
 
 // What an intent saves ahead of its effect: an Effect's payload (lib/effects/), a consumed Decision's, or an agent
@@ -14,6 +17,13 @@ export type CallPayload = { baseline: integrity.IntegrityBaseline; containment?:
 // What contains a call's processes, saved by a second write once its Harness has started: `job` (lib/containment.ts)
 // or `none`, an open string (#128 adds `cgroup`). A call with none saved is uncontained (N1).
 export type CallContainment = { kind: string };
+// The payload an agent call's intent saves, read from its row: its baseline, any other form refused by its path (#384).
+export const readCallPayload: recordReadNode.Read<CallPayload> = recordReadNode.object((field, has) => ({
+  baseline: recordReadVisit.integrityBaseline(field('baseline')),
+  ...(has('containment') && {
+    containment: recordReadNode.object((kind) => ({ kind: recordReadNode.text(kind('kind')) }))(field('containment')),
+  }),
+}));
 export type Payload = effects.Payload | approvalAction.Consumption | CallPayload;
 
 // What a side effect leaves as Evidence: an Effect's own (effects.Evidence: a sha, an id, a url), or an agent call's
@@ -45,6 +55,12 @@ export const entryOf = (
   evidence,
   time: new Date().toISOString(),
 });
+
+// An entry's payload as the reader of its effect gives it, so its reader holds it typed by that effect, never cast
+// (#384). The reader reads the payload as a save writes it: in memory an absent optional key can be an own key holding
+// undefined, which the reader, built for parsed JSON, would take as present.
+export const payloadOf = <Value>(entry: Pick<WriteAheadEntry, 'payload'>, read: recordReadNode.Read<Value>): Value =>
+  read({ value: jsonValue.checked(entry.payload, 'payload'), path: 'payload' });
 
 // A marker's first entry at a step.
 export const findEntry = (
