@@ -135,6 +135,17 @@ export async function waitFor(holds: () => boolean, signal: AbortSignal) {
   }
 }
 
+// A signal that aborts once a script has written its pid to file, for a test hook that holds a clock until the process
+// a case checks exists (#475). The case's own end, which aborts signal, ends the wait quietly.
+export function pidWritten(file: string, signal: AbortSignal) {
+  const written = new AbortController();
+  void waitFor(() => pidIn(file) > 0, signal).then(
+    () => written.abort(),
+    () => {},
+  );
+  return written.signal;
+}
+
 // Ends a process the case started, if it still runs.
 export function endProcess(pid: number) {
   if (!alive(pid)) return;

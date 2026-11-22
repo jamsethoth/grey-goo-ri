@@ -12,9 +12,8 @@ const { claudeCall, hooksOf } = claudeOverFakeCli;
 const fakeCli = claudeOverFakeCli.claudeOverFakeCli;
 const CASE = { timeout: 120_000 };
 
-// A stop's clock: long enough that the fake has started its descendant before the stop, so the case can see the
-// descendant go. The CLI, a middle process and the descendant start in series, which took up to 1.36 s with 16 calls
-// at once (docs/testing.md rule 1).
+// A stop's clock. The fixture holds the stall and wall clocks until the fake's descendant has written its pid, so the
+// stop always comes after the descendant and the case can see it go, however slowly the machine starts it (#475).
 const STOP_MS = 3_000;
 
 // What the Harness's stderr text is, written by the fake to its stderr.

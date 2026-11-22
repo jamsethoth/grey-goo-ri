@@ -59,13 +59,20 @@ test('launch runs an argv with spaces and quotes unchanged, with no shell', CASE
 });
 
 // What a clock's stop left: the process whose pid is in pidFile is checked by its own pid, so a launcher that left it
-// running fails here and not only in a census, which Ubuntu does not run.
-const stopOf = (result: exec.LaunchResult, pidFile: string) => ({
-  timedOut: result.timedOut,
-  cancelled: result.cancelled,
-  alive: processProbe.alive(processProbe.pidIn(pidFile)),
-  confirmed: result.cleanup.confirmed,
-});
+// running fails here and not only in a census, which Ubuntu does not run; a stop before it wrote its pid shows as not
+// started (#475).
+const stopOf = (result: exec.LaunchResult, pidFile: string) => {
+  const pid = processProbe.pidIn(pidFile);
+  return {
+    timedOut: result.timedOut,
+    cancelled: result.cancelled,
+    started: pid > 0,
+    alive: pid > 0 && processProbe.alive(pid),
+    confirmed: result.cleanup.confirmed,
+  };
+};
+// A stop that took down the process it checks, once that process had started.
+const GONE = { started: true, alive: false, confirmed: true };
 
 // onIdle answers only once the child has written its pid, so the stall stops a process the case can check.
 test('launch stops a process silent past stallMs and says stall', UNSANDBOXED_CASE, async (t) => {
@@ -77,7 +84,7 @@ test('launch stops a process silent past stallMs and says stall', UNSANDBOXED_CA
     stallMs: 500,
     onIdle: async () => (await processProbe.waitFor(() => processProbe.pidIn(pidFile) > 0, t.signal), null),
   });
-  assert.deepEqual(stopOf(result, pidFile), { timedOut: 'stall', cancelled: false, alive: false, confirmed: true });
+  assert.deepEqual(stopOf(result, pidFile), { timedOut: 'stall', cancelled: false, ...GONE });
 });
 
 // A transcript whose stat fails makes the Claude Harness's onIdle throw: that is no activity, a typed stall, never an
@@ -94,7 +101,7 @@ test('an onIdle that throws counts as no activity, and the stall stops the proce
       throw Object.assign(new Error('EPERM: operation not permitted, stat'), { code: 'EPERM' });
     },
   });
-  assert.deepEqual(stopOf(result, pidFile), { timedOut: 'stall', cancelled: false, alive: false, confirmed: true });
+  assert.deepEqual(stopOf(result, pidFile), { timedOut: 'stall', cancelled: false, ...GONE });
 });
 
 // 60 lines 100 ms apart take at least 5.9 s, past stallMs, while no gap between them, nor the start of node behind the
@@ -185,7 +192,7 @@ test('output that arrives while onIdle is pending re-arms the stall clock', CASE
   );
 });
 
-// No hook holds the wall clock, so it runs 3 s: the child writes its pid within 0.7 s even with 8 launches at once.
+// The wall clock counts from when the child has written its pid, so the stop comes after the process the case checks.
 test('launch stops a process past wallMs and says wall', UNSANDBOXED_CASE, async (t) => {
   const pidFile = join(scratch, 'wall.pid');
   t.after(() => processProbe.endProcessIn(pidFile));
@@ -193,9 +200,10 @@ test('launch stops a process past wallMs and says wall', UNSANDBOXED_CASE, async
     command: process.execPath,
     args: [childScripts.LONG_LIVED, pidFile],
     stallMs: 60_000,
-    wallMs: 3000,
+    wallMs: 150,
+    testHooks: { signal: processProbe.pidWritten(pidFile, t.signal) },
   });
-  assert.deepEqual(stopOf(result, pidFile), { timedOut: 'wall', cancelled: false, alive: false, confirmed: true });
+  assert.deepEqual(stopOf(result, pidFile), { timedOut: 'wall', cancelled: false, ...GONE });
 });
 
 // setTimeout fires after 1 ms past 2147483647 ms (24.8 days), so the launch clock caps both limits there (#429 D3 A).
@@ -245,7 +253,7 @@ test('an aborted signal stops the process and says cancelled', UNSANDBOXED_CASE,
       void processProbe.waitFor(() => processProbe.pidIn(pidFile) > 0, t.signal).then(() => controller.abort());
     },
   });
-  assert.deepEqual(stopOf(result, pidFile), { timedOut: null, cancelled: true, alive: false, confirmed: true });
+  assert.deepEqual(stopOf(result, pidFile), { timedOut: null, cancelled: true, ...GONE });
 });
 
 // The grandchild starts before its parent prints, so a launcher that contained the process only once it spoke would
