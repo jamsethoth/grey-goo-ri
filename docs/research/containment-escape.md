@@ -411,7 +411,8 @@ under it. #69 stays an alternative for file locks and rescued human edits; this 
 
 ## Follow-up tickets
 
-To file now the owner has accepted ADR 0030 (2026-11-22); none is filed yet. Each test fails today.
+Filed on 2026-11-22, once the owner accepted ADR 0030, as sub-issues of epic #506: 1 is #530, 2 is #531 (blocked by
+#530), 3 is #532 (blocked by #531) and 4 is #533 (blocked by #480). Each test fails today.
 
 1. **gg's job lets no process break away.**
    - Scope: `lib/containment.ts`'s `createJob` limits and the comment at `:39`; the texts ADR 0030's Supersedes assigns

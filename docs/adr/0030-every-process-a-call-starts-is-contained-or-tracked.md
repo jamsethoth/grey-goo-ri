@@ -153,10 +153,10 @@ the follow-up, by its number there, that makes it.
 
 ## Consequences
 
-- Four follow-up tickets, listed ready to file in the research note's last section, carry the failing tests: no
-  breakaway; the Windows watcher with adoption, for a launch and a Check; a call's containment saved as `none`, the
-  save committed before gg adopts or ends the first escapee the watcher sees, with the two version bumps; the shared
-  shell check with its `--probe` half.
+- Four follow-up tickets, #530 to #533 (the research note's last section maps each to its number), carry the failing
+  tests: no breakaway; the Windows watcher with adoption, for a launch and a Check; a call's containment saved as
+  `none`, the save committed before gg adopts or ends the first escapee the watcher sees, with the two version bumps;
+  the shared shell check with its `--probe` half.
 - An interrupted call whose `none` save committed, even one whose escapee gg adopted, is held for a person rather than
   reset and retried.
 - A failed `none` save is the one fatal error after which gg performs an effect: it ends the escapee, then stops.
