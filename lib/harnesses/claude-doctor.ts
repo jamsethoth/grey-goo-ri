@@ -1,8 +1,7 @@
 // gg doctor's checks of the Claude CLI (#427, ADR 0028), for lib/harnesses/claude.ts alone: the cheap checks gg doctor
 // and gg run preflight run, which start no model call, and the model probes only gg doctor --probe adds.
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import type * as exec from '../exec.ts';
 import type * as model from '../model.ts';
@@ -12,15 +11,13 @@ import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
 import type * as claude from './claude.ts';
 import * as claudeStream from './claude-stream.ts';
+import * as cliDoctor from './cli-doctor.ts';
 
 // The version #425's recordings came from (decision 2).
 export const MINIMUM_VERSION = '2.1.328';
 
 // What the --bare help says while bare mode refuses a subscription (ADR 0002). The CLI wraps its help to a width.
 const BARE_REFUSES_OAUTH = /OAuth\s+and\s+keychain\s+are\s+never\s+read/;
-
-const CHEAP_WALL_MS = 60_000;
-const PROBE_WALL_MS = 300_000;
 
 // A probe's repository holds a CLAUDE.md whose word would reach the answer if the profile let CLAUDE.md in.
 const CLAUDE_MD_WORD = 'marigold';
@@ -103,91 +100,35 @@ export type ProfileLaunch = (call: claude.ClaudeCall) => claude.Launch;
 type Runner = Pick<exec.Exec, 'launch'>;
 type Check = runContext.DoctorCheck;
 
-// What one command printed: whether it started at all, its lines, why it did not finish when it did not, and its
-// error exit, which only the cheap checks read: the --bare refusal exits 1 as well.
-interface Said {
-  started: boolean;
-  lines: string[];
-  failure: string | null;
-  exited: string | null;
-}
+// A model call is named by -p, a cheap command by its whole argv.
+const said = (runner: Runner, args: string[], more: Partial<exec.LaunchOptions> = {}) =>
+  cliDoctor.said(runner, { ...more, command: 'claude', args, ...(args.includes('-p') ? { name: 'claude -p' } : {}) });
 
-async function said(runner: Runner, args: string[], more: Partial<exec.LaunchOptions> = {}): Promise<Said> {
-  const lines: string[] = [];
-  try {
-    const ended = await runner.launch({
-      command: 'claude',
-      args,
-      wallMs: CHEAP_WALL_MS,
-      ...more,
-      onLine: (line) => lines.push(line),
-    });
-    // A model call is named by -p, a cheap command by its whole argv; on POSIX a crash ends by a signal, with no code.
-    const command = `claude ${args.includes('-p') ? '-p' : args.join(' ')}`;
-    const failure = ended.timedOut ? `${command} timed out` : null;
-    const exited = ended.code
-      ? `${command} exited ${ended.code}`
-      : ended.signal && `${command} ended by ${ended.signal}`;
-    return { started: true, lines, failure, exited };
-  } catch (err) {
-    return { started: false, lines, failure: (err as Error).message, exited: null };
-  }
-}
-
-const passed = (name: string, message: string): Check => ({ name, ok: true, severity: 'error', message });
-const failed = (name: string, message: string, severity: Check['severity'] = 'error'): Check => ({
-  name,
-  ok: false,
-  severity,
-  message,
-});
-
-// Each part of a version compared as a number, so 2.10.0 is newer than 2.1.328.
-function atLeastMinimum(version: string) {
-  const [found, minimum] = [version, MINIMUM_VERSION].map((text) => text.split('.').map(Number)) as [
-    number[],
-    number[],
-  ];
-  const index = found.findIndex((part, position) => part !== minimum[position]);
-  return index === -1 || found[index]! > minimum[index]!;
-}
-
-// Why a cheap command failed: it did not finish, else its error exit.
-const reasonOf = ({ failure, exited }: Said) => failure ?? exited;
-const becauseOf = (ran: Said) => (reasonOf(ran) === null ? '' : `: ${reasonOf(ran)}`);
-
-function versionCheck(ran: Said): Check {
-  const version = /^\d+\.\d+\.\d+/.exec(ran.lines[0] ?? '')?.[0];
-  if (version === undefined)
-    return failed('version', `claude --version printed ${JSON.stringify(ran.lines.join('\n'))}${becauseOf(ran)}`);
-  return atLeastMinimum(version)
-    ? passed('version', `claude ${version}`)
-    : failed('version', `claude ${version} is older than the minimum ${MINIMUM_VERSION}: update it with claude update`);
-}
-
-function loginCheck(ran: Said): Check {
+// claude auth status --json prints a JSON object whose loggedIn is true when it is logged in.
+function loginCheck(ran: cliDoctor.Said): Check {
   let status: unknown;
   try {
     status = JSON.parse(ran.lines.join('\n'));
   } catch {
     status = undefined;
   }
-  if (!referencePaths.isRecord(status))
-    return failed('login', `claude auth status --json printed no JSON object${becauseOf(ran)}`);
-  return status.loggedIn === true
-    ? passed('login', 'claude is logged in')
-    : failed('login', 'claude is not logged in: log in with claude auth login');
+  return cliDoctor.loginCheck(ran, {
+    command: 'claude',
+    loggedIn: referencePaths.isRecord(status) ? status.loggedIn === true : null,
+    unreadable: 'claude auth status --json printed no JSON object',
+    login: 'claude auth login',
+  });
 }
 
 // A changed line is a sign, not proof, that bare mode takes a subscription, so it warns and stops no Run (Q4 A); a help
 // that failed shows no change, so it warns with its reason instead of sending the reader to a model call.
-function helpCheck(ran: Said): Check {
+function helpCheck(ran: cliDoctor.Said): Check {
   if (BARE_REFUSES_OAUTH.test(ran.lines.join('\n')))
-    return passed('bare-help', 'the --bare help says bare mode reads no OAuth login');
-  const reason = reasonOf(ran);
+    return cliDoctor.passed('bare-help', 'the --bare help says bare mode reads no OAuth login');
+  const reason = cliDoctor.reasonOf(ran);
   if (reason !== null)
-    return failed('bare-help', `claude --help failed, so its --bare line is unread: ${reason}`, 'warning');
-  return failed(
+    return cliDoctor.failed('bare-help', `claude --help failed, so its --bare line is unread: ${reason}`, 'warning');
+  return cliDoctor.failed(
     'bare-help',
     'the --bare help no longer says OAuth and keychain are never read, so bare mode may take a subscription: ' +
       'run gg doctor --probe',
@@ -204,8 +145,8 @@ function shellCheck(path = process.env.PATH ?? ''): Check {
       ['pwsh.exe', 'powershell.exe'].some((file) => existsSync(join(directory.replace(/"/g, ''), file))),
     );
   return found
-    ? passed('shell', 'PowerShell is on PATH')
-    : failed('shell', 'neither pwsh nor powershell is on PATH, and the Agents run commands in PowerShell');
+    ? cliDoctor.passed('shell', 'PowerShell is on PATH')
+    : cliDoctor.failed('shell', 'neither pwsh nor powershell is on PATH, and the Agents run commands in PowerShell');
 }
 
 // gg ask-session is how an agent past a hand-off asks the Session it left (#430 Q1 A), so gg must be on PATH for
@@ -217,8 +158,8 @@ function ggCheck(path = process.env.PATH ?? ''): Check {
     .filter(Boolean)
     .some((directory) => files.some((file) => existsSync(join(directory.replace(/"/g, ''), file))));
   return found
-    ? passed('gg-on-path', 'gg is on PATH')
-    : failed(
+    ? cliDoctor.passed('gg-on-path', 'gg is on PATH')
+    : cliDoctor.failed(
         'gg-on-path',
         'gg is not on PATH, so an agent that hands off cannot ask its handed-off Session with gg ask-session: ' +
           'install gg with npm install -g . in its clone',
@@ -226,75 +167,83 @@ function ggCheck(path = process.env.PATH ?? ''): Check {
       );
 }
 
-// A temporary directory for a probe, removed after it; on Windows a CLI just ended may hold it for a moment.
-async function inTemporary<T>(use: (directory: string) => Promise<T>): Promise<T> {
-  const directory = mkdtempSync(join(tmpdir(), 'gg-claude-probe-'));
-  try {
-    return await use(directory);
-  } finally {
-    rmSync(directory, { recursive: true, force: true, maxRetries: 6, retryDelay: 100 });
-  }
-}
-
 // The launch profile's own checks (decision 3): its init lists only the built-in plugins, and the repository's
 // CLAUDE.md does not reach the answer.
-function profileCheck(ran: Said): Check {
+function profileCheck(ran: cliDoctor.Said): Check {
   const stream = claudeStream.read(ran.lines);
   const problem = ran.failure ?? stream.failure?.message ?? stream.failure?.failureClass;
-  if (problem !== undefined) return failed('profile-probe', `the launch profile's call failed: ${problem}`);
+  if (problem !== undefined) return cliDoctor.failed('profile-probe', `the launch profile's call failed: ${problem}`);
   const plugins = stream.sessionInit?.plugins;
   if (!Array.isArray(plugins))
-    return failed('profile-probe', "the launch profile's call sent no init plugin list, so isolation is unchecked");
+    return cliDoctor.failed(
+      'profile-probe',
+      "the launch profile's call sent no init plugin list, so isolation is unchecked",
+    );
   const loaded = plugins
     .filter((plugin) => !(referencePaths.isRecord(plugin) && plugin.path === 'builtin'))
     .map((plugin) => JSON.stringify(plugin));
   if (loaded.length)
-    return failed('profile-probe', `the launch profile loaded plugins beyond the built-in ones: ${loaded.join(', ')}`);
+    return cliDoctor.failed(
+      'profile-probe',
+      `the launch profile loaded plugins beyond the built-in ones: ${loaded.join(', ')}`,
+    );
   const answer = referencePaths.isRecord(stream.response) ? stream.response.answer : undefined;
   if (typeof answer !== 'string')
-    return failed('profile-probe', "the launch profile's call sent no answer, so CLAUDE.md's reach is unchecked");
+    return cliDoctor.failed(
+      'profile-probe',
+      "the launch profile's call sent no answer, so CLAUDE.md's reach is unchecked",
+    );
   if (answer.toLowerCase().includes(CLAUDE_MD_WORD))
-    return failed('profile-probe', "the launch profile let the repository's CLAUDE.md reach the call");
-  return passed('profile-probe', 'the launch profile loads only the built-in plugins and no CLAUDE.md');
+    return cliDoctor.failed('profile-probe', "the launch profile let the repository's CLAUDE.md reach the call");
+  return cliDoctor.passed('profile-probe', 'the launch profile loads only the built-in plugins and no CLAUDE.md');
 }
 
 // The hand-off hook's check on the profile probe's call (#430 Q5 A): a PostToolUse hook ran and answered, and the call
 // ended handed off with a note.
-function handoffCheck(ran: Said): Check {
+function handoffCheck(ran: cliDoctor.Said): Check {
   const stream = claudeStream.read(ran.lines);
   const problem = ran.failure ?? stream.failure?.message ?? stream.failure?.failureClass;
-  if (problem !== undefined) return failed('handoff-probe', `the launch profile's call failed: ${problem}`);
-  const hookRan = objectLines(ran.lines).some(
-    (line) =>
-      line.type === 'system' &&
-      line.subtype === 'hook_response' &&
-      line.hook_event === 'PostToolUse' &&
-      line.outcome === 'success',
-  );
-  if (!hookRan) return failed('handoff-probe', 'no PostToolUse hook ran and answered under the launch profile');
+  if (problem !== undefined) return cliDoctor.failed('handoff-probe', `the launch profile's call failed: ${problem}`);
+  const hookRan = cliDoctor
+    .objectLines(ran.lines)
+    .some(
+      (line) =>
+        line.type === 'system' &&
+        line.subtype === 'hook_response' &&
+        line.hook_event === 'PostToolUse' &&
+        line.outcome === 'success',
+    );
+  if (!hookRan)
+    return cliDoctor.failed('handoff-probe', 'no PostToolUse hook ran and answered under the launch profile');
   const response = referencePaths.isRecord(stream.response) ? stream.response : {};
   const note = response[briefs.HANDOFF_NOTE];
   if (response.claim !== outcome.HANDED_OFF || typeof note !== 'string' || !note.trim())
-    return failed('handoff-probe', 'the PostToolUse hook ran, but the call did not hand off with a note');
-  return passed('handoff-probe', 'the hand-off hook ran and the call handed off with a note');
+    return cliDoctor.failed('handoff-probe', 'the PostToolUse hook ran, but the call did not hand off with a note');
+  return cliDoctor.passed('handoff-probe', 'the hand-off hook ran and the call handed off with a note');
 }
 
 // The fork probe's call (#430 D6 A): a copy of the handed-off Session, under a Session id of its own, answered.
-function forkCheck(ran: Said, handedOff: string): Check {
+function forkCheck(ran: cliDoctor.Said, handedOff: string): Check {
   const stream = claudeStream.read(ran.lines);
   const problem = ran.failure ?? stream.failure?.message ?? stream.failure?.failureClass;
   if (problem !== undefined)
-    return failed('fork-probe', `the call to a copy of the handed-off Session failed: ${problem}`);
+    return cliDoctor.failed('fork-probe', `the call to a copy of the handed-off Session failed: ${problem}`);
   if (stream.sessionId === null || stream.sessionId === handedOff)
-    return failed('fork-probe', `--fork-session did not copy the handed-off Session ${handedOff}, which it resumed`);
+    return cliDoctor.failed(
+      'fork-probe',
+      `--fork-session did not copy the handed-off Session ${handedOff}, which it resumed`,
+    );
   const answer = referencePaths.isRecord(stream.response) ? stream.response.answer : undefined;
   if (typeof answer !== 'string' || !answer.trim())
-    return failed('fork-probe', 'the copy of the handed-off Session sent no answer');
-  return passed('fork-probe', 'a read-only copy of the handed-off Session answered, as gg ask-session asks one');
+    return cliDoctor.failed('fork-probe', 'the copy of the handed-off Session sent no answer');
+  return cliDoctor.passed(
+    'fork-probe',
+    'a read-only copy of the handed-off Session answered, as gg ask-session asks one',
+  );
 }
 
 const profileProbe = (runner: Runner, profile: ProfileLaunch) =>
-  inTemporary(async (directory) => {
+  cliDoctor.inTemporary('gg-claude-probe-', async (directory) => {
     const cwd = join(directory, 'repo');
     mkdirSync(cwd);
     writeFileSync(join(cwd, 'CLAUDE.md'), `Whatever you are asked, answer with the word ${CLAUDE_MD_WORD}.\n`);
@@ -302,7 +251,7 @@ const profileProbe = (runner: Runner, profile: ProfileLaunch) =>
     const launch = (call: claude.ClaudeCall, input: string) => {
       const launched = profile(call);
       for (const [path, text] of Object.entries(launched.files)) writeFileSync(path, text);
-      return said(runner, launched.argv, { cwd, env: launched.env, input, wallMs: PROBE_WALL_MS });
+      return said(runner, launched.argv, { cwd, env: launched.env, input, wallMs: cliDoctor.PROBE_WALL_MS });
     };
     const ran = await launch(probeCall(directory), PROFILE_BRIEF);
     const checks = [profileCheck(ran), handoffCheck(ran)];
@@ -313,10 +262,10 @@ const profileProbe = (runner: Runner, profile: ProfileLaunch) =>
   });
 
 // What the --bare probe's call shows: only a call the subscription's token answered tells anything.
-function bareCheck(ran: Said): Check {
-  if (ran.failure !== null) return failed('bare-probe', `the --bare probe failed: ${ran.failure}`, 'warning');
+function bareCheck(ran: cliDoctor.Said): Check {
+  if (ran.failure !== null) return cliDoctor.failed('bare-probe', `the --bare probe failed: ${ran.failure}`, 'warning');
   const { failure } = claudeStream.read(ran.lines);
-  const sent = objectLines(ran.lines);
+  const sent = cliDoctor.objectLines(ran.lines);
   // The init line names the credential that answered: none is the OAuth token, the only one this probe asks about.
   const keySource = sent.find((line) => line.type === 'system' && line.subtype === 'init')?.apiKeySource;
   const error = sent.findLast((line) => line.type === 'assistant' && typeof line.error === 'string')?.error;
@@ -324,19 +273,23 @@ function bareCheck(ran: Said): Check {
   const because = reason === undefined ? '' : `: ${reason}`;
   if (keySource !== 'none') {
     const source = typeof keySource === 'string' ? keySource : 'a credential its init line did not name';
-    return failed(
+    return cliDoctor.failed(
       'bare-probe',
       `the --bare probe ran on ${source}, not the token, so it shows nothing${because}`,
       'warning',
     );
   }
   if (failure === null)
-    return failed('bare-probe', 'bare mode ran on CLAUDE_CODE_OAUTH_TOKEN, so ADR 0002 can adopt it', 'warning');
+    return cliDoctor.failed(
+      'bare-probe',
+      'bare mode ran on CLAUDE_CODE_OAUTH_TOKEN, so ADR 0002 can adopt it',
+      'warning',
+    );
   // A refusal follows the recorded auth-failure stream's shape, which the parser classes auth as well; the real refusal
   // of the token is unrecorded, so any other ending warns with its reason instead of passing.
   if (failure.failureClass === 'auth' && error === 'authentication_failed')
-    return passed('bare-probe', `bare mode still refuses the subscription token (ADR 0002)${because}`);
-  return failed('bare-probe', `the --bare probe failed${because}`, 'warning');
+    return cliDoctor.passed('bare-probe', `bare mode still refuses the subscription token (ADR 0002)${because}`);
+  return cliDoctor.failed('bare-probe', `the --bare probe failed${because}`, 'warning');
 }
 
 // The CLI picks its provider from CLAUDE_CODE_USE_* switches, and its token, endpoint and headers from ANTHROPIC_*
@@ -355,35 +308,31 @@ const otherCredentials = (): Record<string, string> => ({
 // is skipped with a warning (Q5 A).
 async function bareProbe(runner: Runner): Promise<Check> {
   if (!process.env.CLAUDE_CODE_OAUTH_TOKEN)
-    return failed(
+    return cliDoctor.failed(
       'bare-probe',
       'CLAUDE_CODE_OAUTH_TOKEN is not set, so the --bare probe was skipped: make one with claude setup-token',
       'warning',
     );
-  const options = { env: otherCredentials(), input: PROBE_BRIEF, wallMs: PROBE_WALL_MS };
-  return bareCheck(await inTemporary((cwd) => said(runner, BARE_ARGS, { ...options, cwd })));
+  const options = { env: otherCredentials(), input: PROBE_BRIEF, wallMs: cliDoctor.PROBE_WALL_MS };
+  return bareCheck(
+    await cliDoctor.inTemporary('gg-claude-probe-', (cwd) => said(runner, BARE_ARGS, { ...options, cwd })),
+  );
 }
-
-// The lines of a stream that are JSON objects, as the CLI sent them.
-const objectLines = (lines: string[]) =>
-  lines.flatMap((line) => {
-    try {
-      const value: unknown = JSON.parse(line);
-      return referencePaths.isRecord(value) ? [value] : [];
-    } catch {
-      return [];
-    }
-  });
 
 // The cheap checks, then under probe the model probes. A CLI that cannot start is the one failure: the checks that
 // read what it prints do not run.
 export async function doctor(runner: Runner, { probe }: { probe: boolean }, profile: ProfileLaunch) {
   const checks = [...(process.platform === 'win32' ? [shellCheck()] : []), ggCheck()];
   const version = await said(runner, ['--version']);
-  if (!version.started) checks.push(failed('executable', `claude cannot start: ${version.failure}`));
+  if (!version.started) checks.push(cliDoctor.failed('executable', `claude cannot start: ${version.failure}`));
   else {
     const [auth, help] = await Promise.all([said(runner, ['auth', 'status', '--json']), said(runner, ['--help'])]);
-    checks.push(passed('executable', 'claude starts'), versionCheck(version), loginCheck(auth), helpCheck(help));
+    checks.push(
+      cliDoctor.passed('executable', 'claude starts'),
+      cliDoctor.versionCheck(version, { command: 'claude', minimum: MINIMUM_VERSION, update: 'claude update' }),
+      loginCheck(auth),
+      helpCheck(help),
+    );
     if (probe) checks.push(...(await profileProbe(runner, profile)), await bareProbe(runner));
   }
   const report: runContext.DoctorReport = {
