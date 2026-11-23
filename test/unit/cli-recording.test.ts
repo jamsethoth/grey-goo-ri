@@ -166,3 +166,12 @@ test('an email address right after a username holding a space is redacted whole'
     'by <user> <<email>>',
   ]);
 });
+
+test(
+  "a one-letter username's many occurrences with no address after them are redacted at once",
+  { timeout: 10_000 },
+  () => {
+    const redactShort = cliRecording.redactorOf({ paths: [], username: 'a' });
+    assert.equal(redactShort(`${'a'.repeat(40)} end`), `${'<user>'.repeat(40)} end`);
+  },
+);

@@ -75,12 +75,15 @@ export function redactorOf(redacted: {
     const bash = separated.replace(/^([A-Za-z]):/, (_whole, drive: string) => `/${drive.toLowerCase()}`);
     return [separated, bash, escape(path.replace(/[^A-Za-z0-9]/g, '-'))];
   };
+  // The name as an alternative before `@` only when the class cannot match it, since a name the class matches makes
+  // each of its occurrences two ways to match, which backtracks exponentially over a long run without an `@`.
+  const name = /[^\w.+-]/.test(redacted.username) ? `${escape(redacted.username)}|` : '';
   const pairs: [RegExp, string][] = [
     ...redacted.paths.flatMap(([path, label]) =>
       forms(path).map((form): [RegExp, string] => [new RegExp(form, 'gi'), label]),
     ),
     ...(redacted.patterns ?? []),
-    [new RegExp(`(?:${escape(redacted.username)}|[\\w.+-])+@[\\w-]+(?:\\.[\\w-]+)+`, 'gi'), '<email>'],
+    [new RegExp(`(?:${name}[\\w.+-])+@[\\w-]+(?:\\.[\\w-]+)+`, 'gi'), '<email>'],
     [new RegExp(escape(redacted.username), 'gi'), '<user>'],
   ];
   // No pass rewrites a label an earlier pass wrote, so a username equal to a label's text (`user`, `home`) leaves it
