@@ -1,10 +1,29 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { test } from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-// With no PATH, a recorder whose --help check broke cannot reach the real codex or claude.
-const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== 'PATH'));
+// PATH is an empty directory, not removed: on Windows a child given no PATH gets the parent's back, so a recorder
+// whose --help check broke would reach the real codex or claude.
+const emptyDirectory = mkdtempSync(join(tmpdir(), 'gg-no-cli-'));
+const environment = {
+  ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== 'PATH')),
+  PATH: emptyDirectory,
+};
+after(() => {
+  rmSync(emptyDirectory, { recursive: true, force: true });
+});
+
+test('a child spawned under the environment sees only the empty PATH directory', () => {
+  const result = spawnSync(process.execPath, ['-e', "process.stdout.write(process.env.PATH ?? '')"], {
+    encoding: 'utf8',
+    env: environment,
+  });
+  assert.equal(result.stdout, emptyDirectory);
+});
 
 // Each recorder's --help prints its usage alone and exits 2, before any CLI is called (#479, D14 A).
 for (const recorder of ['record-codex', 'record-claude']) {
