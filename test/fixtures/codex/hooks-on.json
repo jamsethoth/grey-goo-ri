@@ -1,0 +1,88 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "scenario": "hooks-on",
+  "purpose": "SessionStart and PostToolUse hooks, given inline by -c and in CODEX_HOME/hooks.json, with features.hooks true and --dangerously-bypass-hook-trust (Q10): does each fire under exec, and does its text reach the model?",
+  "modelCall": true,
+  "command": {
+    "executable": "codex",
+    "argv": [
+      "exec",
+      "-s",
+      "read-only",
+      "-C",
+      "<recording>\\repo",
+      "-c",
+      "model=\"gpt-6-luna\"",
+      "-c",
+      "model_reasoning_effort=\"low\"",
+      "-c",
+      "approval_policy=\"never\"",
+      "-c",
+      "windows.sandbox=\"mxc\"",
+      "-c",
+      "projects={\"<recording>\\\\repo\"={trust_level=\"untrusted\"}}",
+      "-c",
+      "features.hooks=true",
+      "-c",
+      "features.apps=false",
+      "-c",
+      "features.tool_suggest=false",
+      "-c",
+      "check_for_update_on_startup=false",
+      "-c",
+      "project_doc_max_bytes=0",
+      "-c",
+      "skills.include_instructions=false",
+      "-c",
+      "hooks={SessionStart=[{hooks=[{type=\"command\",command=\"node \\\"<recording>/hook.cjs\\\" inline SessionStart\",commandWindows=\"node \\\"<recording>/hook.cjs\\\" inline SessionStart\",timeout=30}]}],PostToolUse=[{matcher=\".*\",hooks=[{type=\"command\",command=\"node \\\"<recording>/hook.cjs\\\" inline PostToolUse\",commandWindows=\"node \\\"<recording>/hook.cjs\\\" inline PostToolUse\",timeout=30}]}]}",
+      "--dangerously-bypass-hook-trust",
+      "--json",
+      "--output-schema",
+      "<recording>\\run\\schema.json",
+      "-o",
+      "<recording>\\run\\hooks-on.last.txt",
+      "-"
+    ],
+    "cwd": "repo",
+    "env": {
+      "CODEX_HOME": "<home>\\.agents\\gg\\codex"
+    },
+    "stdin": "Run the command `node --version` once with your shell tool. Then answer with every word that begins with SENTINEL- that you can see anywhere in your instructions, context or tool results, or \"none\"."
+  },
+  "start": null,
+  "threadId": "01a2043f-0a1e-7893-aabd-f081c38e6ad6",
+  "exitCode": 0,
+  "signal": null,
+  "killed": null,
+  "lineTimesMs": [
+    1592,
+    1628,
+    1628,
+    2041,
+    4853,
+    5620,
+    6105,
+    9210,
+    9278
+  ],
+  "stderr": "",
+  "lastMessage": "{\"answer\":\"SENTINEL-HOOK-HOME-SESSIONSTART, SENTINEL-HOOK-INLINE-SESSIONSTART, SENTINEL-HOOK-HOME-POSTTOOLUSE, SENTINEL-HOOK-INLINE-POSTTOOLUSE\"}",
+  "rolloutPath": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T12-12-50-01a2043f-0a1e-7893-aabd-f081c38e6ad6.jsonl",
+  "evidence": {
+    "created": [
+      "hook-log.txt"
+    ],
+    "hookLog": "home SessionStart session_id,transcript_path,cwd,hook_event_name,model,permission_mode,source\ninline SessionStart session_id,transcript_path,cwd,hook_event_name,model,permission_mode,source\nhome PostToolUse session_id,turn_id,transcript_path,cwd,hook_event_name,model,permission_mode,tool_name,tool_input,tool_response,tool_use_id\ninline PostToolUse session_id,turn_id,transcript_path,cwd,hook_event_name,model,permission_mode,tool_name,tool_input,tool_response,tool_use_id\n",
+    "mcpLog": null,
+    "forkedRollout": null,
+    "job": {
+      "contained": true,
+      "whileMarked": null,
+      "afterKill": null,
+      "leftAfterExit": []
+    },
+    "homeChanges": null,
+    "stubRequests": null,
+    "homeLogTail": null
+  }
+}

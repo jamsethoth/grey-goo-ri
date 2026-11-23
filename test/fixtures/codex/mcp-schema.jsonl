@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"01a2043f-74c2-7fb1-b51c-28ab5a35d070"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I’m about to call the probe server’s `probe_word` tool once and report the returned word."}}
+{"type":"item.started","item":{"id":"item_1","type":"mcp_tool_call","server":"probe","tool":"probe_word","arguments":{},"result":null,"error":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"probe","tool":"probe_word","arguments":{},"result":null,"error":{"message":"MCP tool call requires approval, but approval policy is never"},"status":"failed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"{\"answer\":\"The probe tool requires approval, but approval is unavailable, so it did not return a word.\"}"}}
+{"type":"turn.completed","usage":{"input_tokens":39370,"cached_input_tokens":36096,"cache_write_input_tokens":0,"output_tokens":123,"reasoning_output_tokens":0}}

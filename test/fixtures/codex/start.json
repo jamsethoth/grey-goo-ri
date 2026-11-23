@@ -1,0 +1,81 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "scenario": "start",
+  "purpose": "a new thread, read-only, with --json, --output-schema and -o (F2): the stream, the rollout and where it lands",
+  "modelCall": true,
+  "command": {
+    "executable": "codex",
+    "argv": [
+      "exec",
+      "-s",
+      "read-only",
+      "-C",
+      "<recording>\\repo",
+      "-c",
+      "model=\"gpt-6-luna\"",
+      "-c",
+      "model_reasoning_effort=\"low\"",
+      "-c",
+      "approval_policy=\"never\"",
+      "-c",
+      "windows.sandbox=\"mxc\"",
+      "-c",
+      "projects={\"<recording>\\\\repo\"={trust_level=\"untrusted\"}}",
+      "-c",
+      "features.hooks=false",
+      "-c",
+      "features.apps=false",
+      "-c",
+      "features.tool_suggest=false",
+      "-c",
+      "check_for_update_on_startup=false",
+      "-c",
+      "project_doc_max_bytes=0",
+      "-c",
+      "skills.include_instructions=false",
+      "--json",
+      "--output-schema",
+      "<recording>\\run\\schema.json",
+      "-o",
+      "<recording>\\run\\start.last.txt",
+      "-"
+    ],
+    "cwd": "repo",
+    "env": {
+      "CODEX_HOME": "<home>\\.agents\\gg\\codex"
+    },
+    "stdin": "This is a probe in a throwaway repository. Run each command below exactly as written, one shell call each, in order, and carry on after one is refused or fails; never change a command or try another way.\n1. Get-Content README.md\nThen answer with the word it names."
+  },
+  "start": null,
+  "threadId": "01a2044a-1251-7180-8d49-dc1220e52393",
+  "exitCode": 0,
+  "signal": null,
+  "killed": null,
+  "lineTimesMs": [
+    514,
+    950,
+    3319,
+    4973,
+    5943,
+    7508,
+    7678
+  ],
+  "stderr": "",
+  "lastMessage": "{\"answer\":\"heliotrope\"}",
+  "rolloutPath": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T12-24-53-01a2044a-1251-7180-8d49-dc1220e52393.jsonl",
+  "evidence": {
+    "created": [],
+    "hookLog": null,
+    "mcpLog": null,
+    "forkedRollout": null,
+    "job": {
+      "contained": true,
+      "whileMarked": null,
+      "afterKill": null,
+      "leftAfterExit": []
+    },
+    "homeChanges": null,
+    "stubRequests": null,
+    "homeLogTail": null
+  }
+}

@@ -23,6 +23,8 @@ export interface Scenario {
   untilInit?: boolean;
   stub?: boolean;
   bigFile?: boolean;
+  // Files written under {base} before the call, by path, each text filled as a prompt is.
+  files?: Record<string, string>;
 }
 
 const RUN_EACH =
@@ -32,6 +34,34 @@ const RUN_EACH =
 const REPORT = 'Then answer with one line per command: its number and whether it ran or was refused.';
 // A configuration directory of the scenario's own, so a call with a fake key never reads the user's login.
 const OWN_CONFIG = { CLAUDE_CONFIG_DIR: '{base}/config', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' };
+// A minimal local plugin whose PreToolUse hook prefixes `node --version` with a wrapper that runs it, as a
+// command-rewriting plugin does (issue #479 decision 6); the hook gives the new input and no permission decision.
+const REWRITE_PLUGIN = {
+  'rewrite-plugin/.claude-plugin/plugin.json': '{ "name": "rewrite-probe", "version": "1.0.0" }\n',
+  'rewrite-plugin/hooks/hooks.json': JSON.stringify({
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: 'Bash|PowerShell',
+          hooks: [{ type: 'command', command: 'node "{outside}/rewrite-plugin/rewrite-hook.js"' }],
+        },
+      ],
+    },
+  }),
+  'rewrite-plugin/rewrite-hook.js': `let input = '';
+process.stdin.on('data', (chunk) => (input += chunk)).on('end', () => {
+  const toolInput = JSON.parse(input).tool_input;
+  if (!String(toolInput.command).startsWith('node --version')) return;
+  const command = 'node "{outside}/rewrite-plugin/prefix.js" ' + toolInput.command;
+  const updatedInput = { ...toolInput, command };
+  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput } }));
+});
+`,
+  'rewrite-plugin/prefix.js': `process.stdout.write('prefixed\\n');
+const ran = require('node:child_process').spawnSync(process.argv[2], process.argv.slice(3), { stdio: 'inherit' });
+process.exit(ran.status ?? 1);
+`,
+};
 
 export const SCENARIOS: Scenario[] = [
   {
@@ -110,6 +140,19 @@ ${REPORT}`,
 5. Select-String -Path README.md -Pattern word
 6. git status
 7. New-Item -ItemType File made.txt
+${REPORT}`,
+  },
+  {
+    name: 'rewrite-refusal',
+    purpose:
+      "decision 6 of #479: a Declared Command a listed plugin's PreToolUse hook prefixes, under -p with the launch " +
+      'profile: is the rewritten command refused against the allow list? git status, not rewritten, is the control',
+    commands: { version: 'node --version' },
+    files: REWRITE_PLUGIN,
+    extraArgv: ['--plugin-dir', '{base}/rewrite-plugin'],
+    prompt: `${RUN_EACH}
+1. node --version
+2. git status
 ${REPORT}`,
   },
   {

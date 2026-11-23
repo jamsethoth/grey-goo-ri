@@ -1,0 +1,234 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "command": "prompt-input-skills-config-add",
+  "purpose": "decision 7: can skills.config add a skill outside the skill roots (skills exact)?",
+  "argv": [
+    "debug",
+    "prompt-input",
+    "-c",
+    "skills.config=[{path=\"<recording>/gg-skill/SKILL.md\",enabled=true}]",
+    "hi"
+  ],
+  "home": "gg",
+  "repository": "plain",
+  "exitCode": 0,
+  "stdout": null,
+  "promptInput": {
+    "sentinels": [],
+    "skillRoots": [
+      "r0 = <home>/.agents/skills",
+      "r1 = <home>/.agents/gg/codex/skills/.system"
+    ],
+    "items": [
+      {
+        "type": "additional_tools",
+        "id": "at_01a20447-0cf4-7170-8523-5ffe3c47cbcf",
+        "role": "developer",
+        "tools": [
+          "functions[exec,wait,request_user_input,request_user_input_async,send_message_to_user_async]",
+          "clock[sleep]",
+          "collaboration[followup_task,interrupt_agent,list_agents,send_message,spawn_agent,wait_agent]"
+        ]
+      },
+      {
+        "type": "message",
+        "id": "msg_01a20447-0cf4-7170-8523-60082bc29924",
+        "role": "developer",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 27750 characters: You are Codex, an agent based on GPT-6. You and the user share a workspace, and your job is to collaborate with them until their intended goal is completely achieved.>"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795368094.9647603,
+          "content_item_kinds": [
+            "model.base_instructions"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "harness",
+                "hook": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "message",
+        "id": "msg_01a20447-0cf4-7170-8523-6017ea1ebf89",
+        "role": "developer",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 7954 characters: <skills_instructions>>"
+          },
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 3939 characters: <permissions instructions>>"
+          },
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 1056 characters: <collaboration_mode># Collaboration Mode: Default>"
+          },
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 2272 characters: <tools>>"
+          },
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 876 characters: <recommended_plugins>>"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795368094.9647622,
+          "content_item_kinds": [
+            "host_skills.instructions",
+            "permissions.instructions",
+            "collaboration_mode.instructions",
+            "tools.deferred_namespaces",
+            "plugins.recommendations"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "skills"
+              }
+            },
+            {
+              "provenance": {
+                "type": "harness",
+                "hook": false
+              }
+            },
+            {
+              "provenance": {
+                "type": "harness",
+                "hook": false
+              }
+            },
+            {
+              "provenance": {
+                "type": "tool",
+                "namespace": "tool_search"
+              }
+            },
+            {
+              "provenance": {
+                "type": "harness",
+                "hook": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "message",
+        "id": "msg_01a20447-0cf4-7170-8523-602810d04a74",
+        "role": "developer",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 2160 characters: <multi_agent_role>You are `/root`, the primary agent in a team of agents collaborating to fulfill the user's goals.>"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795368094.9647624,
+          "content_item_kinds": [
+            "multi_agent.role_instructions"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "tool",
+                "namespace": "collaboration"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "message",
+        "id": "msg_01a20447-0cf4-7170-8523-603fa4f02ba3",
+        "role": "developer",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 271 characters: <multi_agent_mode>Any earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.</multi_agent_mode>>"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795368094.964764,
+          "content_item_kinds": [
+            "multi_agent.mode_instructions"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "tool",
+                "namespace": "collaboration"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "message",
+        "id": "msg_01a20447-0cf4-7170-8523-604d4609f56b",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<environment_context>\n  <cwd><recording>\\repo</cwd>\n  <shell>powershell</shell>\n  <current_date>2026-11-22</current_date>\n  <timezone>America/Toronto</timezone>\n  <filesystem><workspace_roots><root><recording>\\repo</root></workspace_roots><permission_profile type=\"managed\"><file_system type=\"restricted\"><entry access=\"read\"><special>:root</special></entry></file_system></permission_profile></filesystem>\n</environment_context>"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795368094.9647644,
+          "content_item_kinds": [
+            "environments.environment_context"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "harness",
+                "hook": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "message",
+        "id": "msg_01a20447-0cf5-7e01-90a6-9dd5040957a1",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "hi"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795368094.965266,
+          "content_item_kinds": [
+            "user.text"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "user"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "stderr": ""
+}

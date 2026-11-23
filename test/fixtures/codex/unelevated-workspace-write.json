@@ -1,0 +1,80 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "scenario": "unelevated-workspace-write",
+  "purpose": "the workspace-write task under windows.sandbox=\"unelevated\", with the job listed while a command runs",
+  "modelCall": true,
+  "command": {
+    "executable": "codex",
+    "argv": [
+      "exec",
+      "-s",
+      "workspace-write",
+      "-C",
+      "<recording>\\repo",
+      "-c",
+      "model=\"gpt-6-luna\"",
+      "-c",
+      "model_reasoning_effort=\"low\"",
+      "-c",
+      "approval_policy=\"never\"",
+      "-c",
+      "windows.sandbox=\"unelevated\"",
+      "-c",
+      "projects={\"<recording>\\\\repo\"={trust_level=\"untrusted\"}}",
+      "-c",
+      "features.hooks=false",
+      "-c",
+      "features.apps=false",
+      "-c",
+      "features.tool_suggest=false",
+      "-c",
+      "check_for_update_on_startup=false",
+      "-c",
+      "project_doc_max_bytes=0",
+      "-c",
+      "skills.include_instructions=false",
+      "--json",
+      "--output-schema",
+      "<recording>\\run\\schema.json",
+      "-o",
+      "<recording>\\run\\unelevated-workspace-write.last.txt",
+      "-"
+    ],
+    "cwd": "repo",
+    "env": {
+      "CODEX_HOME": "<home>\\.agents\\gg\\codex"
+    },
+    "stdin": "This is a probe in a throwaway repository. Run each command below exactly as written, one shell call each, in order, and carry on after one is refused or fails; never change a command or try another way.\n1. node write.js made.txt\n2. node rename-temp.js\n3. node link.js\n4. node child.js\n5. node --test probe.test.js\n6. node slow.js gg-job-marker\nThen answer with one line per command: its number, whether it ran or was refused, and what it printed."
+  },
+  "start": null,
+  "threadId": "01a20435-d7dd-7a90-b8cf-2bc7d09387e2",
+  "exitCode": 1,
+  "signal": null,
+  "killed": "call limit",
+  "lineTimesMs": [
+    785,
+    981,
+    3218,
+    61266,
+    317055,
+    317210
+  ],
+  "stderr": "",
+  "lastMessage": "{\"answer\":\"1. Ran call; no result or printed output returned before I stopped waiting.\\n2. Ran call; no result or printed output returned before I stopped waiting.\\n3. Ran call; no result or printed output returned before I stopped waiting.\\n4. Ran call; no result or printed output returned before I stopped waiting.\\n5. Ran call; no result or printed output returned before I stopped waiting.\\n6. Ran call; no result or printed output returned before I stopped waiting.\"}",
+  "rolloutPath": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T12-02-47-01a20435-d7dd-7a90-b8cf-2bc7d09387e2.jsonl",
+  "evidence": {
+    "created": [],
+    "hookLog": null,
+    "mcpLog": null,
+    "forkedRollout": null,
+    "job": {
+      "contained": true,
+      "whileMarked": null,
+      "afterKill": null,
+      "leftAfterExit": []
+    },
+    "homeChanges": null,
+    "stubRequests": null,
+    "homeLogTail": "2026-11-22T16:43:20.143445Z  INFO codex_cli::login: starting browser login flow\n2026-11-22T16:43:51.701661Z  INFO codex_login::server: received login callback path=/auth/callback has_code=true has_state=true has_error=false state_valid=true\n2026-11-22T16:43:51.701726Z  INFO codex_login::server: starting oauth token exchange issuer=https://auth.openai.com/ token_endpoint=https://auth.openai.com/oauth/token redirect_uri=http://127.0.0.1:1455/auth/callback\n2026-11-22T16:43:51.951391Z  INFO codex_login::server: oauth token exchange succeeded\n"
+  }
+}

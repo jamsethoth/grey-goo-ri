@@ -1,0 +1,83 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "scenario": "tree-kill-resume",
+  "purpose": "the killed thread resumed: is the rollout a killed call leaves resumable, and what does it hold?",
+  "modelCall": true,
+  "command": {
+    "executable": "codex",
+    "argv": [
+      "exec",
+      "-s",
+      "read-only",
+      "-C",
+      "<recording>\\repo",
+      "resume",
+      "01a2043f-9791-78b1-9ecd-01ba4a4fb74a",
+      "-c",
+      "model=\"gpt-6-luna\"",
+      "-c",
+      "model_reasoning_effort=\"low\"",
+      "-c",
+      "approval_policy=\"never\"",
+      "-c",
+      "windows.sandbox=\"mxc\"",
+      "-c",
+      "projects={\"<recording>\\\\repo\"={trust_level=\"untrusted\"}}",
+      "-c",
+      "features.hooks=false",
+      "-c",
+      "features.apps=false",
+      "-c",
+      "features.tool_suggest=false",
+      "-c",
+      "check_for_update_on_startup=false",
+      "-c",
+      "project_doc_max_bytes=0",
+      "-c",
+      "skills.include_instructions=false",
+      "--json",
+      "--output-schema",
+      "<recording>\\run\\schema.json",
+      "-o",
+      "<recording>\\run\\tree-kill-resume.last.txt",
+      "-"
+    ],
+    "cwd": "repo",
+    "env": {
+      "CODEX_HOME": "<home>\\.agents\\gg\\codex"
+    },
+    "stdin": "Without any tool, answer with the command you were running when this conversation was interrupted, or \"none\"."
+  },
+  "start": {
+    "kind": "resume-flags-before",
+    "from": "tree-kill"
+  },
+  "threadId": "01a2043f-9791-78b1-9ecd-01ba4a4fb74a",
+  "exitCode": 0,
+  "signal": null,
+  "killed": null,
+  "lineTimesMs": [
+    569,
+    640,
+    2205,
+    2265
+  ],
+  "stderr": "",
+  "lastMessage": "{\"answer\":\"node slow.js gg-kill-marker\"}",
+  "rolloutPath": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T12-13-26-01a2043f-9791-78b1-9ecd-01ba4a4fb74a.jsonl",
+  "evidence": {
+    "created": [],
+    "hookLog": null,
+    "mcpLog": null,
+    "forkedRollout": null,
+    "job": {
+      "contained": true,
+      "whileMarked": null,
+      "afterKill": null,
+      "leftAfterExit": []
+    },
+    "homeChanges": null,
+    "stubRequests": null,
+    "homeLogTail": null
+  }
+}

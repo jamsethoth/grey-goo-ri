@@ -456,7 +456,8 @@ test('no file under test/ names the configuration word ADR 0022 retired', () => 
   assert.ok(testFiles.includes('test/support/golden.ts'), 'the files under test/ are read');
   assert.deepEqual(
     retiredWordsIn(Object.fromEntries(testFiles.map((path) => [path, readFileSync(root + path, 'utf8')]))),
-    [],
+    // The Codex help's own text for --profile, recorded as printed: a re-record that rewords it updates this line.
+    ['test/fixtures/codex/cli-exec-help.json: 1'],
     'say Source: example-source.ts, exampleSource, source, sourceFile',
   );
 });

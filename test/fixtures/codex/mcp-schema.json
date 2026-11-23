@@ -1,0 +1,85 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "scenario": "mcp-schema",
+  "purpose": "one config MCP server with --output-schema active: the mcp_tool_call items, whether the schema still holds (the request 3.2 regression fixture), and whether a message before the tool call is forced into it (#19816)",
+  "modelCall": true,
+  "command": {
+    "executable": "codex",
+    "argv": [
+      "exec",
+      "-s",
+      "read-only",
+      "-C",
+      "<recording>\\repo",
+      "-c",
+      "model=\"gpt-6-luna\"",
+      "-c",
+      "model_reasoning_effort=\"low\"",
+      "-c",
+      "approval_policy=\"never\"",
+      "-c",
+      "windows.sandbox=\"mxc\"",
+      "-c",
+      "projects={\"<recording>\\\\repo\"={trust_level=\"untrusted\"}}",
+      "-c",
+      "features.hooks=false",
+      "-c",
+      "features.apps=false",
+      "-c",
+      "features.tool_suggest=false",
+      "-c",
+      "check_for_update_on_startup=false",
+      "-c",
+      "project_doc_max_bytes=0",
+      "-c",
+      "skills.include_instructions=false",
+      "-c",
+      "mcp_servers.probe={command=\"node\",args=[\"<recording>/mcp-server.cjs\"]}",
+      "--json",
+      "--output-schema",
+      "<recording>\\run\\schema.json",
+      "-o",
+      "<recording>\\run\\mcp-schema.last.txt",
+      "-"
+    ],
+    "cwd": "repo",
+    "env": {
+      "CODEX_HOME": "<home>\\.agents\\gg\\codex"
+    },
+    "stdin": "First say in one sentence what you are about to do. Then call the probe_word tool of the probe MCP server once, and answer with the word it returns."
+  },
+  "start": null,
+  "threadId": "01a2043f-74c2-7fb1-b51c-28ab5a35d070",
+  "exitCode": 0,
+  "signal": null,
+  "killed": null,
+  "lineTimesMs": [
+    728,
+    1178,
+    3136,
+    4930,
+    4948,
+    6648,
+    6715
+  ],
+  "stderr": "",
+  "lastMessage": "{\"answer\":\"The probe tool requires approval, but approval is unavailable, so it did not return a word.\"}",
+  "rolloutPath": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T12-13-17-01a2043f-74c2-7fb1-b51c-28ab5a35d070.jsonl",
+  "evidence": {
+    "created": [
+      "mcp-log.txt"
+    ],
+    "hookLog": null,
+    "mcpLog": "initialize\nnotifications/initialized\ntools/list\n",
+    "forkedRollout": null,
+    "job": {
+      "contained": true,
+      "whileMarked": null,
+      "afterKill": null,
+      "leftAfterExit": []
+    },
+    "homeChanges": null,
+    "stubRequests": null,
+    "homeLogTail": null
+  }
+}
