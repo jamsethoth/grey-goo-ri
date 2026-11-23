@@ -21,9 +21,9 @@ entry point since #199 (ADR 0019).
    asserts on (a PID file written, a lock taken, a run settled), never on a fixed duration; a wait may be bounded
    only by the case's own timeout (#143). Time-dependent logic takes the injected clock (`{ now, sleep }`), not the
    wall clock. Eight cases measure real time, recorded as exceptions because their subject is real time across
-   processes, or in one a regular expression's own running time, which no injected clock reaches. None compares one process's clock with another's: two processes'
-   `Date.now()` can disagree by a millisecond on Windows, so an order between processes is shown causally, by what one
-   saw of the other's writes (#260):
+   processes, or in one a regular expression's own running time, which no injected clock reaches. None compares one
+   process's clock with another's: two processes' `Date.now()` can disagree by a millisecond on Windows, so an order
+   between processes is shown causally, by what one saw of the other's writes (#260):
    - `test/contract/sqlite/record.test.ts`, `a save waits out another process that holds the write lock for longer
      than 5 s`: a save waiting past the 5 s busy timeout ADR 0015 replaced is the behaviour.
    - `test/contract/exec/exec.job.test.ts`, `runShell: when the job cannot be set up, a slow taskkill still takes down
