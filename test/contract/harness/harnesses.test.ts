@@ -21,6 +21,7 @@ const NOT_HARNESSES = [
   'claude-doctor.ts',
   'claude-handoff-hook.ts',
   'claude-plugins.ts',
+  'codex-plugins.ts',
   'ask-session.ts',
   'cli-call.ts',
   'cli-doctor.ts',
@@ -142,7 +143,7 @@ test('shipped builds every Harness module from the exec it is given', CASE, asyn
 
 // The launch profile is a contract member (#428 Q1 A), so gg reads it from the Harness it runs, as it reads its
 // Protected Files: Claude's from its declaration, and none from Codex or the fake.
-test('each shipped Harness keeps its launch profile, and Codex and the fake declare none', async () => {
+test('each shipped Harness keeps its launch profile, and the fake declares none', async () => {
   const shipped = await import('../../../lib/harnesses/shipped.ts');
   const built = shipped.shipped(exec.createExec({ kernel32: null }));
   assert.deepEqual(
@@ -152,7 +153,7 @@ test('each shipped Harness keeps its launch profile, and Codex and the fake decl
       fake: ((await fakeHarness()) as Record<string, unknown>).launchProfile,
     },
     // The hand-off hook joined gg's settings file at version 3 (#430).
-    { claude: { name: 'claude-headless', version: 3 }, codex: null, fake: null },
+    { claude: { name: 'claude-headless', version: 3 }, codex: { name: 'codex-exec', version: 1 }, fake: null },
   );
 });
 
