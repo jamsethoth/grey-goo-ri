@@ -158,3 +158,11 @@ test("an email address holding the user's name is redacted whole", () => {
     ['mail <email>', 'mail <email>', 'mail <email>'],
   );
 });
+
+test('an email address right after a username holding a space is redacted whole', () => {
+  const redactSpaced = cliRecording.redactorOf({ paths: [], username: 'Stand In' });
+  assert.deepEqual(['by Stand In@example.com', 'by stand in <stand.in@example.com>'].map(redactSpaced), [
+    'by <email>',
+    'by <user> <<email>>',
+  ]);
+});
