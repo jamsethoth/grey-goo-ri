@@ -151,3 +151,10 @@ test('a call is saved as its redacted lines and its redacted meta', (t) => {
     },
   );
 });
+
+test("an email address holding the user's name is redacted whole", () => {
+  assert.deepEqual(
+    ['mail standin@example.com', 'mail a@standin.example.com', 'mail StandIn.b@example.com'].map(redact),
+    ['mail <email>', 'mail <email>', 'mail <email>'],
+  );
+});

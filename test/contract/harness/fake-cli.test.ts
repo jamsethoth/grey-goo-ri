@@ -112,3 +112,9 @@ test('a command that is no model call prints its recorded answer and replays not
     { lines: ['stand-in 1.0.0'], code: 0, calls: 0 },
   );
 });
+
+test('garbage sends a line that is not JSON after the first line', CASE, async (t) => {
+  const fake = cliReplay.fakeCli(t, { ...STAND_IN, scenario: 'said', mode: 'garbage' });
+  const { ended, lines } = await launchOver(fake);
+  assert.deepEqual({ lines, code: ended.code }, { lines: [SAID[0], 'not a JSON line', ...SAID.slice(1)], code: 0 });
+});

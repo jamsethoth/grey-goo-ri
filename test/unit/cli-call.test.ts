@@ -81,3 +81,25 @@ test('a nonzero exit puts the stderr tail in the failure message', async () => {
   });
   assert.equal(ended.ended?.code, 2);
 });
+
+test("the stall clock's idle check answers the Harness's last activity from the lines so far", async () => {
+  const asked: (number | null)[] = [];
+  const runner: Runner = {
+    launch: async (options) => {
+      options.onLine?.(SAID);
+      asked.push(await options.onIdle!());
+      return EXITED;
+    },
+  };
+  await cliCall.run(runner, hooksOf(), { launch: LAUNCH, read: readStandIn, lastActivity: (lines) => lines.length });
+  assert.deepEqual(asked, [1]);
+});
+
+test('a launch that cannot start is an unknown failure, never a throw', async () => {
+  const runner: Runner = { launch: () => Promise.reject(new Error('spawn stand-in ENOENT')) };
+  const ended = await cliCall.run(runner, hooksOf(), { launch: LAUNCH, read: readStandIn });
+  assert.deepEqual(
+    { status: ended.status, failure: ended.failure, ended: ended.ended },
+    { status: 'failed', failure: { failureClass: 'unknown', message: 'spawn stand-in ENOENT' }, ended: null },
+  );
+});

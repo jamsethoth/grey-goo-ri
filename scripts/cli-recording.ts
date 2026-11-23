@@ -56,8 +56,8 @@ export function environmentOf(inherited: RegExp, env: Record<string, string>): R
 
 // What a recorder replaces in the text it commits: each path, as written, with either slash, escaped in JSON once or
 // more, as Git Bash writes it and as a directory name made of it, by its label; each of `patterns`, a recorder's own
-// keys and tokens, before the name, so a name inside a key cannot break the key's match; the user's name wherever it
-// appears; and email addresses.
+// keys and tokens, and then email addresses, each before the name, so a name inside a key or an address cannot break
+// its match; and the user's name wherever it appears.
 export function redactorOf(redacted: {
   paths: [string, string][];
   username: string;
@@ -79,8 +79,8 @@ export function redactorOf(redacted: {
       forms(path).map((form): [RegExp, string] => [new RegExp(form, 'gi'), label]),
     ),
     ...(redacted.patterns ?? []),
-    [new RegExp(escape(redacted.username), 'gi'), '<user>'],
     [/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '<email>'],
+    [new RegExp(escape(redacted.username), 'gi'), '<user>'],
   ];
   // No pass rewrites a label an earlier pass wrote, so a username equal to a label's text (`user`, `home`) leaves it
   // whole. shortcut: a replacement is written as is, without `$1` groups; none of today's patterns uses one.
