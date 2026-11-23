@@ -167,11 +167,12 @@ test('an email address right after a username holding a space is redacted whole'
   ]);
 });
 
-test(
-  "a one-letter username's many occurrences with no address after them are redacted at once",
-  { timeout: 10_000 },
-  () => {
-    const redactShort = cliRecording.redactorOf({ paths: [], username: 'a' });
-    assert.equal(redactShort(`${'a'.repeat(40)} end`), `${'<user>'.repeat(40)} end`);
-  },
-);
+test("a one-letter username's many occurrences with no address after them are redacted at once", () => {
+  const redactShort = cliRecording.redactorOf({ paths: [], username: 'a' });
+  // No test timeout can stop a synchronous regular expression, so the case times it and fails by name.
+  const started = performance.now();
+  const redacted = redactShort(`${'a'.repeat(28)} end`);
+  const elapsedMs = performance.now() - started;
+  assert.equal(redacted, `${'<user>'.repeat(28)} end`);
+  assert.ok(elapsedMs < 1000, `redaction took ${Math.round(elapsedMs)} ms, so the email pattern backtracks again`);
+});
