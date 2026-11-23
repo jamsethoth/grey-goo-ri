@@ -11,6 +11,7 @@ import * as claudeDoctor from './claude-doctor.ts';
 import * as claudeHandoffHook from './claude-handoff-hook.ts';
 import * as claudePlugins from './claude-plugins.ts';
 import * as claudeStream from './claude-stream.ts';
+import * as cliCall from './cli-call.ts';
 import * as contract from './contract.ts';
 
 // The paths that configure Claude Code, which gg protects from every agent (request 3.2).
@@ -247,9 +248,9 @@ function repositoryDigestOf(cwd: string): string | null {
 }
 
 // A call's Usage (request 3.7): the result's tokens and cost are the Session's running total, the stream's counts this
-// call's own, which a resumed call adds to the earlier total. delta is cumulative less the earlier total, except
-// peakContextTokens, a maximum, which is this call's own. Claude gives the tokens, cost and turns only in its closing
-// result line, which always has a subtype, so a stream stopped before it reports them null, with no cost basis (#487).
+// call's own, which a resumed call adds to the earlier total. Claude gives the tokens, cost and turns only in its
+// closing result line, which always has a subtype, so a stream stopped before it reports them null, with no cost basis
+// (#487).
 function usageOf(stream: claudeStream.ClaudeStream, previous: events.Usage | null) {
   const earlier = (field: contract.CountField) => previous?.[field] ?? 0;
   const resultLine = stream.finalEventSubtype !== null;
@@ -261,42 +262,27 @@ function usageOf(stream: claudeStream.ClaudeStream, previous: events.Usage | nul
     if (field === 'turns') return earlier(field) + stream.turns;
     return stream.totals?.[field] ?? earlier(field);
   });
-  const delta = contract.usageOf((field) => {
-    const total = cumulative[field];
-    if (field === 'peakContextTokens') return stream.peakContextTokens;
-    return total === null ? null : total - earlier(field);
-  });
+  const delta = contract.usageDelta(cumulative, previous, stream.peakContextTokens);
   const costBasis = resultLine ? ('reported' as const) : null;
   return { cumulative: { ...cumulative, costBasis }, delta: { ...delta, costBasis } };
 }
 
 type RunResult = Awaited<ReturnType<runContext.Harness['run']>>;
 
-// A launch that ended, or could not start, read with the stream it gave: a stop or a cancel is no failure of the
-// stream's, and an executable that cannot start is an unknown failure, never a throw (request section 4).
-function resultOf(ended: exec.LaunchResult | Error, stream: claudeStream.ClaudeStream, call: RunCall): RunResult {
-  if (ended instanceof Error) {
-    const failure = { failureClass: 'unknown', message: ended.message };
-    const usage = usageOf(stream, call.previousUsage);
-    const result = { status: 'failed' as const, sessionId: null, transcriptPath: null, usage };
-    return { response: null, result: { ...result, cleanup: commandCleanup.NO_COMMAND }, failure };
+// A call that ended, or could not start, with what its stream says.
+function resultOf({ status, stream, failure, ended }: cliCall.CliCallEnded<claudeStream.ClaudeStream>, call: RunCall) {
+  const usage = usageOf(stream, call.previousUsage);
+  if (ended === null) {
+    const result = { status, sessionId: null, transcriptPath: null, usage, cleanup: commandCleanup.NO_COMMAND };
+    return { response: null, result, failure };
   }
-  const streamFailure = ended.cancelled || ended.timedOut ? null : stream.failure;
-  // A failed call keeps what the CLI printed to stderr in the message the Execution Record saves (#426 Q1 A), without
-  // its last newline; trimEnd, not trim, since a tail cut short may start with the CLI's indentation.
-  const stderrTail = ended.stderrTail.trimEnd();
-  const failure =
-    streamFailure && stderrTail
-      ? { ...streamFailure, message: `${streamFailure.message}\nstderr: ${stderrTail}` }
-      : streamFailure;
-  const stopped = ended.cancelled ? 'killed' : ended.timedOut && 'timed-out';
   return {
     response: stream.response,
     result: {
-      status: stopped || (failure ? 'failed' : 'completed'),
+      status,
       sessionId: stream.sessionId,
       transcriptPath: null,
-      usage: usageOf(stream, call.previousUsage),
+      usage,
       exitCode: ended.code,
       exitSignal: ended.signal,
       finalEventSubtype: stream.finalEventSubtype,
@@ -323,14 +309,14 @@ async function runIn(
   const launched = launchArgs(call, call.tools);
   for (const [path, text] of Object.entries(launched.files)) writeFileSync(path, text);
   const repositoryDigest = repositoryDigestOf(call.cwd);
-  const lines: string[] = [];
-  const transcriptPath = () => transcriptPathOf(configDirectory, call.cwd, claudeStream.read(lines).sessionId);
-  const lastWrite = () => {
-    const path = transcriptPath();
+  const transcriptPath = (stream: claudeStream.ClaudeStream) =>
+    transcriptPathOf(configDirectory, call.cwd, stream.sessionId);
+  const lastWrite = (lines: string[]) => {
+    const path = transcriptPath(claudeStream.read(lines));
     return path !== null && existsSync(path) ? statSync(path).mtimeMs : null;
   };
-  const ended = await runner
-    .launch({
+  const ended = await cliCall.run(runner, hooks, {
+    launch: {
       command: 'claude',
       args: launched.argv,
       cwd: call.cwd,
@@ -338,14 +324,12 @@ async function runIn(
       input: call.brief,
       stallMs: call.timeouts.stallMs ?? DEFAULT_TIMEOUTS.stallMs,
       wallMs: call.timeouts.wallMs ?? DEFAULT_TIMEOUTS.wallMs,
-      signal: hooks.signal,
-      onStarted: (containment) => hooks.started({ kind: containment.kind === 'job' ? 'job' : 'none' }),
-      onLine: (line) => lines.push(line),
-      onIdle: lastWrite,
-    })
-    .catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))));
-  const { response, result, failure } = resultOf(ended, claudeStream.read(lines), call);
-  return { response, result: { ...result, transcriptPath: transcriptPath(), repositoryDigest }, failure };
+    },
+    read: claudeStream.read,
+    lastActivity: lastWrite,
+  });
+  const { response, result, failure } = resultOf(ended, call);
+  return { response, result: { ...result, transcriptPath: transcriptPath(ended.stream), repositoryDigest }, failure };
 }
 
 const notImplemented = (): never => {

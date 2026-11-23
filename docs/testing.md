@@ -20,10 +20,10 @@ entry point since #199 (ADR 0019).
    waits on the event it
    asserts on (a PID file written, a lock taken, a run settled), never on a fixed duration; a wait may be bounded
    only by the case's own timeout (#143). Time-dependent logic takes the injected clock (`{ now, sleep }`), not the
-   wall clock. Seven cases measure real time, recorded as exceptions because their subject is real time across
-   processes, which no injected clock reaches. None compares one process's clock with another's: two processes'
-   `Date.now()` can disagree by a millisecond on Windows, so an order between processes is shown causally, by what one
-   saw of the other's writes (#260):
+   wall clock. Eight cases measure real time, recorded as exceptions because their subject is real time across
+   processes, or in one a regular expression's own running time, which no injected clock reaches. None compares one
+   process's clock with another's: two processes' `Date.now()` can disagree by a millisecond on Windows, so an order
+   between processes is shown causally, by what one saw of the other's writes (#260):
    - `test/contract/sqlite/record.test.ts`, `a save waits out another process that holds the write lock for longer
      than 5 s`: a save waiting past the 5 s busy timeout ADR 0015 replaced is the behaviour.
    - `test/contract/exec/exec.job.test.ts`, `runShell: when the job cannot be set up, a slow taskkill still takes down
@@ -41,6 +41,10 @@ entry point since #199 (ADR 0019).
    - `test/contract/exec/launch.test.ts`, `output that arrives while onIdle is pending re-arms the stall clock`: a 2 s
      stall must not fire within 0.3 s of output that arrived while onIdle was pending; onIdle answers only after it saw
      the output.
+   - `test/unit/cli-recording.test.ts`, `a one-letter username's many occurrences with no address after them are
+     redacted at once`: a synchronous regular expression blocks the timer a test timeout runs on, so the case bounds
+     the redaction at 1 s after it returns (measured worst under 1 ms), and a return of the backtracking #480 fixed
+     fails it by name in seconds instead of hanging the file.
 2. **Test behaviour through the public interface.** Call a module's exports (the namespace import of AGENTS.md
    Tests), not its private helpers or internal shapes. A refactor that keeps behaviour must not break a test.
 3. **Assert state, not interactions.** Check the result (the record, the events, the worktree, the labels), not
