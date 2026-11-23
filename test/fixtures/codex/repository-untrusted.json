@@ -1,0 +1,84 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "scenario": "repository-untrusted",
+  "purpose": "every repository sentinel of decision 3 with the project untrusted and gg's empty-start keys left out: which instruction files, skills, .codex config, hooks and rules load (a rule's allow runs outside the sandbox)",
+  "modelCall": true,
+  "command": {
+    "executable": "codex",
+    "argv": [
+      "exec",
+      "-s",
+      "read-only",
+      "-C",
+      "<recording>\\repo",
+      "-c",
+      "model=\"gpt-6-luna\"",
+      "-c",
+      "model_reasoning_effort=\"low\"",
+      "-c",
+      "approval_policy=\"never\"",
+      "-c",
+      "windows.sandbox=\"mxc\"",
+      "-c",
+      "projects={\"<recording>\\\\repo\"={trust_level=\"untrusted\"}}",
+      "-c",
+      "features.hooks=true",
+      "-c",
+      "features.apps=false",
+      "-c",
+      "features.tool_suggest=false",
+      "-c",
+      "check_for_update_on_startup=false",
+      "-c",
+      "hooks={SessionStart=[{hooks=[{type=\"command\",command=\"node \\\"<recording>/hook.cjs\\\" inline SessionStart\",commandWindows=\"node \\\"<recording>/hook.cjs\\\" inline SessionStart\",timeout=30}]}],PostToolUse=[{matcher=\".*\",hooks=[{type=\"command\",command=\"node \\\"<recording>/hook.cjs\\\" inline PostToolUse\",commandWindows=\"node \\\"<recording>/hook.cjs\\\" inline PostToolUse\",timeout=30}]}]}",
+      "--dangerously-bypass-hook-trust",
+      "--json",
+      "--output-schema",
+      "<recording>\\run\\schema.json",
+      "-o",
+      "<recording>\\run\\repository-untrusted.last.txt",
+      "-"
+    ],
+    "cwd": "repo",
+    "env": {
+      "CODEX_HOME": "<home>\\.agents\\gg\\codex"
+    },
+    "stdin": "This is a probe in a throwaway repository. Run each command below exactly as written, one shell call each, in order, and carry on after one is refused or fails; never change a command or try another way.\n1. node outside.js\nThen answer with whether it ran and what it printed, and every word that begins with SENTINEL- that you can see anywhere in your instructions, context or tool results."
+  },
+  "start": null,
+  "threadId": "01a20440-0a8b-74b2-a7bb-6d4d6d8e6c9f",
+  "exitCode": 0,
+  "signal": null,
+  "killed": null,
+  "lineTimesMs": [
+    647,
+    669,
+    670,
+    842,
+    3529,
+    5554,
+    6056,
+    9353,
+    9428
+  ],
+  "stderr": "warning: Untrusted project-local configuration is disabled. Run `codex exec --trust` to allow project configuration and MCP servers for this and future chats in the project, including MCP commands outside the sandbox. Explicitly untrusted projects must have their trust setting updated first.\n",
+  "lastMessage": "{\"answer\":\"`node outside.js` ran (exit code 0). It printed a PowerShell authorization error, then `outside write failed: EPERM`.\\n\\nVisible SENTINEL-prefixed words:\\n\\n- SENTINEL-HOOK-HOME-SESSIONSTART\\n- SENTINEL-HOOK-INLINE-SESSIONSTART\\n- SENTINEL-HOOK-HOME-POSTTOOLUSE\\n- SENTINEL-HOOK-INLINE-POSTTOOLUSE\"}",
+  "rolloutPath": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T12-13-55-01a20440-0a8b-74b2-a7bb-6d4d6d8e6c9f.jsonl",
+  "evidence": {
+    "created": [
+      "hook-log.txt"
+    ],
+    "hookLog": "home SessionStart session_id,transcript_path,cwd,hook_event_name,model,permission_mode,source\ninline SessionStart session_id,transcript_path,cwd,hook_event_name,model,permission_mode,source\nhome PostToolUse session_id,turn_id,transcript_path,cwd,hook_event_name,model,permission_mode,tool_name,tool_input,tool_response,tool_use_id\ninline PostToolUse session_id,turn_id,transcript_path,cwd,hook_event_name,model,permission_mode,tool_name,tool_input,tool_response,tool_use_id\n",
+    "mcpLog": null,
+    "forkedRollout": null,
+    "job": {
+      "contained": true,
+      "whileMarked": null,
+      "afterKill": null,
+      "leftAfterExit": []
+    },
+    "homeChanges": null,
+    "stubRequests": null,
+    "homeLogTail": null
+  }
+}

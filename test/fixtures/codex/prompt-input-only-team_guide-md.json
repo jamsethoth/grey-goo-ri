@@ -1,0 +1,232 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "command": "prompt-input-only-team_guide-md",
+  "purpose": "decision 3: TEAM_GUIDE.md alone in the repository, with no empty-start key: does it load?",
+  "argv": [
+    "debug",
+    "prompt-input",
+    "hi"
+  ],
+  "home": "gg",
+  "repository": "only:TEAM_GUIDE.md",
+  "exitCode": 0,
+  "stdout": null,
+  "promptInput": {
+    "sentinels": [],
+    "skillRoots": [
+      "r0 = <home>/.agents/skills",
+      "r1 = <home>/.agents/gg/codex/skills/.system"
+    ],
+    "items": [
+      {
+        "type": "additional_tools",
+        "id": "at_01a20446-fd01-7c21-bb50-29695e29882a",
+        "role": "developer",
+        "tools": [
+          "functions[exec,wait,request_user_input,request_user_input_async,send_message_to_user_async]",
+          "clock[sleep]",
+          "collaboration[followup_task,interrupt_agent,list_agents,send_message,spawn_agent,wait_agent]"
+        ]
+      },
+      {
+        "type": "message",
+        "id": "msg_01a20446-fd01-7c21-bb50-297f3ed6efd4",
+        "role": "developer",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 27750 characters: You are Codex, an agent based on GPT-6. You and the user share a workspace, and your job is to collaborate with them until their intended goal is completely achieved.>"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795368090.8816707,
+          "content_item_kinds": [
+            "model.base_instructions"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "harness",
+                "hook": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "message",
+        "id": "msg_01a20446-fd01-7c21-bb50-298d6998d6a2",
+        "role": "developer",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 7954 characters: <skills_instructions>>"
+          },
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 3939 characters: <permissions instructions>>"
+          },
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 1056 characters: <collaboration_mode># Collaboration Mode: Default>"
+          },
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 2272 characters: <tools>>"
+          },
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 876 characters: <recommended_plugins>>"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795368090.881674,
+          "content_item_kinds": [
+            "host_skills.instructions",
+            "permissions.instructions",
+            "collaboration_mode.instructions",
+            "tools.deferred_namespaces",
+            "plugins.recommendations"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "skills"
+              }
+            },
+            {
+              "provenance": {
+                "type": "harness",
+                "hook": false
+              }
+            },
+            {
+              "provenance": {
+                "type": "harness",
+                "hook": false
+              }
+            },
+            {
+              "provenance": {
+                "type": "tool",
+                "namespace": "tool_search"
+              }
+            },
+            {
+              "provenance": {
+                "type": "harness",
+                "hook": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "message",
+        "id": "msg_01a20446-fd01-7c21-bb50-2996b3daf98f",
+        "role": "developer",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 2160 characters: <multi_agent_role>You are `/root`, the primary agent in a team of agents collaborating to fulfill the user's goals.>"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795368090.881675,
+          "content_item_kinds": [
+            "multi_agent.role_instructions"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "tool",
+                "namespace": "collaboration"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "message",
+        "id": "msg_01a20446-fd01-7c21-bb50-29abe2b40c0f",
+        "role": "developer",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 271 characters: <multi_agent_mode>Any earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.</multi_agent_mode>>"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795368090.8816752,
+          "content_item_kinds": [
+            "multi_agent.mode_instructions"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "tool",
+                "namespace": "collaboration"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "message",
+        "id": "msg_01a20446-fd01-7c21-bb50-29b6c8c6759b",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<environment_context>\n  <cwd><recording>\\repo</cwd>\n  <shell>powershell</shell>\n  <current_date>2026-11-22</current_date>\n  <timezone>America/Toronto</timezone>\n  <filesystem><workspace_roots><root><recording>\\repo</root></workspace_roots><permission_profile type=\"managed\"><file_system type=\"restricted\"><entry access=\"read\"><special>:root</special></entry></file_system></permission_profile></filesystem>\n</environment_context>"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795368090.8816755,
+          "content_item_kinds": [
+            "environments.environment_context"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "harness",
+                "hook": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "message",
+        "id": "msg_01a20446-fd02-77e3-ab54-bbde270f311c",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "hi"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795368090.8821104,
+          "content_item_kinds": [
+            "user.text"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "user"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "stderr": ""
+}

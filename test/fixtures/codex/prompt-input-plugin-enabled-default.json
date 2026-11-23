@@ -1,0 +1,213 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "command": "prompt-input-plugin-enabled-default",
+  "purpose": "decision 7: the same plugin, installed and left enabled in CODEX_HOME, with no -c (the control)",
+  "argv": [
+    "debug",
+    "prompt-input",
+    "hi"
+  ],
+  "home": "plugin-enabled",
+  "repository": "plain",
+  "exitCode": 0,
+  "stdout": null,
+  "promptInput": {
+    "sentinels": [
+      "SENTINEL-PLUGINSKILL"
+    ],
+    "skillRoots": [
+      "r0 = <home>/.agents/skills",
+      "r1 = <recording>/home/skills/.system",
+      "r2 = <recording>/home/plugins/cache/gg-probe"
+    ],
+    "items": [
+      {
+        "type": "additional_tools",
+        "id": "at_01a2047a-b19c-7d81-a118-17d2e42887d2",
+        "role": "developer",
+        "tools": [
+          "functions[exec,wait,request_user_input,request_user_input_async,send_message_to_user_async]",
+          "clock[sleep]",
+          "collaboration[followup_task,interrupt_agent,list_agents,send_message,spawn_agent,wait_agent]"
+        ]
+      },
+      {
+        "type": "message",
+        "id": "msg_01a2047a-b19c-7d81-a118-17e4971a6be6",
+        "role": "developer",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 25933 characters: You are Codex, an agent based on GPT-6. You and the user share a workspace, and your job is to collaborate with them until their intended goal is completely handled.>"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795371479.4525244,
+          "content_item_kinds": [
+            "model.base_instructions"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "harness",
+                "hook": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "message",
+        "id": "msg_01a2047a-b19c-7d81-a118-17fa932c2475",
+        "role": "developer",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 8262 characters: <skills_instructions>>"
+          },
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 3939 characters: <permissions instructions>>"
+          },
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 1056 characters: <collaboration_mode># Collaboration Mode: Default>"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795371479.4525263,
+          "content_item_kinds": [
+            "host_skills.instructions",
+            "permissions.instructions",
+            "collaboration_mode.instructions"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "skills"
+              }
+            },
+            {
+              "provenance": {
+                "type": "harness",
+                "hook": false
+              }
+            },
+            {
+              "provenance": {
+                "type": "harness",
+                "hook": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "message",
+        "id": "msg_01a2047a-b19c-7d81-a118-180c460d830d",
+        "role": "developer",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 2400 characters: <multi_agent_role>You are `/root`, the primary agent in a team of agents collaborating to fulfill the user's goals.>"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795371479.4525268,
+          "content_item_kinds": [
+            "multi_agent.role_instructions"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "tool",
+                "namespace": "collaboration"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "message",
+        "id": "msg_01a2047a-b19c-7d81-a118-18133bc60079",
+        "role": "developer",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<trimmed developer text, 271 characters: <multi_agent_mode>Any earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.</multi_agent_mode>>"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795371479.4525268,
+          "content_item_kinds": [
+            "multi_agent.mode_instructions"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "tool",
+                "namespace": "collaboration"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "message",
+        "id": "msg_01a2047a-b19c-7d81-a118-182fd19e4a82",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<environment_context>\n  <cwd><recording>\\repo</cwd>\n  <shell>powershell</shell>\n  <current_date>2026-11-22</current_date>\n  <timezone>America/Toronto</timezone>\n  <filesystem><workspace_roots><root><recording>\\repo</root></workspace_roots><permission_profile type=\"managed\"><file_system type=\"restricted\"><entry access=\"read\"><special>:root</special></entry></file_system></permission_profile></filesystem>\n</environment_context>"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795371479.452528,
+          "content_item_kinds": [
+            "environments.environment_context"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "harness",
+                "hook": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "message",
+        "id": "msg_01a2047a-b19d-79f1-a70e-555fa33b15c7",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "hi"
+          }
+        ],
+        "internal_chat_message_metadata_passthrough": {
+          "turn_id": "auto-compact-0",
+          "create_time": 1795371479.4530683,
+          "content_item_kinds": [
+            "user.text"
+          ],
+          "content_item_metadata": [
+            {
+              "provenance": {
+                "type": "user"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<home>\\\\AppData\\\\Local\\\\Temp\\\\\" (codex_home: AbsolutePathBuf(\"<recording>\\\\home\"))\n"
+}

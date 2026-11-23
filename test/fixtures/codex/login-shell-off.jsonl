@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"01a20551-6cca-7f21-b7d1-931bbcd8a2b1"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"\"<home>\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -NoProfile -Command Get-Location","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"\"<home>\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -NoProfile -Command Get-Location","aggregated_output":"\r\nPath                                                                  \r\n----                                                                  \r\n<recording>\\repo\r\n\r\n\r\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"{\"answer\":\"Path\\n----\\n<recording>\\\\repo\"}"}}
+{"type":"turn.completed","usage":{"input_tokens":26073,"cached_input_tokens":12800,"cache_write_input_tokens":0,"output_tokens":76,"reasoning_output_tokens":0}}

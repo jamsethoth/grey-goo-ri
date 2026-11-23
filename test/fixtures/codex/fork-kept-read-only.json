@@ -1,0 +1,89 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "scenario": "fork-kept-read-only",
+  "purpose": "fork-unflagged-parent's thread, whose last turn ran workspace-write, kept in gg's CODEX_HOME since the first recording run, forked with --sandbox read-only and -C on exec before fork (D9 C): does -s override the parent's writable sandbox (the fork's turn_context, and whether the write lands)?",
+  "modelCall": true,
+  "command": {
+    "executable": "codex",
+    "argv": [
+      "exec",
+      "-s",
+      "read-only",
+      "-C",
+      "<recording>\\repo",
+      "fork",
+      "01a20433-8960-76d2-bde3-f22e60ac0bf6",
+      "-c",
+      "model=\"gpt-6-luna\"",
+      "-c",
+      "model_reasoning_effort=\"low\"",
+      "-c",
+      "approval_policy=\"never\"",
+      "-c",
+      "windows.sandbox=\"mxc\"",
+      "-c",
+      "projects={\"<recording>\\\\repo\"={trust_level=\"untrusted\"}}",
+      "-c",
+      "features.hooks=false",
+      "-c",
+      "features.apps=false",
+      "-c",
+      "features.tool_suggest=false",
+      "-c",
+      "check_for_update_on_startup=false",
+      "-c",
+      "project_doc_max_bytes=0",
+      "-c",
+      "skills.include_instructions=false",
+      "--json",
+      "--output-schema",
+      "<recording>\\run\\schema.json",
+      "-o",
+      "<recording>\\run\\fork-kept-read-only.last.txt",
+      "-"
+    ],
+    "cwd": "repo",
+    "env": {
+      "CODEX_HOME": "<home>\\.agents\\gg\\codex"
+    },
+    "stdin": "This is a probe in a throwaway repository. Run each command below exactly as written, one shell call each, in order, and carry on after one is refused or fails; never change a command or try another way.\n1. node write.js fork-kept.txt\nThen answer with one line per command: its number, whether it ran or was refused, and what it printed."
+  },
+  "start": {
+    "kind": "fork-kept",
+    "thread": "01a20433-8960-76d2-bde3-f22e60ac0bf6"
+  },
+  "threadId": "01a20551-86fe-7930-881d-6dafb458c91b",
+  "exitCode": 0,
+  "signal": null,
+  "killed": null,
+  "lineTimesMs": [
+    1915,
+    1973,
+    4619,
+    5524,
+    18616,
+    20216,
+    20327
+  ],
+  "stderr": "",
+  "lastMessage": "{\"answer\":\"1 — Ran (exit code 0); printed “write failed: EPERM” (plus a PowerShell profile authorization warning).\"}",
+  "rolloutPath": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T17-12-39-01a20551-86fe-7930-881d-6dafb458c91b.jsonl",
+  "evidence": {
+    "created": [],
+    "hookLog": null,
+    "mcpLog": null,
+    "forkedRollout": {
+      "unchanged": true,
+      "path": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T12-00-16-01a20433-8960-76d2-bde3-f22e60ac0bf6.jsonl"
+    },
+    "job": {
+      "contained": true,
+      "whileMarked": null,
+      "afterKill": null,
+      "leftAfterExit": []
+    },
+    "homeChanges": null,
+    "stubRequests": null,
+    "homeLogTail": null
+  }
+}

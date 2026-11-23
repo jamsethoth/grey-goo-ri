@@ -229,12 +229,29 @@ interface Recorded {
   sessionId: string | null;
 }
 
+// The launch's files and the scenario's own under its directory, written, by path.
+function writeFiles(
+  scenario: Scenario,
+  base: string,
+  values: Record<string, string>,
+  launchFiles: Record<string, string>,
+) {
+  const files: Record<string, string> = { ...launchFiles };
+  for (const [path, text] of Object.entries(scenario.files ?? {}))
+    files[join(base, path)] = cliRecording.fill(text, values);
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, text);
+  }
+  return files;
+}
+
 async function record(scenario: Scenario, cliVersion: string, base: string, resumed: Recorded | undefined) {
   const directories = resumed?.directories ?? setUp(base, scenario);
   const stub = scenario.stub ? await startStub() : undefined;
   const values = { base: directories.base, outside: directories.base.replaceAll('\\', '/'), stub: stub?.url ?? '' };
   const launch = launchOf(scenario, directories, values, resumed?.sessionId ?? null);
-  for (const [path, text] of Object.entries(launch.files)) writeFileSync(path, text);
+  const files = writeFiles(scenario, directories.base, values, launch.files);
   const prompt = cliRecording.fill(scenario.prompt, values);
   const output = await spawnCall(launch, directories.repo, prompt, scenario.untilInit ?? false);
   stub?.close();
@@ -244,7 +261,7 @@ async function record(scenario: Scenario, cliVersion: string, base: string, resu
     cliVersion,
     scenario: scenario.name,
     purpose: scenario.purpose,
-    command: { executable: 'claude', argv: launch.argv, env: launch.env, stdin: prompt, files: launch.files },
+    command: { executable: 'claude', argv: launch.argv, env: launch.env, stdin: prompt, files },
     resumes: scenario.resumes ?? null,
     exitCode: output.exitCode,
     signal: output.signal,

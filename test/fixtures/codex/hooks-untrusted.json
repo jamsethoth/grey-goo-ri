@@ -1,0 +1,83 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "scenario": "hooks-untrusted",
+  "purpose": "the same hooks with features.hooks true and no trust bypass: does hook trust hold them back under exec?",
+  "modelCall": true,
+  "command": {
+    "executable": "codex",
+    "argv": [
+      "exec",
+      "-s",
+      "read-only",
+      "-C",
+      "<recording>\\repo",
+      "-c",
+      "model=\"gpt-6-luna\"",
+      "-c",
+      "model_reasoning_effort=\"low\"",
+      "-c",
+      "approval_policy=\"never\"",
+      "-c",
+      "windows.sandbox=\"mxc\"",
+      "-c",
+      "projects={\"<recording>\\\\repo\"={trust_level=\"untrusted\"}}",
+      "-c",
+      "features.hooks=true",
+      "-c",
+      "features.apps=false",
+      "-c",
+      "features.tool_suggest=false",
+      "-c",
+      "check_for_update_on_startup=false",
+      "-c",
+      "project_doc_max_bytes=0",
+      "-c",
+      "skills.include_instructions=false",
+      "-c",
+      "hooks={SessionStart=[{hooks=[{type=\"command\",command=\"node \\\"<recording>/hook.cjs\\\" inline SessionStart\",commandWindows=\"node \\\"<recording>/hook.cjs\\\" inline SessionStart\",timeout=30}]}],PostToolUse=[{matcher=\".*\",hooks=[{type=\"command\",command=\"node \\\"<recording>/hook.cjs\\\" inline PostToolUse\",commandWindows=\"node \\\"<recording>/hook.cjs\\\" inline PostToolUse\",timeout=30}]}]}",
+      "--json",
+      "--output-schema",
+      "<recording>\\run\\schema.json",
+      "-o",
+      "<recording>\\run\\hooks-untrusted.last.txt",
+      "-"
+    ],
+    "cwd": "repo",
+    "env": {
+      "CODEX_HOME": "<home>\\.agents\\gg\\codex"
+    },
+    "stdin": "Run the command `node --version` once with your shell tool. Then answer with every word that begins with SENTINEL- that you can see anywhere in your instructions, context or tool results, or \"none\"."
+  },
+  "start": null,
+  "threadId": "01a2043f-54c7-7080-9367-576dba5b1eee",
+  "exitCode": 0,
+  "signal": null,
+  "killed": null,
+  "lineTimesMs": [
+    866,
+    1071,
+    3389,
+    5572,
+    6118,
+    7432,
+    7521
+  ],
+  "stderr": "",
+  "lastMessage": "{\"answer\":\"SENTINEL-\"}",
+  "rolloutPath": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T12-13-09-01a2043f-54c7-7080-9367-576dba5b1eee.jsonl",
+  "evidence": {
+    "created": [],
+    "hookLog": null,
+    "mcpLog": null,
+    "forkedRollout": null,
+    "job": {
+      "contained": true,
+      "whileMarked": null,
+      "afterKill": null,
+      "leftAfterExit": []
+    },
+    "homeChanges": null,
+    "stubRequests": null,
+    "homeLogTail": null
+  }
+}

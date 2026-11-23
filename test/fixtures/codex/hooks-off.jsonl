@@ -1,0 +1,9 @@
+{"type":"thread.started","thread_id":"01a2043f-3626-7790-836e-66685b0e4bdb"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"item.completed","item":{"id":"item_1","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"I’ll run `node --version` once, then report any matching words visible in the available context."}}
+{"type":"item.started","item":{"id":"item_3","type":"command_execution","command":"\"<home>\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command 'node --version'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_3","type":"command_execution","command":"\"<home>\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command 'node --version'","aggregated_output":". : AuthorizationManager check failed.\r\nAt line:1 char:3\r\n+ . '<home>\\Documents\\WindowsPowerShell\\Microsoft.PowerShell_pr ...\r\n+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n    + CategoryInfo          : SecurityError: (:) [], PSSecurityException\r\n    + FullyQualifiedErrorId : UnauthorizedAccess\r\nv26.13.0\r\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_4","type":"agent_message","text":"{\"answer\":\"SENTINEL-\"}"}}
+{"type":"turn.completed","usage":{"input_tokens":26188,"cached_input_tokens":12800,"cache_write_input_tokens":0,"output_tokens":110,"reasoning_output_tokens":0}}

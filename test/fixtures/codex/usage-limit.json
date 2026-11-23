@@ -1,0 +1,88 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "scenario": "usage-limit",
+  "purpose": "a stand-in Responses API that answers 429 usage_limit_reached, in an empty CODEX_HOME: the usage-limit failure (no real usage limit can be asked for)",
+  "modelCall": false,
+  "command": {
+    "executable": "codex",
+    "argv": [
+      "exec",
+      "-s",
+      "read-only",
+      "-C",
+      "<recording>\\repo",
+      "-c",
+      "model=\"gpt-6-luna\"",
+      "-c",
+      "model_reasoning_effort=\"low\"",
+      "-c",
+      "approval_policy=\"never\"",
+      "-c",
+      "windows.sandbox=\"mxc\"",
+      "-c",
+      "projects={\"<recording>\\\\repo\"={trust_level=\"untrusted\"}}",
+      "-c",
+      "features.hooks=false",
+      "-c",
+      "features.apps=false",
+      "-c",
+      "features.tool_suggest=false",
+      "-c",
+      "check_for_update_on_startup=false",
+      "-c",
+      "project_doc_max_bytes=0",
+      "-c",
+      "skills.include_instructions=false",
+      "-c",
+      "model_provider=\"stub\"",
+      "-c",
+      "model_providers.stub={name=\"stub\",base_url=\"http://127.0.0.1:59586/v1\",wire_api=\"responses\",env_key=\"GG_STUB_KEY\",request_max_retries=1,stream_max_retries=0}",
+      "--json",
+      "--output-schema",
+      "<recording>\\run\\schema.json",
+      "-o",
+      "<recording>\\run\\usage-limit.last.txt",
+      "-"
+    ],
+    "cwd": "repo",
+    "env": {
+      "GG_STUB_KEY": "stub-key",
+      "CODEX_HOME": "<recording>\\home"
+    },
+    "stdin": "Without any tool, answer with the word ok."
+  },
+  "start": null,
+  "threadId": "01a20440-d41b-7762-89d8-a3dafda1fbe4",
+  "exitCode": 1,
+  "signal": null,
+  "killed": null,
+  "lineTimesMs": [
+    816,
+    1765,
+    1902,
+    1927
+  ],
+  "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<home>\\\\AppData\\\\Local\\\\Temp\\\\\" (codex_home: AbsolutePathBuf(\"<recording>\\\\home\"))\n",
+  "lastMessage": "",
+  "rolloutPath": "<recording>\\home\\sessions\\2026\\11\\22\\rollout-2026-11-22T12-14-47-01a20440-d41b-7762-89d8-a3dafda1fbe4.jsonl",
+  "evidence": {
+    "created": [],
+    "hookLog": null,
+    "mcpLog": null,
+    "forkedRollout": null,
+    "job": {
+      "contained": true,
+      "whileMarked": null,
+      "afterKill": null,
+      "leftAfterExit": [
+        64984,
+        91092
+      ]
+    },
+    "homeChanges": null,
+    "stubRequests": [
+      "POST /v1/responses 429"
+    ],
+    "homeLogTail": null
+  }
+}

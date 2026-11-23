@@ -1,0 +1,81 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "scenario": "repository-trusted",
+  "purpose": "the same with the project trusted, to show what trust would load; gg never trusts a project (Q18 A)",
+  "modelCall": true,
+  "command": {
+    "executable": "codex",
+    "argv": [
+      "exec",
+      "-s",
+      "read-only",
+      "-C",
+      "<recording>\\repo",
+      "-c",
+      "model=\"gpt-6-luna\"",
+      "-c",
+      "model_reasoning_effort=\"low\"",
+      "-c",
+      "approval_policy=\"never\"",
+      "-c",
+      "windows.sandbox=\"mxc\"",
+      "-c",
+      "projects={\"<recording>\\\\repo\"={trust_level=\"trusted\"}}",
+      "-c",
+      "features.hooks=true",
+      "-c",
+      "features.apps=false",
+      "-c",
+      "features.tool_suggest=false",
+      "-c",
+      "check_for_update_on_startup=false",
+      "-c",
+      "hooks={SessionStart=[{hooks=[{type=\"command\",command=\"node \\\"<recording>/hook.cjs\\\" inline SessionStart\",commandWindows=\"node \\\"<recording>/hook.cjs\\\" inline SessionStart\",timeout=30}]}],PostToolUse=[{matcher=\".*\",hooks=[{type=\"command\",command=\"node \\\"<recording>/hook.cjs\\\" inline PostToolUse\",commandWindows=\"node \\\"<recording>/hook.cjs\\\" inline PostToolUse\",timeout=30}]}]}",
+      "--dangerously-bypass-hook-trust",
+      "--json",
+      "--output-schema",
+      "<recording>\\run\\schema.json",
+      "-o",
+      "<recording>\\run\\repository-trusted.last.txt",
+      "-"
+    ],
+    "cwd": "repo",
+    "env": {
+      "CODEX_HOME": "<home>\\.agents\\gg\\codex"
+    },
+    "stdin": "This is a probe in a throwaway repository. Run each command below exactly as written, one shell call each, in order, and carry on after one is refused or fails; never change a command or try another way.\n1. node outside.js\nThen answer with whether it ran and what it printed, and every word that begins with SENTINEL- that you can see anywhere in your instructions, context or tool results."
+  },
+  "start": null,
+  "threadId": "01a20440-330d-7c63-911a-c34e98a3b7a1",
+  "exitCode": 0,
+  "signal": null,
+  "killed": null,
+  "lineTimesMs": [
+    683,
+    1083,
+    1083,
+    1691,
+    6234,
+    6304
+  ],
+  "stderr": "",
+  "lastMessage": "{\"answer\":\"I can’t run shell commands in this session: filesystem access is read-only and command execution isn’t available. So `node outside.js` did not run, and I can’t report its output.\\n\\nThe visible sentinel words are `SENTINEL-PROJECTCONFIG`, `SENTINEL-AGENTSOVERRIDEMD`, `SENTINEL-HOOK-HOME-SESSIONSTART`, `SENTINEL-HOOK-PROJECT-SESSIONSTART`, and `SENTINEL-HOOK-INLINE-SESSIONSTART`.\"}",
+  "rolloutPath": "<home>\\.agents\\gg\\codex\\sessions\\2026\\11\\22\\rollout-2026-11-22T12-14-06-01a20440-330d-7c63-911a-c34e98a3b7a1.jsonl",
+  "evidence": {
+    "created": [
+      "hook-log.txt"
+    ],
+    "hookLog": "home SessionStart session_id,transcript_path,cwd,hook_event_name,model,permission_mode,source\nproject SessionStart session_id,transcript_path,cwd,hook_event_name,model,permission_mode,source\ninline SessionStart session_id,transcript_path,cwd,hook_event_name,model,permission_mode,source\n",
+    "mcpLog": null,
+    "forkedRollout": null,
+    "job": {
+      "contained": true,
+      "whileMarked": null,
+      "afterKill": null,
+      "leftAfterExit": []
+    },
+    "homeChanges": null,
+    "stubRequests": null,
+    "homeLogTail": null
+  }
+}
