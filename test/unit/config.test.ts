@@ -7,9 +7,11 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
+import * as codex from '../../lib/harnesses/codex.ts';
 import * as model from '../../lib/model.ts';
 import * as procedures from '../../lib/procedures.ts';
 import * as run from '../../lib/run.ts';
+import type * as runContext from '../../lib/run-context.ts';
 import * as settings from '../../lib/settings.ts';
 import * as exampleSource from '../support/example-source.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
@@ -463,5 +465,34 @@ test("gg run pins the launch profile and confinement of each Harness the Flow's 
   });
   assert.deepEqual(pinned.configuration.launchProfile, {
     fake: { name: 'fake-headless', version: 1, confinement: 'trusted-commands' },
+  });
+});
+
+// A Harness declaring no Capabilities pins a null confinement, as it pins a null profile, so the pin and the Action
+// Event's profile no longer crash on it (#428 D5, #481).
+test('the launch entry of a Harness that declares no Capabilities pins a null confinement', () => {
+  const bare = { launchProfile: null } as unknown as runContext.Harness;
+  let entry: config.PinnedLaunchProfile | string;
+  try {
+    entry = config.launchEntry(bare);
+  } catch (err) {
+    entry = String(err);
+  }
+  assert.deepEqual(entry, { name: null, version: null, confinement: null });
+});
+
+// ADR 0027: the Config Hash pins, per Harness the Flow's Agents use, its launch profile and its confinement; Codex's
+// is the profile #481 names (codex-exec at version 1).
+test("the Config Hash pins Codex's launch profile with its confinement", () => {
+  const flow = { ticket: { vertices: { red: { agent: { harness: 'codex' } }, publish: {} } } };
+  const pinned = config.pinnedConfiguration({
+    flow: flow as unknown as model.ResolvedFlowJson,
+    files: {},
+    settings: { commands: { test: 'npm test' }, testPaths: ['test/**'] } as unknown as config.Settings,
+    harnesses: { codex },
+  });
+  assert.equal(typeof codex.capabilities.confinement, 'string');
+  assert.deepEqual(pinned.launchProfile, {
+    codex: { name: 'codex-exec', version: 1, confinement: codex.capabilities.confinement },
   });
 });

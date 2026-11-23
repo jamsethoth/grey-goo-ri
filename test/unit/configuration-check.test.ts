@@ -315,6 +315,47 @@ test('a Claude Agent listing mcp is one unsupported-agent-field error, which no 
   assert.deepEqual(repeated, []);
 });
 
+// An exec whose launch records its call and starts nothing.
+const launchless = (launched: unknown[]) =>
+  ({
+    launch: (...args: unknown[]) => {
+      launched.push(args);
+      throw new Error('no CLI starts at this preflight');
+    },
+  }) as unknown as Parameters<typeof shipped.shipped>[0];
+
+// A Codex Agent with nothing to list starts no CLI at preflight, and Codex stays refused until #482 builds its run.
+test('the shipped Codex Harness is refused at preflight as not implemented, starting no CLI', async () => {
+  const repository = repositorySource();
+  Object.assign(repository.agents.implementer!, { harness: 'codex' });
+  const launched: unknown[] = [];
+  const { codex } = shipped.shipped(launchless(launched));
+  assert.deepEqual(errorLines(await checkOf(sources(repository), { harnesses: { codex } })), [
+    'error: flows.default.ticket.vertices.red: vertex red: harness codex: not implemented [harness-preflight-failed]',
+    'error: flows.default.ticket.vertices.green: vertex green: harness codex: not implemented ' +
+      '[harness-preflight-failed]',
+  ]);
+  assert.deepEqual(launched, []);
+});
+
+// Codex declares network and contextBudget unsupported (Q15 A), so each is the validator's one error at its key, which
+// no Vertex's Harness preflight repeats (ADR 0026, #481 DoD 1).
+test('a Codex Agent setting network or contextBudget is one error at its key, not repeated', async () => {
+  const repository = repositorySource();
+  Object.assign(repository.agents.implementer!, { harness: 'codex', network: false, contextBudget: 100000 });
+  const { codex } = shipped.shipped(launchless([]));
+  const checked = await checkOf(sources(repository), { harnesses: { codex } });
+  assert.deepEqual(
+    checked.configurationErrors.map((problem) => `${problem.at} ${problem.code}`),
+    [
+      'agents.implementer.contextBudget unsupported-agent-field',
+      'agents.implementer.network unenforceable-permission-intent',
+    ],
+  );
+  const repeated = checked.environmentErrors.filter((problem) => /\bnetwork\b|contextBudget/.test(problem.message));
+  assert.deepEqual(repeated, []);
+});
+
 test("preflight fails a Claude Agent's plugin that is not installed on the Harness's resolveTools", async (t) => {
   const repository = repositorySource();
   Object.assign(repository.agents.implementer!, { harness: 'claude', plugins: ['gg-no-such-plugin'] });

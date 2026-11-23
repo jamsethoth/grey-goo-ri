@@ -194,8 +194,13 @@ init, doctor, run, work and ask-session act on the repository holding the curren
 `;
 
 // gg with `argv` after its own path, over `gh`: the entry point passes the real gh, and the tests that spawn gg pass
-// the fake one, since no test runs the real gh (#372).
-export async function main(argv: string[], gh: github.Gh): Promise<void> {
+// the fake one, since no test runs the real gh (#372). stub (#481): `harnesses` joins the shipped Harnesses by name, so
+// the tests that spawn gg run their Agents on a stand-in that starts no CLI (F4).
+export async function main(
+  argv: string[],
+  gh: github.Gh,
+  _harnesses: Record<string, Record<string, unknown>> = {},
+): Promise<void> {
   const name = argv[0];
   if (name === undefined || name === '--help') {
     process.stdout.write(usage);
