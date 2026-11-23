@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import * as redaction from '../../scripts/record-codex-redaction.ts';
 
@@ -62,6 +64,41 @@ test('the recorder redacts the account ids and repository URL by key, at any dep
   const keys = ['creator_user_id', 'creator_account_id', 'repository_url', 'installation_id', 'email'];
   const line = { items: [Object.fromEntries(keys.map((key) => [key, 'x']))] };
   assert.deepEqual(redaction.trimmed(line), { items: [Object.fromEntries(keys.map((key) => [key, '<redacted>']))] });
+});
+
+// The cases above check the rules against themselves or today's fixtures, so a narrowed rule passes them (owner D22
+// D): this one plants each value a recording must never commit, by key and in text, sends it through the recorder's
+// own commit step, and finds none of them left, whatever the rules say.
+test('no planted account id, token, email, path or user name survives the commit step', () => {
+  const checkout = fileURLToPath(new URL('../../', import.meta.url)).replace(/[\\/]$/, '');
+  const planted = {
+    type: 'session_meta',
+    payload: {
+      creator_user_id: 'cnry-u1',
+      creator_account_id: 'cnry-a1',
+      creator_name: 'cnry-n1',
+      account_id: 'cnry-a2',
+      user_id: 'cnry-u2',
+      chatgpt_account_id: 'cnry-a3',
+      installation_id: 'cnry-i1',
+      email: 'cnry-e1',
+      git: { repository_url: 'https://github.com/cnry-r1/private' },
+      text: [
+        'key sk-cnry0123456789abcdef; jwt eyJcnry.eyJcnry.cnrysig; mail cnry-m1@example.com;',
+        `${homedir()}/x; ${checkout}/lib by host canaryuser-PC`,
+      ].join(' '),
+    },
+  };
+  const committed = redaction.committedLine(
+    JSON.stringify(planted),
+    redaction.redactorOf('Z:/no-such-recording-base', { username: 'canaryuser' }),
+  );
+  // A path as written and as JSON escapes it inside the line.
+  const paths = [homedir(), checkout].flatMap((path) => [path, JSON.stringify(path).slice(1, -1)]);
+  const left = ['cnry', 'canaryuser', ...paths].filter((value) =>
+    committed.toLowerCase().includes(value.toLowerCase()),
+  );
+  assert.deepEqual(left, [], committed);
 });
 
 // The recorder's own calls keep the substring rule: only this test reads the name standing whole (owner D6 A).
