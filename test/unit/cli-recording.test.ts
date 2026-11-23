@@ -1,6 +1,6 @@
-// What every recorder of an Agent CLI shares (#480): the names it records, the text it fills, the environment a nested
-// CLI starts with, the redaction of what it commits and a call's saved files, over stand-in scenarios and paths that
-// are neither Claude's nor Codex's.
+// What a recorder of an Agent CLI shares with any other (#480): the names it records, the text it fills, the
+// environment a nested CLI starts with, the redaction of what it commits and a call's saved files, over stand-in
+// scenarios and paths that are neither Claude's nor Codex's.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';

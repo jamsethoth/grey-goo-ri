@@ -1,7 +1,8 @@
 // What scripts/record-codex.ts commits of a call (#479, owner Q4 A): the local paths, the user's name, email addresses,
-// keys and tokens replaced wherever they appear, as scripts/record-claude.ts replaces them; the account's ids and the
-// repository URL replaced by key; and a session file trimmed of OpenAI's base instructions, encrypted reasoning, and
-// the developer messages' text, which lists the user's own skills and plugins.
+// keys and tokens replaced wherever they appear, the name before addresses, where scripts/cli-recording.ts replaces
+// addresses first (until #534 moves this recorder onto it); the account's ids and the repository URL replaced by key;
+// and a session file trimmed of OpenAI's base instructions, encrypted reasoning, and the developer messages' text,
+// which lists the user's own skills and plugins.
 import { homedir, userInfo } from 'node:os';
 import { fileURLToPath } from 'node:url';
 

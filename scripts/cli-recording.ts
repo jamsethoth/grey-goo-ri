@@ -1,8 +1,8 @@
-// What every recorder of an Agent CLI does the same way (#480): the names it records chosen with the chain of calls
-// that continue one another checked, the text a value fills into, the environment a nested CLI starts with, the
-// redaction of what it commits, the stand-in API server some calls run against, the temporary directory its
-// repositories live in, and a call's saved files. How a call starts, and what its CLI's output means, stays each
-// recorder's.
+// What a recorder of an Agent CLI does the same way as any other (#480; one uses it until #534 moves the other):
+// the names it records chosen with the chain of calls that continue one another checked, the text a value fills
+// into, the environment a nested CLI starts with, the redaction of what it commits, the stand-in API server some
+// calls run against, the temporary directory its repositories live in, and a call's saved files. How a call starts,
+// and what its CLI's output means, stays each recorder's.
 import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
