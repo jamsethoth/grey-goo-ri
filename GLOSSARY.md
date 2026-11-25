@@ -212,7 +212,7 @@ alone, and each one it could not end or confirm gone is named as a survivor. A c
 named as leftovers. Agent Actions and command and tests-fail Checks record the result as their `cleanup` output,
 `{ confirmed, survivors, reason, containment }`: when `confirmed` is false no further Action touches the worktree and the
 Ticket holds. An uncontained Windows command is never confirmed, since its orphans cannot be found, and a process that
-starts its own session or breaks away from the job escapes, an accepted residual risk.
+starts its own session escapes, an accepted residual risk.
 _Avoid_: cleanup (alone, which also names removing a ticket's worktree), teardown, reaping
 
 **Permission Intent**:
