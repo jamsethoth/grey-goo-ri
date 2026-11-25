@@ -17,7 +17,7 @@ const MEDIUM: [RegExp, string][] = [
   [/\b(?:git|integrity):\s*['"]real['"]/, 'asks for real git'],
   [/\bset(?:Timeout|Interval)\s*\(|['"]node:timers/, 'uses a timer'],
   [
-    /\b(?:golden|run|support|gitShell)\.sh\(|\b(?:holdLock|conflict|seedRepos|timeOutWhen|timedOutOrphan)\(/,
+    /\b(?:golden|run|support|gitShell)\.sh\(|\b(?:holdLock|conflict|seedRepos|timeOutWhen|timedOutOrphan|gitBash)\(/,
     'calls a support helper that spawns',
   ],
   [/\b(?:committingRepo|emptyWorktree|twoWorktrees)\(/, 'calls a support helper that spawns'],
@@ -45,6 +45,7 @@ const marked = [
   ['exampleOnClaude.runOverRecordings(t)', 'calls a support helper that spawns'],
   ['exampleOnClaude.claudeFixture(t, claude)', 'calls a support helper that spawns'],
   ["cliReplay.fakeCli(t, { recordings, scenario: 'said', resultType: 'done' })", 'calls a support helper that spawns'],
+  ['gitBash.gitBash()', 'calls a support helper that spawns'],
 ];
 for (const [text, what] of marked) {
   test(`the size check flags a unit file that ${what}: ${text}`, () => {
