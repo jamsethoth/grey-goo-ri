@@ -327,6 +327,8 @@ const launchless = (launched: unknown[]) =>
 // A Codex Agent with nothing to list starts no CLI at preflight, and Codex stays refused until #482 builds its run.
 test('the shipped Codex Harness is refused at preflight as not implemented, starting no CLI', async () => {
   const repository = repositorySource();
+  // Codex declares network unsupported, so the implementer drops it, which is not this case's subject (owner, T1).
+  delete repository.agents.implementer!.network;
   Object.assign(repository.agents.implementer!, { harness: 'codex' });
   const launched: unknown[] = [];
   const { codex } = shipped.shipped(launchless(launched));
