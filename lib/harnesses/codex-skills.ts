@@ -40,8 +40,9 @@ export function skillAt(directory: string, prefix = ''): Skill | undefined {
 // list and uses only when asked for by name (#481 D7 A).
 // shortcut: the flow form (policy: {allow_implicit_invocation: false}) and a deeper key of the same name are not told
 // apart; read them once a skill uses one.
+// A content line starts with neither a blank nor '#', so no line reads as both kinds and the read stays linear.
 const REQUEST_ONLY =
-  /^policy:[ \t]*(?:#.*)?\r?\n(?:(?:[ \t]+.*|[ \t]*(?:#.*)?)\r?\n)*?[ \t]+allow_implicit_invocation:[ \t]*false\b/m;
+  /^policy:[ \t]*(#.*)?\r?\n(?:(?:[ \t]+[^\s#].*|[ \t]*(#.*)?)\r?\n)*?[ \t]+allow_implicit_invocation:[ \t]*false\b/m;
 
 function requestOnly(directory: string): boolean {
   const file = join(directory, 'agents', 'openai.yaml');

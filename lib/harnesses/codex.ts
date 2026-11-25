@@ -126,11 +126,12 @@ const filled = (value: unknown, keys: string[]) =>
 
 const PLUGIN_KEYS = ['pluginId', 'name', 'marketplaceName', 'version'];
 
-// The installed plugins and MCP servers, listed afresh, both at once.
+// The installed plugins and MCP servers, listed afresh, both at once. The server listing leaves out a plugin's servers,
+// which Q3 C refuses and whose launch entry failed Codex's configuration load in feature-flow (#481 D9 B).
 export async function list(runner: Runner, home: string): Promise<Listings> {
   const [plugins, servers] = await Promise.all([
     listed(runner, home, ['plugin', 'list', '--json']),
-    listed(runner, home, ['mcp', 'list', '--json']),
+    listed(runner, home, ['mcp', 'list', '--json', '-c', 'features.plugins=false']),
   ]);
   const installed = referencePaths.isRecord(plugins.data) ? plugins.data.installed : undefined;
   if (!Array.isArray(installed) || !installed.every((entry) => filled(entry, PLUGIN_KEYS)))

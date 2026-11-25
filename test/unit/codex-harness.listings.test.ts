@@ -18,3 +18,19 @@ test('each listing runs under the probe wall limit, not the cheap one', async ()
     [cliDoctor.PROBE_WALL_MS, cliDoctor.PROBE_WALL_MS],
   );
 });
+
+// A plugin's servers stay out of the server listing, as feature-flow listed them (#481 D9 B).
+test('the server listing runs with the plugins feature off', async () => {
+  const cli = cliReplay.replayLaunch((args) => ({
+    stdout: args[0] === 'plugin' ? '{"installed":[]}' : '[]',
+    exitCode: 0,
+  }));
+  await codex.list(cli, 'codex-home');
+  assert.deepEqual(cli.launches.find(({ args }) => args[0] === 'mcp')?.args, [
+    'mcp',
+    'list',
+    '--json',
+    '-c',
+    'features.plugins=false',
+  ]);
+});
