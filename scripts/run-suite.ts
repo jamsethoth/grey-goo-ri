@@ -181,7 +181,7 @@ export type Strays = () => commandCleanup.ProcessEntry[];
 
 // Puts this process in a new job before it starts anything, so all a stage starts is in the job, with no gate to open,
 // and gives what the job holds, or the reason there is no job. Whatever is in the job ends with this process, by
-// kill-on-close. A child that asks to break away still can, unseen (ADR 0021).
+// kill-on-close. A child that asks to break away fails to start (ADR 0030).
 export async function holdStage(given?: containment.Kernel32 | null): Promise<Strays | string> {
   const { createJob, openKernel32, processes } = await boundary();
   const { strayProcesses } = await import('../lib/command-cleanup.ts');

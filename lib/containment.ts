@@ -35,9 +35,9 @@ export type Kernel32 = ffi.DynamicLibraryResult<typeof SIGNATURES & typeof NTDLL
 // an agent can write there.
 export const SYSTEM32 = `${process.env['SystemRoot'] ?? 'C:\\Windows'}\\System32`;
 
+// Alone, with no breakaway limit: a child that asks to break away fails to start, so Git Bash's children stay in the
+// job (ADR 0030).
 const KILL_ON_JOB_CLOSE = 0x2000;
-// Without it a tool that asks to break away fails to start its child; a child that asks is outside the job by design.
-const BREAKAWAY_OK = 0x800;
 const EXTENDED_LIMIT_INFORMATION = 9; // 144 bytes, LimitFlags at byte 16
 const BASIC_PROCESS_ID_LIST = 3; // two counts, then one 8-byte pid per process
 const PROCESS_SET_QUOTA_AND_TERMINATE = 0x0100 | 0x0001; // what AssignProcessToJobObject needs
@@ -157,8 +157,7 @@ export function createJob(kernel32: Kernel32, pid: number): Job {
   const handle = kernel32.CreateJobObjectW(0n, 0n);
   if (!handle) throw failure(kernel32, 'CreateJobObjectW');
   try {
-    if (!setLimits(kernel32, handle, KILL_ON_JOB_CLOSE | BREAKAWAY_OK))
-      throw failure(kernel32, 'SetInformationJobObject');
+    if (!setLimits(kernel32, handle, KILL_ON_JOB_CLOSE)) throw failure(kernel32, 'SetInformationJobObject');
     const processHandle = kernel32.OpenProcess(PROCESS_SET_QUOTA_AND_TERMINATE, 0, pid);
     if (!processHandle) throw failure(kernel32, 'OpenProcess');
     try {

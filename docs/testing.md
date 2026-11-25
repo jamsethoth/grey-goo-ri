@@ -240,7 +240,9 @@ What it sees, on Windows (probes on #290):
   file. libuv holds each attached child in a kill-on-close job of the node process that spawned it, and a command's job
   nests inside that one. A job `runShell` keeps for a refused termination ends the same way. While they run they can
   hold their file open: the file then ends only when they do, up to `LIVES_MS`, and shows only as a slow file.
-- **A child that asked to break away:** not seen, since it left the job. It stays the case's own to end.
+- **A child that asks to break away:** fails to start, since the launcher's job allows no breakaway (ADR 0030).
+- **A packaged app's process:** not seen, since Windows creates it outside the caller's job (ADR 0030). It stays the
+  case's own to end.
 - **A process created through `Win32_Process.Create`, or started by a service on a test's behalf:** not seen, since
   neither joins the job ([Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)). Nothing
   in the suite was seen starting a process that way.
