@@ -15,6 +15,7 @@ import * as commandShim from '../lib/command-shim.ts';
 import * as containment from '../lib/containment.ts';
 import { type CliCommand, COMMANDS } from './record-codex-commands.ts';
 import * as homeGuard from './record-codex-home.ts';
+import * as harnessLaunch from './record-codex-launch.ts';
 import * as redaction from './record-codex-redaction.ts';
 import * as repository from './record-codex-repository.ts';
 import * as contained from './record-codex-run.ts';
@@ -30,14 +31,7 @@ const USAGE = `usage: node scripts/record-codex.ts [name ...]
   every command
   scenarios: ${SCENARIOS.map((scenario) => scenario.name).join(', ')}
   commands, none a model call: ${COMMANDS.map((command) => command.name).join(', ')}`;
-// The cheapest model the catalog lists ("Fast and affordable model for easier tasks"), at its lowest effort.
-const MODEL = 'gpt-6-luna';
-const SCHEMA = {
-  type: 'object',
-  properties: { answer: { type: 'string' } },
-  required: ['answer'],
-  additionalProperties: false,
-};
+const { MODEL, SCHEMA } = harnessLaunch;
 const GG_CODEX_HOME = join(process.env.GG_HOME || join(homedir(), '.agents', 'gg'), 'codex');
 
 interface Recorded {
@@ -196,13 +190,17 @@ async function call(scenario: Scenario, base: string, from: Recorded | undefined
   const requests: string[] = [];
   const stub = scenario.stub ? await standIn.start(requests) : undefined;
   const values = { base: directories.base, repo: directories.repo, stub: stub?.url ?? '' };
-  const argv = argvOf(scenario, directories, values, from);
+  const { argv, prompt, lastMessage } = (await harnessLaunch.launched(scenario, home, directories)) ?? {
+    argv: argvOf(scenario, directories, values, from),
+    prompt: scenario.prompt,
+    lastMessage: join(directories.run, `${scenario.name}.last.txt`),
+  };
   const env = { ...scenario.env, CODEX_HOME: home };
   const cwd = scenario.cwd === 'base' ? directories.base : directories.repo;
   const forkedRollout = forkedOf(scenario, home, from);
   const before = { files: filesUnder(directories.base), forked: hashOf(forkedRollout) };
   const guard = homeGuard.guard(home, scenario.hooks ? repository.hooksOf(directories.base, 'home') : null);
-  const { prompt, watch, killOn } = scenario;
+  const { watch, killOn } = scenario;
   const output = await contained.run({ argv, cwd, env, prompt, watch, killOn });
   const homeChanges = guard.restore();
   stub?.close();
@@ -215,11 +213,11 @@ async function call(scenario: Scenario, base: string, from: Recorded | undefined
     homeChanges,
     stubRequests: stub ? requests : null,
   });
-  return { directories, home, argv, env, output, evidence };
+  return { directories, home, argv, env, prompt, lastMessage, output, evidence };
 }
 
 async function record(scenario: Scenario, cliVersion: string, base: string, from: Recorded | undefined) {
-  const { directories, home, argv, env, output, evidence } = await call(scenario, base, from);
+  const { directories, home, argv, env, prompt, lastMessage, output, evidence } = await call(scenario, base, from);
   const threadId = threadOf(output.lines);
   const rollout = rolloutOf(home, threadId);
   const meta = {
@@ -227,7 +225,7 @@ async function record(scenario: Scenario, cliVersion: string, base: string, from
     scenario: scenario.name,
     purpose: scenario.purpose,
     modelCall: scenario.modelCall ?? true,
-    command: { executable: 'codex', argv, cwd: scenario.cwd ?? 'repo', env, stdin: scenario.prompt },
+    command: { executable: 'codex', argv, cwd: scenario.cwd ?? 'repo', env, stdin: prompt },
     start: scenario.start ?? null,
     threadId,
     exitCode: output.exitCode,
@@ -235,7 +233,7 @@ async function record(scenario: Scenario, cliVersion: string, base: string, from
     killed: output.killed,
     lineTimesMs: output.timesMs,
     stderr: output.stderr,
-    lastMessage: textOf(join(directories.run, `${scenario.name}.last.txt`)),
+    lastMessage: textOf(lastMessage),
     rolloutPath: rollout,
     evidence,
   };

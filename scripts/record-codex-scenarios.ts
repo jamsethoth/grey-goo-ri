@@ -37,6 +37,9 @@ export interface Scenario {
   killOn?: string;
   // False for a call that reaches no real model: it counts against no budget.
   modelCall?: boolean;
+  // The call runs under the Codex Harness's own launch (scripts/record-codex-launch.ts) for an Agent listing these
+  // plugins, in place of every key above but the prompt (#481 Q1 A).
+  harness?: { plugins: string[] };
 }
 
 const RUN_EACH =
@@ -268,6 +271,20 @@ Then answer with whether it ran and what it printed, and every word that begins 
 1. node outside.js
 Then answer with whether it ran and what it printed, and every word that begins with SENTINEL- that you can see ` +
       'anywhere in your instructions, context or tool results.',
+  },
+  {
+    name: 'empty-start',
+    purpose:
+      "the Codex Harness's own launch, read-only, listing one catalog plugin, so its plugins table turns every other " +
+      'installed plugin off by its own switch, openai-developers among them (#481 Q1 A, D19 A, D1 A): does any ' +
+      "mcp__openai_api_* namespace still reach the call, and does the listed plugin's skill file open under the " +
+      'read-only sandbox from the skills list gg writes before the prompt?',
+    harness: { plugins: ['superpowers'] },
+    prompt:
+      'This is a probe in a throwaway repository. Open the file of the skill ' +
+      'superpowers:verification-before-completion from the list above with one shell command that prints it, and ' +
+      'never try another way. Then answer with its first line that begins with #, or with what stopped you, and on ' +
+      'a second line with the name of every tool namespace you have whose name begins with mcp__, or "none".',
   },
   {
     name: 'auth-invalid',
