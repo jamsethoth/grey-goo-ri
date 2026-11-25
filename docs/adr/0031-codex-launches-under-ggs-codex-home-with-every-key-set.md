@@ -49,9 +49,15 @@ and Clarify's Q1 to Q3 on 2026-11-23. Codex stays refused at preflight until #48
    and `{enabled=false}` otherwise, or `--disable plugins` when it lists none (D11 A). A manifest's `apps` stay off
    under `features.apps=false` and are noted on the Action. A plugin is refused at preflight, naming the part, when its
    manifest declares `mcpServers`, `hooks` or any working key beyond `skills`, `apps` and the descriptive keys, or when
-   its folder holds a `.mcp.json` or a hooks file whatever its manifest says. Pending D1/D2: whether the launch also
-   turns off Codex's remote plugin catalog, and how a listed plugin's skills reach the model while every call sets
-   `skills.include_instructions=false`; #481's area a records the owner's answers here.
+   its folder holds a `.mcp.json` or a hooks file whatever its manifest says. The remote plugin catalog stays on
+   (D1 A): every installed plugin gg admits is a catalog plugin, and the table alone decides which load, where
+   feature-flow's `features.remote_plugin=false`, unrecorded on 0.171, would drop them all. Since
+   `skills.include_instructions=false` removes Codex's whole skills list, its bundled skills with it, gg writes the list
+   itself into the prompt (D2 A), each skill by name, description and `SKILL.md` path as Codex's own list gives it:
+   Codex's bundled skills (`skills/.system` in gg's Codex home), each skill the Agent declares, found by name in the
+   user's `~/.agents/skills`, and each listed plugin's skills under its name; nothing else of the user's or the
+   repository's. A declared skill not found there fails preflight. Whether the read-only sandbox lets the model open a
+   skill file outside its working folder is unrecorded until Q1's call.
 9. **Plugin acceptance is one rule across Harnesses, in time.** The check finds a plugin's parts by manifest key or
    folder file from a layout the Codex Harness passes in, and refuses any part outside an admitted set it also passes
    in, naming no Harness. It lives in `lib/harnesses/codex-plugins.ts` while Codex is its one caller, and moves

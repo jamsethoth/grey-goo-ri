@@ -413,8 +413,8 @@ test('no repository instruction file reaches a call', async (t) => {
 // --- Plugins and MCP servers (decision 7, D11 A, D17 A)
 
 // Ported (feature-flow 89e1d67 lib/toolkit.mjs:123-149, test/core.test.mjs:340-367): Codex splits a -c key on every
-// '.', so each id goes inside one inline-table value. The remote catalog half of the ported line is held for the
-// owner: gg's admitted plugins are remote ones (Q3 C).
+// '.', so each id goes inside one inline-table value. The remote catalog is not turned off, the ported line's other
+// half: gg's admitted plugins are remote ones (Q3 C), and the table alone decides which load (owner D1 A).
 test('listed plugins and servers are one inline table each', async (t) => {
   const agent: model.Agent = { ...READER, plugins: ['superpowers'], mcp: ['playwright'] };
   const { launch } = await launched(t, agent, { mcp: serverList('playwright', 'node_repl', 'my server') });
@@ -715,4 +715,86 @@ test('a listed plugin with apps is admitted and its apps are noted as off', asyn
   const { launch } = await launched(t, { ...READER, plugins: ['github', 'superpowers'] });
   assert.deepEqual(launch.appsOff, ['github@openai-curated-remote']);
   assert.ok(overrides(launch.argv).includes('features.apps=false'), JSON.stringify(launch.argv));
+});
+
+// --- The skills list gg writes into the prompt (D2 A)
+
+// A skill folder under `root` whose SKILL.md's front matter gives `name` and `description`.
+function writeSkill(root: string, folder: string, name: string, description: string) {
+  mkdirSync(join(root, folder), { recursive: true });
+  writeFileSync(
+    join(root, folder, 'SKILL.md'),
+    `---\nname: "${name}"\ndescription: ${description}\n---\n\n# ${name}\n`,
+  );
+}
+
+// Where gg's Codex home keeps an installed plugin's skills: the skills/ folder its manifest names.
+const pluginSkills = (home: string, name: string) => {
+  const { installed } = JSON.parse(RECORDED_PLUGINS) as { installed: codex.InstalledPlugin[] };
+  const plugin = installed.find((entry) => entry.name === name)!;
+  return join(home, 'plugins', 'cache', plugin.marketplaceName, plugin.name, plugin.version, 'skills');
+};
+
+// The launch of a call for `agent` over a Codex home and a user's skills folder, each filled by `fill` first.
+async function skillsLaunch(t: TestContext, agent: model.Agent, fill: (home: string, skills: string) => void) {
+  const home = codexHomeWith(t);
+  const skills = tempDirectory.tempDirectory(t, 'gg-skills-');
+  fill(home, skills);
+  const harness = codex.createCodex({ codexHome: home, skillsHome: skills });
+  const listings = await codex.list(codexCli(), home);
+  const launch = harness.launchArgs(callFor(agent), harness.resolveTools(agent, CONTEXT), listings);
+  return { home, skills, launch };
+}
+
+test("every call lists Codex's bundled skills by their front matter's name, description and file", async (t) => {
+  const { home, launch } = await skillsLaunch(t, READER, (codexHome) =>
+    writeSkill(join(codexHome, 'skills', '.system'), 'image-folder', 'imagegen', 'Generate or edit raster images.'),
+  );
+  const file = join(home, 'skills', '.system', 'image-folder', 'SKILL.md');
+  assert.ok(launch.skills.includes(`- imagegen: Generate or edit raster images. (file: ${file})`), launch.skills);
+  assert.ok(overrides(launch.argv).includes('skills.include_instructions=false'), JSON.stringify(launch.argv));
+});
+
+test("a declared skill from the user's skills folder is listed, and one not declared is not", async (t) => {
+  const { skills, launch } = await skillsLaunch(t, { ...READER, skills: ['tdd'] }, (_home, skillsFolder) => {
+    writeSkill(skillsFolder, 'tdd', 'tdd', 'Write the failing test first.');
+    writeSkill(skillsFolder, 'caveman', 'caveman', 'Talk like a caveman.');
+  });
+  assert.ok(launch.skills.includes(`- tdd: Write the failing test first. (file: ${join(skills, 'tdd', 'SKILL.md')})`));
+  assert.doesNotMatch(launch.skills, /caveman/);
+});
+
+test("a declared skill the user's skills folder lacks fails preflight and the launch, naming it", async (t) => {
+  const home = codexHomeWith(t);
+  const skills = tempDirectory.tempDirectory(t, 'gg-skills-');
+  const agent: model.Agent = { ...READER, skills: ['tdd'] };
+  const cli = codexCli();
+  const { ok, errors } = await codex.createCli(cli, { codexHome: home, skillsHome: skills }).validate(agent);
+  assert.equal(ok, false);
+  assert.match(errors.join('; '), /skill tdd/);
+  assert.deepEqual(commandsOf(cli.launches), [], 'a skill is found without listing plugins');
+  const harness = codex.createCodex({ codexHome: home, skillsHome: skills });
+  const listings = await codex.list(codexCli(), home);
+  assert.throws(() => harness.launchArgs(callFor(agent), harness.resolveTools(agent, CONTEXT), listings), /skill tdd/);
+});
+
+test('validate refuses skills that are not a list of names', async (t) => {
+  const { validate } = codex.createCli(codexCli(), { codexHome: codexHomeWith(t) });
+  const { ok, errors } = await validate({ ...READER, skills: 'tdd' });
+  assert.equal(ok, false);
+  assert.match(errors.join('; '), /skills must be a list of names/);
+});
+
+test("a listed plugin's skills are listed under its name, and an unlisted plugin's are not", async (t) => {
+  const { launch } = await skillsLaunch(t, { ...READER, plugins: ['superpowers'] }, (home) => {
+    writeSkill(pluginSkills(home, 'superpowers'), 'brainstorming', 'brainstorming', 'Explore before building.');
+    writeSkill(pluginSkills(home, 'build-web-apps'), 'shadcn-best-practices', 'shadcn', 'Manages shadcn.');
+  });
+  assert.match(launch.skills, /^- superpowers:brainstorming: Explore before building\. \(file: .*SKILL\.md\)$/m);
+  assert.doesNotMatch(launch.skills, /shadcn/);
+});
+
+test('a call with no skill to list gets no skills list', async (t) => {
+  const { launch } = await skillsLaunch(t, READER, () => undefined);
+  assert.equal(launch.skills, '');
 });
