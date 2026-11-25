@@ -275,10 +275,10 @@ Then answer with whether it ran and what it printed, and every word that begins 
   {
     name: 'empty-start',
     purpose:
-      "the Codex Harness's own launch, read-only, listing one catalog plugin, so its plugins table turns every other " +
-      'installed plugin off by its own switch, openai-developers among them (#481 Q1 A, D19 A, D1 A): does any ' +
-      "mcp__openai_api_* namespace still reach the call, and does the listed plugin's skill file open under the " +
-      'read-only sandbox from the skills list gg writes before the prompt?',
+      "the Codex Harness's own launch, read-only, listing one catalog plugin, so its plugins table turns every " +
+      'plugin off by default and every other installed one by its own switch, openai-developers among them ' +
+      '(#481 Q1 A, D19 A, D1 A, D6 A): does any mcp__openai_api_* namespace still reach the call, and does the ' +
+      "listed plugin's skill file open under the read-only sandbox from the skills list gg writes before the prompt?",
     harness: { plugins: ['superpowers'] },
     prompt:
       'This is a probe in a throwaway repository. Open the file of the skill ' +

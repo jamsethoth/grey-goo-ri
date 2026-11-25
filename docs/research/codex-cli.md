@@ -190,5 +190,6 @@ These go to the owner as one decision batch before #481.
   owner. #481's first empty-start call (`empty-start`, 0.171.0) still carried both under the table alone: they are
   the openai-developers catalog plugin's two servers, and a catalog plugin's own `enabled=true` outranks its
   `{enabled=false}` entry unless the table sets `_default` (`allows_plugin` in Codex's `config/src/types.rs` at
-  `rust-v0.171.0`; openai/codex #28443). Owner D6 A (Round 2c): the table opens with `_default={enabled=false}`; a
-  re-recorded `empty-start` is to show the namespaces gone.
+  `rust-v0.171.0`; openai/codex #28443). Owner D6 A (Round 2c): the table opens with `_default={enabled=false}`. The
+  re-recorded `empty-start` (0.171.0, openai-developers installed in gg's `CODEX_HOME`) shows both gone: no `mcp__`
+  namespace in its stream or rollout, and the model names none (`test/unit/codex-harness.empty-start.test.ts`).
