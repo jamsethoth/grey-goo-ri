@@ -382,8 +382,13 @@ test('gg init --harness codex then gg doctor on the stand-in reports only its pr
   assert.equal(init.status, 0, init.stderr);
   assert.ok(existsSync(join(userDirectory, 'gg.json')), "gg init creates the user's gg.json in GG_HOME");
   const file = join(repo, '.agents', 'gg', 'gg.json');
-  const written = JSON.parse(readFileSync(file, 'utf8')) as { baseBranch: string; commands: Record<string, string> };
+  const written = JSON.parse(readFileSync(file, 'utf8')) as {
+    baseBranch: string;
+    commands: Record<string, string>;
+    agents: Record<string, { harness: string }>;
+  };
   assert.equal(written.baseBranch, 'main', "the repository's default branch");
+  assert.deepEqual(new Set(Object.values(written.agents).map((agent) => agent.harness)), new Set(['codex']));
   written.commands.test = 'npm test';
   writeFileSync(file, JSON.stringify(written));
   onStandIn(file);

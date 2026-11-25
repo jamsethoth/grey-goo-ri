@@ -12,14 +12,18 @@ export interface Skill {
 
 const SKILL_FILE = 'SKILL.md';
 
-// A top-level `key: value` line of a SKILL.md's front matter, its quotes taken off.
-// shortcut: a folded or multi-line YAML value reads as its first line; parse YAML when a skill needs more.
+// A top-level `key: value` line of a SKILL.md's front matter, its quotes taken off; a block scalar (`>` or `|`) or a
+// plain value goes on over its indented lines, joined with one space, since the list gives each skill one line.
 function frontMatter(text: string): Record<string, string> {
   const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? '';
   const fields: Record<string, string> = {};
+  let key: string | undefined;
   for (const line of block.split(/\r?\n/)) {
     const field = /^([A-Za-z_-]+):\s*(.*)$/.exec(line);
-    if (field) fields[field[1]!] = field[2]!.replace(/^(["'])(.*)\1$/, '$2');
+    if (field) {
+      key = field[1]!;
+      fields[key] = /^[>|][+-]?$/.test(field[2]!) ? '' : field[2]!.replace(/^(["'])(.*)\1$/, '$2');
+    } else if (key && /^\s+\S/.test(line)) fields[key] = `${fields[key]} ${line.trim()}`.trim();
   }
   return fields;
 }

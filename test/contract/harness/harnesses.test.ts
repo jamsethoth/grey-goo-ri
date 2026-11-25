@@ -22,6 +22,7 @@ const NOT_HARNESSES = [
   'claude-handoff-hook.ts',
   'claude-plugins.ts',
   'codex-plugins.ts',
+  'codex-skills.ts',
   'ask-session.ts',
   'cli-call.ts',
   'cli-doctor.ts',
