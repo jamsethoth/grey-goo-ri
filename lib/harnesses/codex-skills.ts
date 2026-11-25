@@ -37,22 +37,33 @@ export function skillAt(directory: string, prefix = ''): Skill | undefined {
 }
 
 // A skill whose agents/openai.yaml sets policy.allow_implicit_invocation false is one Codex leaves out of its own
-// list and uses only when asked for by name, so gg's list leaves it out too (#481 D7 A).
+// list and uses only when asked for by name (#481 D7 A).
+// shortcut: the flow form (policy: {allow_implicit_invocation: false}) and a deeper key of the same name are not told
+// apart; read them once a skill uses one.
+const REQUEST_ONLY =
+  /^policy:[ \t]*(?:#.*)?\r?\n(?:(?:[ \t]+.*|[ \t]*(?:#.*)?)\r?\n)*?[ \t]+allow_implicit_invocation:[ \t]*false\b/m;
+
 function requestOnly(directory: string): boolean {
   const file = join(directory, 'agents', 'openai.yaml');
-  if (!existsSync(file)) return false;
-  return /^policy:[ \t]*\r?\n(?:[ \t]+.*\r?\n)*?[ \t]+allow_implicit_invocation:[ \t]*false\b/m.test(
-    readFileSync(file, 'utf8'),
-  );
+  return existsSync(file) && REQUEST_ONLY.test(readFileSync(file, 'utf8'));
 }
 
-// Every skill in a folder of skill folders, each name after `prefix`, but those Codex uses only on request; none when
-// the folder is missing. A declared skill is named by its Agent, so skillAt reads it whatever its policy.
-export function skillsIn(root: string, prefix = ''): Skill[] {
+const NAMED_ONLY = ' (use only when the task names this skill)';
+
+// Every skill in a folder of skill folders, each name after `prefix`; none when the folder is missing. A skill Codex
+// uses only on request is left out of a bundled folder (D7 A), but listed with a marker saying so in a listed
+// plugin's (`plugin`), since its Agent names the plugin (D8 C). A declared skill is named by its Agent, so skillAt
+// reads it whatever its policy.
+export function skillsIn(root: string, prefix = '', plugin = false): Skill[] {
   if (!existsSync(root)) return [];
   return readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && !requestOnly(join(root, entry.name)))
-    .flatMap((entry) => skillAt(join(root, entry.name), prefix) ?? []);
+    .filter((entry) => entry.isDirectory())
+    .flatMap((entry) => {
+      const directory = join(root, entry.name);
+      const skill = skillAt(directory, prefix);
+      if (!skill || !requestOnly(directory)) return skill ?? [];
+      return plugin ? { ...skill, description: skill.description + NAMED_ONLY } : [];
+    });
 }
 
 // The prompt text that lists `skills`, or none when there are none.

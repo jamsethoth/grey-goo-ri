@@ -245,7 +245,7 @@ const callSkills = (home: string, declared: codexSkills.Skill[], plugins: Instal
   ...codexSkills.skillsIn(join(home, 'skills', '.system')),
   ...declared,
   ...plugins.flatMap((plugin) =>
-    codexSkills.skillsIn(join(pluginDirectory(home, plugin), 'skills'), `${plugin.name}:`),
+    codexSkills.skillsIn(join(pluginDirectory(home, plugin), 'skills'), `${plugin.name}:`, true),
   ),
 ];
 

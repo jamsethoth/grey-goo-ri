@@ -42,6 +42,34 @@ test('a skill whose agents/openai.yaml disallows implicit invocation is left out
   assert.deepEqual(names.sort(), ['implicit', 'other-false', 'plain']);
 });
 
+test('a request-only setting after a blank line or under a commented `policy:` is still read', (t) => {
+  const root = tempDirectory.tempDirectory(t, 'gg-skills-');
+  const policies = {
+    'blank-line': 'policy:\n  other: 1\n\n  allow_implicit_invocation: false\n',
+    'commented-policy': 'policy: # note\n  allow_implicit_invocation: false\n',
+  };
+  for (const [folder, policy] of Object.entries(policies)) {
+    mkdirSync(join(root, folder, 'agents'), { recursive: true });
+    writeFileSync(join(root, folder, 'SKILL.md'), `---\nname: ${folder}\ndescription: A skill.\n---\n`);
+    writeFileSync(join(root, folder, 'agents', 'openai.yaml'), policy);
+  }
+  assert.deepEqual(codexSkills.skillsIn(root), []);
+});
+
+// A listed plugin is named by its Agent, so its request-only skills are listed, each marked as Codex applies the
+// policy (#481 D8 C); a bundled one stays out (D7 A).
+test("a listed plugin's request-only skill is listed, marked to use only when named", (t) => {
+  const root = tempDirectory.tempDirectory(t, 'gg-skills-');
+  for (const folder of ['template', 'plain']) {
+    mkdirSync(join(root, folder, 'agents'), { recursive: true });
+    writeFileSync(join(root, folder, 'SKILL.md'), `---\nname: ${folder}\ndescription: A skill.\n---\n`);
+  }
+  writeFileSync(join(root, 'template', 'agents', 'openai.yaml'), 'policy:\n  allow_implicit_invocation: false\n');
+  const listed = codexSkills.listed(codexSkills.skillsIn(root, 'pages:', true));
+  assert.match(listed, /^- pages:template: A skill\. \(use only when the task names this skill\) \(file: /m);
+  assert.match(listed, /^- pages:plain: A skill\. \(file: /m);
+});
+
 test('a declared skill is read whatever its policy, since its Agent names it', (t) => {
   const root = tempDirectory.tempDirectory(t, 'gg-skills-');
   mkdirSync(join(root, 'review-agent', 'agents'), { recursive: true });

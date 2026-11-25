@@ -38,7 +38,8 @@ export interface Scenario {
   // False for a call that reaches no real model: it counts against no budget.
   modelCall?: boolean;
   // The call runs under the Codex Harness's own launch (scripts/record-codex-launch.ts) for an Agent listing these
-  // plugins, in place of every key above but the prompt (#481 Q1 A).
+  // plugins: its argv, prompt and last-message file replace those the keys above build; env, cwd, stub, watch, killOn
+  // and hooks still apply (#481 Q1 A).
   harness?: { plugins: string[] };
 }
 

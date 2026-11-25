@@ -59,9 +59,10 @@ and Clarify's Q1 to Q3 on 2026-11-23. Codex stays refused at preflight until #48
    itself into the prompt (D2 A), each skill by name, description and `SKILL.md` path as Codex's own list gives it:
    Codex's bundled skills (`skills/.system` in gg's Codex home), each skill the Agent declares, found by name in the
    user's `~/.agents/skills`, and each listed plugin's skills under its name; nothing else of the user's or the
-   repository's. A bundled or plugin skill whose `agents/openai.yaml` sets `policy.allow_implicit_invocation: false`
-   is left out, as Codex's own list leaves out the two bundled skills that set it (D7 A). A declared skill not found
-   there fails preflight. `launchArgs` returns the list as `Launch.skills`, and #482's `run` writes it on stdin
+   repository's. A bundled skill whose `agents/openai.yaml` sets `policy.allow_implicit_invocation: false` is left
+   out, as Codex's own list leaves out the two bundled skills that set it (D7 A); a listed plugin's is listed, its
+   description ending "(use only when the task names this skill)", since the Agent names its plugin (D8 C). A
+   declared skill not found there fails preflight. `launchArgs` returns the list as `Launch.skills`, and #482's `run` writes it on stdin
    before the Brief (D5 A). Q1's call showed the read-only sandbox lets the model open a listed plugin's skill file
    outside its working folder.
 9. **Plugin acceptance is one rule across Harnesses, in time.** The check finds a plugin's parts by manifest key or
