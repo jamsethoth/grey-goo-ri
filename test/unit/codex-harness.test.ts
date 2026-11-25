@@ -421,7 +421,7 @@ test('listed plugins and servers are one inline table each', async (t) => {
   const passed = overrides(launch.argv);
   assert.ok(
     passed.includes(
-      'plugins={' +
+      'plugins={"_default"={enabled=false},' +
         '"github@openai-curated-remote"={enabled=false},' +
         '"openai-developers@openai-curated-remote"={enabled=false},' +
         '"superpowers@openai-curated-remote"={enabled=true},' +
@@ -484,7 +484,7 @@ test('an id with a dot or a DEL stays one quoted key of its table', async (t) =>
     { plugins, folders, mcp: serverList('x\u007fy') },
   );
   const passed = overrides(launch.argv);
-  assert.ok(passed.includes('plugins={"a.b@m"={enabled=false},"kit@m"={enabled=true}}'), JSON.stringify(passed));
+  assert.ok(passed.includes('plugins={"_default"={enabled=false},"a.b@m"={enabled=false},"kit@m"={enabled=true}}'));
   assert.ok(passed.includes('mcp_servers={"x\\u007fy"={enabled=false}}'), JSON.stringify(passed));
 });
 

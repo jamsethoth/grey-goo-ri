@@ -46,7 +46,10 @@ and Clarify's Q1 to Q3 on 2026-11-23. Codex stays refused at preflight until #48
    sentence names `validate`, and `FAKE_HARNESS_VERSION` goes to 6 under AGENTS.md's freeze rule.
 8. **A listed plugin is switched by one `plugins` table and brings only its skills (Q3, reading 1 with the folder
    check).** Every installed plugin is named in one inline `plugins` table, `{enabled=true}` when the Agent lists it
-   and `{enabled=false}` otherwise, or `--disable plugins` when it lists none (D11 A). A manifest's `apps` stay off
+   and `{enabled=false}` otherwise, or `--disable plugins` when it lists none (D11 A). The table opens with
+   `_default={enabled=false}`: without it a catalog plugin's own `enabled=true` outranks its `{enabled=false}` entry
+   (openai/codex #28443), and #481's empty-start call still carried openai-developers' two tool servers; with it, only
+   an entry saying `true` turns a plugin on, a plugin installed after the listing included (D6 A, Round 2c). A manifest's `apps` stay off
    under `features.apps=false` and are noted on the Action. A plugin is refused at preflight, naming the part, when its
    manifest declares `mcpServers`, `hooks` or any working key beyond `skills`, `apps` and the descriptive keys, or when
    its folder holds a `.mcp.json` or a hooks file whatever its manifest says. The remote plugin catalog stays on

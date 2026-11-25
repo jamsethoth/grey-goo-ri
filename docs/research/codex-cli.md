@@ -187,4 +187,8 @@ These go to the owner as one decision batch before #481.
   (finding 1): `debug prompt-input` does not show them, so only a real call can. Owner D19 A: #481 shows, on a
   recorded real call, that its `plugins` table leaves no `mcp__openai_api_*` namespace, and its empty-start tests
   replay that call's rollout, not `prompt-input-profile` alone; if a namespace remains, the empty start returns to the
-  owner.
+  owner. #481's first empty-start call (`empty-start`, 0.171.0) still carried both under the table alone: they are
+  the openai-developers catalog plugin's two servers, and a catalog plugin's own `enabled=true` outranks its
+  `{enabled=false}` entry unless the table sets `_default` (`allows_plugin` in Codex's `config/src/types.rs` at
+  `rust-v0.171.0`; openai/codex #28443). Owner D6 A (Round 2c): the table opens with `_default={enabled=false}`; a
+  re-recorded `empty-start` is to show the namespaces gone.

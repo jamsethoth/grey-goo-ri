@@ -292,10 +292,12 @@ function launchArgsIn(homes: Homes, call: CodexCall, tools: CodexTools, listings
     ...profileKeys(call.cwd),
     ...(enabled.size
       ? [
-          table(
-            'plugins',
-            listings.plugins.map(({ pluginId }) => [pluginId, enabled.has(pluginId)]),
-          ),
+          // Without `_default` a store plugin's own `enabled=true` outranks its entry here, so its tool servers load;
+          // with it, only an entry saying true turns a plugin on, one installed after the listing too (#481 D6 A).
+          table('plugins', [
+            ['_default', false],
+            ...listings.plugins.map(({ pluginId }): [string, boolean] => [pluginId, enabled.has(pluginId)]),
+          ]),
         ]
       : []),
     ...(listings.mcp.length
