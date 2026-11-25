@@ -77,3 +77,20 @@ test('a declared skill is read whatever its policy, since its Agent names it', (
   writeFileSync(join(root, 'review-agent', 'agents', 'openai.yaml'), 'policy:\n  allow_implicit_invocation: false\n');
   assert.equal(codexSkills.skillAt(join(root, 'review-agent'))?.name, 'review-agent');
 });
+
+// A synchronous regular expression blocks the timer a test timeout runs on, so the case times the read and fails by
+// name (#481 F24): the overlapping form took seconds at 20 comment lines.
+test('a long commented policy block is read at once', (t) => {
+  const root = tempDirectory.tempDirectory(t, 'gg-skills-');
+  mkdirSync(join(root, 'commented', 'agents'), { recursive: true });
+  writeFileSync(join(root, 'commented', 'SKILL.md'), '---\nname: commented\ndescription: A skill.\n---\n');
+  writeFileSync(join(root, 'commented', 'agents', 'openai.yaml'), `policy:\n${'  # c\n'.repeat(22)}  x: 1\n`);
+  const started = performance.now();
+  const skills = codexSkills.skillsIn(root);
+  const elapsedMs = performance.now() - started;
+  assert.deepEqual(
+    skills.map(({ name }) => name),
+    ['commented'],
+  );
+  assert.ok(elapsedMs < 1000, `the policy read took ${Math.round(elapsedMs)} ms, so the request-only regex backtracks`);
+});
