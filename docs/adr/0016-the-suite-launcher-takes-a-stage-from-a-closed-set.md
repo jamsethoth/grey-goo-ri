@@ -69,11 +69,9 @@ the closed set they were. The launcher joins the job before it starts anything, 
 and needs none of `containment.start`'s gate, shell or pipes. So `TerminateJobObject` would end the launcher too: it
 ends what it finds one process at a time, and kill-on-close takes anything left when it exits. A process it finds is named
 through PowerShell's `Get-CimInstance`, from `SYSTEM32` as ADR 0021 runs `taskkill.exe`, and only then, so a clean stage
-starts nothing more.
-
-Amended 2026-11-25 (grey-goo-ri issue #530, ADR 0030): a packaged app's process, which Windows creates outside the
-caller's job, is not in the stage's job, and the census does not see it. The job allows no breakaway, so a child that
-asks to break away fails to start.
+starts nothing more. Amended 2026-11-25 (grey-goo-ri issue #530, ADR 0030): a packaged app's process, which Windows
+creates outside the caller's job, is not in the stage's job, and the census does not see it. The job allows no
+breakaway, so a child that asks to break away fails to start.
 
 Amended 2026-11-11 (the fixed floor): the closed set is `fast [boundary ...]`, `check`, `coverage`, or nothing;
 `coverage update` is gone, and `coverage` followed by anything is a usage error with exit code 2. The coverage stage
