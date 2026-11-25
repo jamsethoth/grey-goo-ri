@@ -105,7 +105,13 @@ type Runner = Pick<exec.Exec, 'launch'>;
 // would leave every plugin and server on (ported, feature-flow 89e1d67 lib/toolkit.mjs:79-96).
 async function listed(runner: Runner, home: string, args: string[]): Promise<{ command: string; data: unknown }> {
   const command = ['codex', ...args].join(' ');
-  const ran = await cliDoctor.said(runner, { command: 'codex', args, env: { CODEX_HOME: home } });
+  // The plugin listing reads OpenAI's catalog and once took 87 s, past the cheap limit (#481 F16).
+  const ran = await cliDoctor.said(runner, {
+    command: 'codex',
+    args,
+    env: { CODEX_HOME: home },
+    wallMs: cliDoctor.PROBE_WALL_MS,
+  });
   const reason = cliDoctor.reasonOf(ran);
   if (reason !== null) throw new Error(`${command} failed: ${reason}`);
   try {

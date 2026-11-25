@@ -5,7 +5,6 @@
 import { writeFileSync } from 'node:fs';
 import * as containment from '../lib/containment.ts';
 import * as exec from '../lib/exec.ts';
-import * as cliDoctor from '../lib/harnesses/cli-doctor.ts';
 import * as codex from '../lib/harnesses/codex.ts';
 import type { Scenario } from './record-codex-scenarios.ts';
 
@@ -32,11 +31,7 @@ export async function launched(
 ): Promise<Launched | undefined> {
   if (scenario.harness === undefined) return undefined;
   const runner = exec.createExec({ kernel32: containment.openKernel32() });
-  // `codex plugin list` reads the remote catalog and once took 87 s, past the cheap wall limit validate lists under.
-  const listings = await codex.list(
-    { launch: (launch) => runner.launch({ ...launch, wallMs: cliDoctor.PROBE_WALL_MS }) },
-    home,
-  );
+  const listings = await codex.list(runner, home);
   const agent = { harness: 'codex', persona: 'recorder.md', model: MODEL, effort: 'low', ...scenario.harness };
   const call = {
     marker: 'gg-recording',

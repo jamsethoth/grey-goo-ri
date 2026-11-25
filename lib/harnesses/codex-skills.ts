@@ -36,11 +36,22 @@ export function skillAt(directory: string, prefix = ''): Skill | undefined {
   return { name: prefix + (fields.name || basename(directory)), description: fields.description ?? '', file };
 }
 
-// Every skill in a folder of skill folders, each name after `prefix`; none when the folder is missing.
+// A skill whose agents/openai.yaml sets policy.allow_implicit_invocation false is one Codex leaves out of its own
+// list and uses only when asked for by name, so gg's list leaves it out too (#481 D7 A).
+function requestOnly(directory: string): boolean {
+  const file = join(directory, 'agents', 'openai.yaml');
+  if (!existsSync(file)) return false;
+  return /^policy:[ \t]*\r?\n(?:[ \t]+.*\r?\n)*?[ \t]+allow_implicit_invocation:[ \t]*false\b/m.test(
+    readFileSync(file, 'utf8'),
+  );
+}
+
+// Every skill in a folder of skill folders, each name after `prefix`, but those Codex uses only on request; none when
+// the folder is missing. A declared skill is named by its Agent, so skillAt reads it whatever its policy.
 export function skillsIn(root: string, prefix = ''): Skill[] {
   if (!existsSync(root)) return [];
   return readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
+    .filter((entry) => entry.isDirectory() && !requestOnly(join(root, entry.name)))
     .flatMap((entry) => skillAt(join(root, entry.name), prefix) ?? []);
 }
 
