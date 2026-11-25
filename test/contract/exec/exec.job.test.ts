@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import * as containment from '../../../lib/containment.ts';
 import * as exec from '../../../lib/exec.ts';
 import * as childScripts from '../../support/child-scripts.ts';
+import * as gitBash from '../../support/git-bash.ts';
 import * as kernel32Doubles from '../../support/kernel32-doubles.ts';
 import * as manualTimers from '../../support/manual-timers.ts';
 import * as processProbe from '../../support/process-probe.ts';
@@ -147,39 +148,67 @@ test(
   },
 );
 
-test(
-  'runShell: a child that asks to break away from the job still starts, and is left outside the timeout kill',
-  WIN_CASE,
-  async (t) => {
-    const created = join(scratch, 'breakaway.created');
-    const sleeperPid = join(scratch, 'ba-sleeper.pid');
-    t.after(() => processProbe.endProcessIn(sleeperPid));
-    const { result } = await timedOutShell.timeOutWhen(
-      nodeCommand(
-        t,
-        '--disable-warning=ExperimentalWarning',
-        childScripts.BREAKAWAY_CHILD,
-        created,
-        childScripts.LONG_LIVED,
-        sleeperPid,
-      ),
-      { timeoutMs: 6000 },
-      () => existsSync(created),
+// A child that asks to break away fails to start, so nothing a command starts leaves its job (ADR 0030 decision 1).
+test('runShell: a child that asks to break away fails to start', WIN_CASE, async (t) => {
+  const created = join(scratch, 'breakaway.created');
+  const sleeperPid = join(scratch, 'ba-sleeper.pid');
+  t.after(() => processProbe.endProcessIn(sleeperPid));
+  const { result } = await timedOutShell.timeOutWhen(
+    nodeCommand(
       t,
-    );
-    const match = result.output.match(/created pid=(\d+)/);
-    const pid = match && Number(match[1]);
-    assert.ok(match, `breakaway request was refused: ${result.output}`);
-    assert.equal(result.timedOut, true);
-    // the escaped child is the sleeper, so its pid file records which process the pid means, and its teardown ends it
-    await waitFor(() => pidIn(sleeperPid) === pid, t.signal);
-    assert.ok(alive(pid as number), 'a child that broke away on purpose should be outside the job');
-    assert.ok(
-      !result.survivors.some((survivor) => survivor.pid === pid),
-      'an escaped child is not a survivor of the job',
-    );
-  },
-);
+      '--disable-warning=ExperimentalWarning',
+      childScripts.BREAKAWAY_CHILD,
+      created,
+      childScripts.LONG_LIVED,
+      sleeperPid,
+    ),
+    { timeoutMs: 6000 },
+    () => existsSync(created),
+    t,
+  );
+  assert.match(result.output, /failed win32error=5\b/, 'the breakaway request was not refused');
+  assert.equal(result.timedOut, true);
+  assert.equal(pidIn(sleeperPid), 0, 'the child that asked to break away ran');
+});
+
+// A path as bash reads it inside single quotes, in forward slashes so no backslash is read as an escape. A ' or " would
+// end a quote and a % would be expanded by cmd.exe; no path these cases use holds one.
+function bashQuoted(path: string) {
+  if (/['"%]/.test(path)) throw new Error(`a Git Bash case cannot quote ${path}`);
+  return `'${path.replaceAll('\\', '/')}'`;
+}
+
+// Git Bash starts each non-MSYS child asking to break away from the job (ADR 0030). The background node writes its pid
+// and runs on, its output away from gg's pipes, which it would otherwise hold open past the result; bash exits once the
+// pid is written, so the node has started before the command ends.
+function gitBashBackgroundNode(pidFile: string) {
+  const [node, script, pid] = [process.execPath, childScripts.LONG_LIVED, pidFile].map(bashQuoted);
+  return `${node} ${script} ${pid} >/dev/null 2>&1 </dev/null & until [ -s ${pid} ]; do sleep 0.1; done`;
+}
+
+const CONTAINED = { confirmed: true, survivors: [], reason: null, containment: { kind: 'job' } };
+
+test("a Git Bash command's background node ends with runShell", WIN_CASE, async (t) => {
+  const pidFile = join(scratch, 'git-bash-run-shell.pid');
+  t.after(() => processProbe.endProcessIn(pidFile));
+  const result = await exec.runShell(`"${gitBash.gitBash()}" -c "${gitBashBackgroundNode(pidFile)}"`, {
+    timeoutMs: 60_000,
+  });
+  assert.equal(result.code, 0, result.output);
+  assert.equal(alive(pidIn(pidFile)), false, 'the background node runs on past the result');
+  assert.deepEqual(result.cleanup, CONTAINED);
+});
+
+test("a Git Bash command's background node ends with its launch", WIN_CASE, async (t) => {
+  const pidFile = join(scratch, 'git-bash-launch.pid');
+  t.after(() => processProbe.endProcessIn(pidFile));
+  const result = await exec
+    .createExec()
+    .launch({ command: gitBash.gitBash(), args: ['-c', gitBashBackgroundNode(pidFile)], wallMs: 60_000 });
+  assert.equal(result.code, 0, result.stderrTail);
+  assert.equal(alive(pidIn(pidFile)), false, 'the background node runs on past the result');
+  assert.deepEqual(result.cleanup, CONTAINED);
+});
 
 test(
   'runShell: when the job cannot be set up, the timeout still takes down the process tree ' +
