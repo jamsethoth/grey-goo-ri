@@ -31,11 +31,9 @@ owner decided 1 to 8 on 2026-11-16 and Clarify's Q1 to Q3 on 2026-11-18.
    access. `--restricted` removes the command-running tools unless `--tools` names them, and the profile names the
    shell in `--tools` for every call (decision 4, G18 A), so a read-only Agent runs commands under the read-only allow
    list and `--permission-mode manual`, with `--permission-prompts none` refusing the rest.
-5. **No prefixed twins of the permission rules until slice 3** (Q2 A). gg reads no prefix a command-rewriting hook
-   adds, since its `harnesses` settings arrive with slice 3. Slice 3 adds twins with them, the deny side first, for
-   both shells, after a probe of the pinned Claude's rewrite behaviour under `-p`. Until then a rule that a rewriting
-   hook in a listed plugin rewrites is missed: a missed allow is refused, and a missed deny is open only where the
-   repository's or user's own Claude rules allow the command to that hook.
+5. **No prefixed twins of the permission rules** (replaced by ADR 0031, grey-goo-ri issue #481 decision 6, Q13' A): a
+   command a hook rewrites fails closed under the default-deny rules, as #479 showed; #488 keeps declared prefixes in
+   the backlog.
 
 ## Considered options
 

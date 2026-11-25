@@ -231,11 +231,10 @@ export function pinnedConfiguration({
 // One Harness's entry in the Pinned Configuration's launch profile: what the Config Hash pins of how it launches.
 export function launchEntry(harness: runContext.Harness): PinnedLaunchProfile {
   const { name = null, version = null } = harness.launchProfile ?? {};
-  // Known crash, left so a broken Harness is refused, not hashed: a Harness with no capabilities (a stub module)
-  // throws a TypeError here and in the Action Event's profile. gg run's preflight refuses it before the pin; a call
-  // that skips preflight reaches it, and so does a resume whose saved snapshot names such a Harness, which preflight
-  // does not check: the fault's Event then fails too, and the Ticket gets no State Label (#428 D5, D6).
-  return { name, version, confinement: harness.capabilities.confinement ?? null };
+  // A Harness with no Capabilities (a stub module) pins a null confinement, as one with no profile pins a null name,
+  // so a resume whose snapshot names one, which preflight does not check, meets no TypeError here or in the Action
+  // Event's profile (#428 D5, D6, #481).
+  return { name, version, confinement: harness.capabilities?.confinement ?? null };
 }
 
 // What an Execution runs under: a Pinned Configuration, its Resolved Flow in memory and its Config Hash, one value so

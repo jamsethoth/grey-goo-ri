@@ -168,10 +168,11 @@ Claude launch profile, validated on 2026-10-15 against claude 2.1.300 on this ma
 
 Codex specifics: every harness-owned key as a `-c` override, since CLI overrides rank above project and user config;
 `--sandbox` and `-C` before `resume`; sandbox policy re-checked from the rollout on resume; strict output schemas;
-`features.hooks` explicit; `commandWindows` required for any hook on win32; MXC fallback to unelevated only on an mxc
-error and only with equivalent isolation declared; usage delta from the cumulative `turn.completed`; rollout lookup by
-session id across the sessions tree; tail `$CODEX_HOME/logs` on non-zero exit; verify expected filesystem changes and
-checks rather than command counts. Installed: codex-cli 0.162.1, which accepts `exec resume --output-schema`.
+`features.hooks` explicit; `commandWindows` required for any hook on win32; no fallback to unelevated, which #479
+found isolates nothing usable, so an mxc error ends the call as a typed failure (ADR 0031); usage delta from the
+cumulative `turn.completed`; rollout lookup by session id across the sessions tree; tail `$CODEX_HOME/logs` on non-zero
+exit; verify expected filesystem changes and checks rather than command counts. Installed: codex-cli 0.171.0 (#479),
+which accepts `exec resume --output-schema`.
 
 Claude `protectedPaths`: `.claude/`, `.mcp.json`, `CLAUDE.md`. Codex `protectedPaths`: `.codex/`, `AGENTS.md`.
 
@@ -700,7 +701,7 @@ is a warning in `gg doctor` and an error in preflight when selected. The user's 
 is an `unknown-key` Problem naming the file, as is a contract key in the user's or a machine setting in the
 repository's, and a missing or malformed setting is a Problem too; `gg doctor` and preflight list them alike. The four
 stage keys, `stageTools`, `toolkit`, `escalationEnabled`, `maxReviewRounds` and `contextBudget.<stage>` do not exist in
-gg; a `gg.json` using one gets that Problem naming the replacement (`agents`, `harnesses`, `flows`). Keys that carry
+gg; a `gg.json` using one gets that Problem naming the replacement (`agents`, `plugins`, `flows`). Keys that carry
 over by name when they land: `planApproval`, `stuckAfterHours`, `allowNetwork` and `style` in the repository, and
 `apiPrices` and `contextBudget.byModel` in the user's `gg.json`. A `gg.json` that is not JSON, or has a duplicate key,
 is a load error. An eval variant is a named Flow in either source, picked with `--flow` (#122). The Config Hash

@@ -93,7 +93,7 @@ leverage and a change lands in one place (locality).
 
 | Module | Responsibility |
 | --- | --- |
-| `bin/gg.ts` | `gg` entry point: one command table gives the usage, each command's flags and its dispatch; `main`, over the gh it is passed, which the tests that spawn gg pass as the fake (`test/support/gg-over-fake-gh.ts`) |
+| `bin/gg.ts` | `gg` entry point: one command table gives the usage, each command's flags and its dispatch; `main`, over the gh it is passed and any Harnesses joined to the shipped ones, which the tests that spawn gg pass as the fake gh and a stand-in Harness that starts no CLI (`test/support/gg-over-fake-gh.ts`) |
 | `lib/options.ts` | option parsing and its `UsageError` |
 | `lib/config.ts` | the two sources (the repository's `.agents/gg/` and the user's `GG_HOME`), each `gg.json` read whole with the files it names (at the keys `lib/procedures.ts` declares), the Pinned Configuration and its Config Hash, and the value an Execution runs under (`Pinned`) |
 | `lib/settings.ts` | the settings both `gg.json` files hold beside their Flows: the repository contract (Declared Commands, `testPaths`, `approvers`, `labelPrefix`, `baseBranch`), the user's machine settings, and the keys each file may hold, parsed to Settings or their Problems, never both |

@@ -167,7 +167,7 @@ async function harnessProblems(
     const harness = harnesses[harnessName] as PreflightHarness;
     try {
       // shortcut: a shipped Harness module declares only what its slice has built, so preflight runs what it has
-      // and then stops it; the last that does not implement the contract does so in slice 3; drop this then.
+      // and then stops it; the last without run gains it in #482 (and doctor in #484); drop this then.
       if (harness.run) contract.assertHarness(harness);
       if (!harness.validate) throw new Error('not implemented');
       const { ok, errors } = await harness.validate(agent);
@@ -196,7 +196,8 @@ async function doctorProblems(
 ) {
   for (const harnessName of harnessNames) {
     const harness = harnesses[harnessName] as PreflightHarness;
-    // shortcut: a shipped Harness builds no doctor until its slice, so it has no checks to run; drop this in slice 3.
+    // shortcut: a shipped Harness builds no doctor until its slice, so it has no checks to run; drop this in #482,
+    // which needs the last one's doctor (#484) once it builds that Harness's run.
     if (!harness.doctor) continue;
     let checks: runContext.DoctorCheck[];
     try {
