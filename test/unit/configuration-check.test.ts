@@ -166,7 +166,7 @@ test('preflight runs the cheap doctor of each Harness the Flows use, once, and o
   const recording = (name: string) => ({
     ...fakeHarness.fakeHarness({ name }),
     doctor: (options: unknown) => {
-      doctored.push([name, options]);
+      doctored.push([name, { probe: (options as runContext.DoctorOptions).probe }]);
       return Promise.resolve({ ok: true, checks: [] });
     },
   });
@@ -186,6 +186,30 @@ test('preflight runs the cheap doctor of each Harness the Flows use, once, and o
     doctored.toSorted(([left], [right]) => left.localeCompare(right)),
     [...used].sort().map((name) => [name, { probe: false }]),
   );
+});
+
+// Q4 A of #484: a Harness's doctor sees each Agent it runs once, by the name the Vertices use, so Claude's can warn
+// about an Agent's listed plugins; an Agent no admitted Flow runs is not given.
+test("each Harness's doctor is given, by name, the Agents the admitted Flows run on it, and no other", async () => {
+  const repository = repositorySource();
+  const other = repositorySource().flows.default as golden.ConfiguredFlow;
+  repository.agents.other = { ...repository.agents.implementer, harness: 'other' };
+  (other.ticket.vertices.red as { use: string }).use = 'other';
+  repository.flows.other = other;
+  const given = new Map<string, unknown>();
+  const recording = (name: string) => ({
+    ...fakeHarness.fakeHarness({ name }),
+    doctor: (options: runContext.DoctorOptions) => {
+      given.set(name, options.agents);
+      return Promise.resolve({ ok: true, checks: [] });
+    },
+  });
+  await checkOf(sources(repository), { harnesses: { fake: recording('fake'), other: recording('other') } });
+  assert.ok(Object.hasOwn(repository.agents, 'reviewer'), 'an Agent no Vertex runs is declared');
+  assert.deepEqual(Object.fromEntries(given), {
+    fake: { implementer: repository.agents.implementer },
+    other: { other: repository.agents.other },
+  });
 });
 
 // Every pass and failure a check can report, each a warning or an error.
@@ -324,20 +348,30 @@ const launchless = (launched: unknown[]) =>
     },
   }) as unknown as Parameters<typeof shipped.shipped>[0];
 
-// A Codex Agent with nothing to list starts no CLI at preflight, and Codex stays refused until #482 builds its run.
-test('the shipped Codex Harness is refused at preflight as not implemented, starting no CLI', async () => {
+// A Codex Agent with nothing to list starts no listing at preflight, where only the doctor's cheap commands start
+// (#484), and Codex stays refused until #482 builds its run.
+test('the shipped Codex Harness is refused at preflight as not implemented, starting no listing', async () => {
   const repository = repositorySource();
   // Codex declares network unsupported, so the implementer drops it, which is not this case's subject (owner, T1).
   delete repository.agents.implementer!.network;
   Object.assign(repository.agents.implementer!, { harness: 'codex' });
   const launched: unknown[] = [];
   const { codex } = shipped.shipped(launchless(launched));
-  assert.deepEqual(errorLines(await checkOf(sources(repository), { harnesses: { codex } })), [
-    'error: flows.default.ticket.vertices.red: vertex red: harness codex: not implemented [harness-preflight-failed]',
-    'error: flows.default.ticket.vertices.green: vertex green: harness codex: not implemented ' +
-      '[harness-preflight-failed]',
-  ]);
-  assert.deepEqual(launched, []);
+  const checked = await checkOf(sources(repository), { harnesses: { codex } });
+  assert.deepEqual(
+    errorLines(checked).filter((line) => line.endsWith('[harness-preflight-failed]')),
+    [
+      'error: flows.default.ticket.vertices.red: vertex red: harness codex: not implemented [harness-preflight-failed]',
+      'error: flows.default.ticket.vertices.green: vertex green: harness codex: not implemented ' +
+        '[harness-preflight-failed]',
+    ],
+  );
+  const started = launched.map((args) => (args as [{ args: string[] }])[0].args[0]);
+  assert.deepEqual(
+    started.filter((command) => command === 'plugin' || command === 'mcp'),
+    [],
+    started.join(', '),
+  );
 });
 
 // Codex declares network and contextBudget unsupported (Q15 A), so each is the validator's one error at its key, which

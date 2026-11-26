@@ -214,7 +214,7 @@ export interface ClaudeCli {
   run: runContext.Harness['run'];
   interactiveArgs(agent: unknown, opening: string, options?: unknown): string[];
   metrics(session: string): events.Usage | null;
-  doctor(options: { probe: boolean }): Promise<runContext.DoctorReport>;
+  doctor(options: runContext.DoctorOptions): Promise<runContext.DoctorReport>;
 }
 
 // What run reads of the call beyond launchArgs's (docs/interfaces/harness.md, SentCall).
@@ -355,5 +355,10 @@ export const createCli = (
   run: (call, hooks) => runIn(runner, configDirectory, call as unknown as RunCall, hooks),
   interactiveArgs: notImplemented,
   metrics: notImplemented,
-  doctor: (options) => claudeDoctor.doctor(runner, options, probeLaunch(configDirectory)),
+  doctor: (options) =>
+    claudeDoctor.doctor(runner, options, {
+      profile: probeLaunch(configDirectory),
+      rewrites: (plugin) =>
+        claudePlugins.rewrites(claudePlugins.pluginDirectory(plugin, configDirectory), shellOf(process.platform)),
+    }),
 });

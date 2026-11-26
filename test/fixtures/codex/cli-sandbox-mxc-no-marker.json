@@ -1,0 +1,22 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "command": "cli-sandbox-mxc-no-marker",
+  "purpose": "#484: a cmd command under MXC whose /d /c the recording shell turned into D:/ C:/, so cmd started with no /c command, printed its banner and exited 0 at the end of its input though the command never ran, so doctor reads the marker line, not the exit code",
+  "argv": [
+    "sandbox",
+    "-c",
+    "windows.sandbox=\"mxc\"",
+    "--",
+    "cmd.exe",
+    "D:/",
+    "C:/",
+    "echo",
+    "gg-mxc-ok"
+  ],
+  "home": "gg",
+  "repository": "plain",
+  "exitCode": 0,
+  "stdout": "Microsoft Windows [Version 10.0.26300.9550]\n(c) Microsoft Corporation. All rights reserved.\n\n<recording>\\repo>\n",
+  "promptInput": null,
+  "stderr": ""
+}

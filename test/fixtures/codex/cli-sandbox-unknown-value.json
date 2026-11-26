@@ -1,0 +1,22 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "command": "cli-sandbox-unknown-value",
+  "purpose": "#484: an unknown windows.sandbox value fails at configuration read, exit 1, naming the values Codex takes",
+  "argv": [
+    "sandbox",
+    "-c",
+    "windows.sandbox=\"bogus\"",
+    "--",
+    "cmd.exe",
+    "D:/",
+    "C:/",
+    "echo",
+    "gg-mxc-ok"
+  ],
+  "home": "gg",
+  "repository": "plain",
+  "exitCode": 1,
+  "stdout": "",
+  "promptInput": null,
+  "stderr": "Error: unknown variant `bogus`, expected one of `elevated`, `unelevated`, `mxc`\nin `windows.sandbox`\n\n"
+}

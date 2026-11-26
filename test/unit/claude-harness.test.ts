@@ -576,7 +576,9 @@ const VERSIONS: [string, boolean][] = [
 test('the version check passes a CLI at or above 2.1.328, comparing each part as a number', async () => {
   const passed: [string, boolean][] = [];
   for (const [version] of VERSIONS) {
-    const { checks } = await claude.createCli(recordedCli.recordedCli({ version })).doctor({ probe: false });
+    const { checks } = await claude
+      .createCli(recordedCli.recordedCli({ version }))
+      .doctor({ probe: false, agents: {} });
     passed.push([version, checks.find(({ name }) => name === 'version')?.ok === true]);
   }
   assert.deepEqual(passed, VERSIONS);

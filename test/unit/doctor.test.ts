@@ -5,12 +5,15 @@ import { join } from 'node:path';
 import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
+import * as claude from '../../lib/harnesses/claude.ts';
 import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
+import * as claudePluginHome from '../support/claude-plugin-home.ts';
 import * as exampleSource from '../support/example-source.ts';
 import * as fakeGh from '../support/fake-gh.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
 import * as namedFlow from '../support/named-flow.ts';
+import * as recordedCli from '../support/recorded-cli.ts';
 import * as runFixture from '../support/run-fixture.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
@@ -354,6 +357,28 @@ test("gg doctor reports harness-preflight-failed for each Vertex on a stub Harne
         '[harness-preflight-failed]',
     ),
   );
+});
+
+// Q13' A and #484 Q5 A: Claude refuses a shell command a plugin's hook rewrites, so gg doctor warns of each Agent that
+// lists a plugin whose hook can rewrite one, over the Claude Harness as shipped builds it, its CLI answering as
+// recorded, in a Claude configuration directory of the case's own.
+test('a listed plugin with a shell hook is a warning naming the Agent and plugin', async (t) => {
+  const configDirectory = claudePluginHome.claudePluginHome(t, {
+    'rewriter@mkt': { hooksJson: claudePluginHome.hookOn('PreToolUse', 'Bash|PowerShell') },
+  });
+  const source = example();
+  for (const agent of Object.values(source.agents)) agent.harness = 'claude';
+  exampleSource.putAt(source.agents, ['implementer', 'plugins'], ['rewriter@mkt']);
+  const harness = {
+    ...claude.createClaude({ configDirectory }),
+    ...claude.createCli(recordedCli.recordedCli(), { configDirectory }),
+  };
+  const { text } = await doctor.doctor({ config: sources(source), ...DEPS, harnesses: { claude: harness } });
+  const rewrites = text.split('\n').filter((line) => line.includes('can rewrite'));
+  assert.equal(rewrites.length, 1, text);
+  const [line] = rewrites;
+  assert.ok(line!.startsWith('warning: harness claude: ') && line!.endsWith(' [harness-doctor-failed]'), line);
+  assert.ok(line!.includes('implementer') && line!.includes('rewriter@mkt'), line);
 });
 
 // Each configuration gg run's preflight refuses, by what it breaks: none names --flow, which is gg run's own choice.

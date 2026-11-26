@@ -1,0 +1,29 @@
+{
+  "cliVersion": "codex-cli 0.171.0",
+  "command": "cli-sandbox-mxc",
+  "purpose": "#484: doctor's sandbox command, a PowerShell command under MXC in gg's CODEX_HOME that prints its marker line",
+  "argv": [
+    "sandbox",
+    "-c",
+    "windows.sandbox=\"mxc\"",
+    "--",
+    "powershell.exe",
+    "-NoProfile",
+    "-Command",
+    "Write-Output GG-MXC-PROBE"
+  ],
+  "home": "gg",
+  "repository": "plain",
+  "exitCode": 0,
+  "stdout": "GG-MXC-PROBE\n",
+  "promptInput": null,
+  "stderr": "",
+  "evidence": {
+    "job": {
+      "contained": true,
+      "whileMarked": null,
+      "afterKill": null,
+      "leftAfterExit": []
+    }
+  }
+}
