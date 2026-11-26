@@ -1,9 +1,9 @@
 // What every Harness's doctor does with its Agent CLI (#480): start one of its commands and say what it printed, check
 // its version against a pinned minimum and its login, under the cheap and probe wall limits, and run a probe in a
 // temporary directory. Which commands, and what their output means beyond that, is each Harness's own.
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import type * as exec from '../exec.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
@@ -102,8 +102,14 @@ export interface FoundShell {
   packaged: boolean;
 }
 
-// Stub (#484 Red): the PATH walk is Green's.
-export const findShell = (_file: string, _path: string = process.env.PATH ?? ''): FoundShell | null => null;
+export function findShell(file: string, path: string = process.env.PATH ?? ''): FoundShell | null {
+  const found = path
+    .split(delimiter)
+    .filter(Boolean)
+    .map((directory) => join(directory.replace(/"/g, ''), file))
+    .find((candidate) => existsSync(candidate));
+  return found === undefined ? null : { path: found, packaged: /[\\/]WindowsApps[\\/]/i.test(found) };
+}
 
 // A temporary directory for a probe, named from `prefix`, removed after it; on Windows a CLI just ended may hold it for
 // a moment.

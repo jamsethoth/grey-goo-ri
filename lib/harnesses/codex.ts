@@ -6,6 +6,7 @@ import type * as model from '../model.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
 import * as cliDoctor from './cli-doctor.ts';
+import * as codexDoctor from './codex-doctor.ts';
 import * as codexPlugins from './codex-plugins.ts';
 import * as codexSkills from './codex-skills.ts';
 
@@ -368,7 +369,7 @@ async function validateIn(listOnce: () => Promise<Listings>, homes: Homes, agent
 }
 
 // The members built from the exec shipped.ts is given: validate, which lists what Codex has installed once per
-// preflight; run and doctor are #482's and #484's.
+// preflight, and doctor (#484); run is #482's.
 export const createCli = (
   runner: Runner,
   { codexHome: home = codexHome(), skillsHome: skills = skillsHome() }: Partial<Homes> = {},
@@ -378,8 +379,12 @@ export const createCli = (
   const homes = { codexHome: home, skillsHome: skills };
   return {
     validate: (agent: unknown) => validateIn(listOnce, homes, agent),
-    // Stub (#484 Red): the cheap checks and the probes are Green's.
-    doctor: (_options: runContext.DoctorOptions): Promise<runContext.DoctorReport> =>
-      Promise.resolve({ ok: true, checks: [] }),
+    // shortcut: the probes launch with no listing, so a plugin is off and a configured MCP server on; list them should
+    // a probe need the listing a Run's call gets.
+    doctor: (options: runContext.DoctorOptions) =>
+      codexDoctor.doctor(runner, options, {
+        home,
+        profile: (call) => launchArgsIn(homes, call, resolveTools(call.agent), { plugins: [], mcp: [] }),
+      }),
   };
 };
