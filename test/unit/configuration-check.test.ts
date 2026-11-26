@@ -405,7 +405,8 @@ test("preflight fails a Claude Agent's plugin that is not installed on the Harne
   const repository = repositorySource();
   Object.assign(repository.agents.implementer!, { harness: 'claude', plugins: ['gg-no-such-plugin'] });
   const claudeModule = await import('../../lib/harnesses/claude.ts');
-  const claude = claudeModule.createClaude({ configDirectory: tempDirectory.tempDirectory(t, 'gg-claude-home-') });
+  const configDirectory = tempDirectory.tempDirectory(t, 'gg-claude-home-');
+  const claude = { ...fakeHarness.fakeHarness({ name: 'claude' }), ...claudeModule.createClaude({ configDirectory }) };
   const lines = errorLines(await checkOf(sources(repository), { harnesses: { claude } }));
   assert.equal(lines.length, 2, lines.join('\n'));
   assert.match(

@@ -139,12 +139,11 @@ export const missingFlowAdvice = (flow: string, ticket: number): string =>
   `runs Flow ${flow}, which is no longer declared; declare it again to resume it, or run gg work abandon ${ticket} ` +
   'to start over';
 
-// A Harness module as preflight checks it: the shipped modules declare only their paths until slices 2 and 3.
+// A Harness module as preflight calls it, once the contract check has passed it.
 interface PreflightHarness {
-  run?: unknown;
-  validate?(agent: unknown): Promise<{ ok: boolean; errors: string[] }>;
+  validate(agent: unknown): Promise<{ ok: boolean; errors: string[] }>;
   resolveTools: runContext.Harness['resolveTools'];
-  doctor?(options: runContext.DoctorOptions): runContext.DoctorReport | Promise<runContext.DoctorReport>;
+  doctor(options: runContext.DoctorOptions): runContext.DoctorReport | Promise<runContext.DoctorReport>;
 }
 
 // Each registered Harness a Vertex's Agent selects, with the Agents the Flows run on it, as declared: by the name the
@@ -189,17 +188,13 @@ async function harnessProblems(
     if (typeof harnessName !== 'string' || !Object.hasOwn(harnesses, harnessName)) continue;
     const harness = harnesses[harnessName] as PreflightHarness;
     try {
-      // shortcut: a shipped Harness module declares only what its slice has built, so preflight runs what it has
-      // and then stops it; the last without run gains it in #482 (and doctor in #484); drop this then.
-      if (harness.run) contract.assertHarness(harness);
-      if (!harness.validate) throw new Error('not implemented');
+      contract.assertHarness(harness);
       const { ok, errors } = await harness.validate(agent);
       if (!ok) throw new Error(errors.join('; '));
       // The agent Action copies what it returns, so a value it could not copy, a Promise among them, fails here.
       const tools: unknown = harness.resolveTools(agent, { commands, platform: process.platform });
       if (tools instanceof Promise) tools.catch(() => {});
       jsonValue.checked(tools, 'resolveTools');
-      if (!harness.run) throw new Error('not implemented');
     } catch (err) {
       const reason = (err as Error).message.split('\n')[0];
       const location = `flows.${flow.name}.ticket.vertices.${id}`;
@@ -208,6 +203,15 @@ async function harnessProblems(
     }
   }
 }
+
+const passesContract = (harness: unknown) => {
+  try {
+    contract.assertHarness(harness);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 // Each used Harness's doctor, once however many Vertices run on it (Q1 A, G15): a failed check is one Problem at no
 // configuration path, as the State Database's is, an error or a warning as the check says; a passed one is added to
@@ -219,9 +223,8 @@ async function doctorProblems(
 ) {
   for (const [harnessName, agents] of used) {
     const harness = harnesses[harnessName] as PreflightHarness;
-    // shortcut: a shipped Harness builds no doctor until its slice, so it has no checks to run; drop this in #482,
-    // which needs the last one's doctor (#484) once it builds that Harness's run.
-    if (!harness.doctor) continue;
+    // A Harness the contract check refuses is preflight's error at each of its Vertices, so its doctor does not run.
+    if (!passesContract(harness)) continue;
     let checks: runContext.DoctorCheck[];
     try {
       ({ checks } = await harness.doctor({ probe, agents }));

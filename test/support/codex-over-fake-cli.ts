@@ -68,14 +68,17 @@ function recordingsFor(t: TestContext, scenarios: string[], stream: FakeCodex['s
   return directory;
 }
 
-// Where Codex wrote the recording's rollout, from `sessions` on, under the fake's Codex home; none when the recording
-// has no rollout or the case leaves it out.
+// Where Codex wrote the recording's rollout, from `sessions` on, under the fake's Codex home, copied from beside the
+// recording's copy, whose path holds a space as every path a launch carries must; none for a listing, a recording
+// with no rollout, or a case that leaves it out.
 const rolloutOf =
   (written: boolean): cliReplay.TranscriptOf =>
-  ({ recording, home }) => {
+  ({ launched, recording, home }) => {
     const { scenario, rolloutPath } = recordedCall(`${recording}.json`);
-    const from = join(RECORDINGS, `${scenario}.rollout.jsonl`);
-    if (!written || rolloutPath === null || !existsSync(from)) return null;
+    const recorded = join(RECORDINGS, `${scenario}.rollout.jsonl`);
+    if (!written || launched.args[0] !== 'exec' || rolloutPath === null || !existsSync(recorded)) return null;
+    const from = `${recording}.rollout.jsonl`;
+    copyFileSync(recorded, from);
     const parts = rolloutPath.split(/[\\/]/);
     return { path: join(home, ...parts.slice(parts.indexOf('sessions'))), from };
   };

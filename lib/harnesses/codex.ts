@@ -1,15 +1,14 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import * as config from '../config.ts';
-import * as commandCleanup from '../command-cleanup.ts';
 import type * as exec from '../exec.ts';
 import type * as model from '../model.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
 import * as cliDoctor from './cli-doctor.ts';
 import * as codexDoctor from './codex-doctor.ts';
-import * as contract from './contract.ts';
 import * as codexPlugins from './codex-plugins.ts';
+import * as codexRun from './codex-run.ts';
 import * as codexSkills from './codex-skills.ts';
 
 // The doctor's sandbox command, for scripts/record-codex.ts to record as the doctor runs it (#484 D2 A).
@@ -234,16 +233,6 @@ function matched(home: string, tools: CodexTools, listings: Listings) {
   return { errors, plugins, appsOff };
 }
 
-// The skills an Agent declares, each a folder of the user's skills folder, and every one not found there (D2 A).
-function declaredSkills(skillsFolder: string, declared: unknown) {
-  const names = isStrings(declared) ? declared : [];
-  const lookedUp = names.map((name) => [name, codexSkills.skillAt(join(skillsFolder, name))] as const);
-  return {
-    skills: lookedUp.flatMap(([, skill]) => skill ?? []),
-    errors: lookedUp.flatMap(([name, skill]) => (skill ? [] : [`skill ${name} is not in ${skillsFolder}`])),
-  };
-}
-
 // The skills a call may use: Codex's bundled ones, the Agent's declared ones and each listed plugin's, named as Codex
 // names a plugin's skill (D2 A).
 // shortcut: a plugin's skills are read from its skills/ folder, the path each of gg's installed plugins' manifests
@@ -283,7 +272,7 @@ const profileKeys = (cwd: string) => [
 function launchArgsIn(homes: Homes, call: CodexCall, tools: CodexTools, listings: Listings): Launch {
   const home = homes.codexHome;
   const { errors, plugins, appsOff } = matched(home, tools, listings);
-  const declared = declaredSkills(homes.skillsHome, call.agent.skills);
+  const declared = codexSkills.declared(homes.skillsHome, call.agent.skills);
   errors.push(...declared.errors);
   if (errors.length) throw new Error(errors.join('; '));
   const access = call.access === 'workspace-write' ? 'workspace-write' : 'read-only';
@@ -362,7 +351,7 @@ async function validateIn(listOnce: () => Promise<Listings>, homes: Homes, agent
     fields[field] === undefined || isStrings(fields[field]) ? [] : [`${field} must be a list of names`],
   );
   const tools = resolveTools(agent);
-  if (!errors.length) errors.push(...declaredSkills(homes.skillsHome, fields.skills).errors);
+  if (!errors.length) errors.push(...codexSkills.declared(homes.skillsHome, fields.skills).errors);
   if (!errors.length && (tools.plugins.length || tools.mcp.length)) {
     try {
       errors.push(...matched(homes.codexHome, tools, await listOnce()).errors);
@@ -377,21 +366,9 @@ const notImplemented = (): never => {
   throw new Error('not implemented');
 };
 
-// shortcut: Red's stub of one Attempt through codex exec, a failed call that starts nothing; Green builds it (#482).
-const runIn = (_runner: Runner, _homes: Homes, _call: unknown): ReturnType<runContext.Harness['run']> => {
-  const usage = { cumulative: contract.emptyUsage(capabilities), delta: contract.emptyUsage(capabilities) };
-  const result = {
-    status: 'completed' as const,
-    sessionId: null,
-    transcriptPath: null,
-    usage,
-    cleanup: commandCleanup.NO_COMMAND,
-  };
-  return Promise.resolve({ response: null, result, failure: null });
-};
-
-// The members built from the exec shipped.ts is given: run (#482), validate, which lists what Codex has installed
-// once per preflight, and doctor (#484); interactiveArgs and metrics throw "not implemented" until their slices.
+// The members built from the exec shipped.ts is given: run (#482, lib/harnesses/codex-run.ts), validate, which lists
+// what Codex has installed once per preflight, a listing each call's launch reuses, and doctor (#484); interactiveArgs
+// and metrics throw "not implemented" until their slices.
 export const createCli = (
   runner: Runner,
   { codexHome: home = codexHome(), skillsHome: skills = skillsHome() }: Partial<Homes> = {},
@@ -399,8 +376,10 @@ export const createCli = (
   let listing: Promise<Listings> | undefined;
   const listOnce = () => (listing ??= list(runner, home));
   const homes = { codexHome: home, skillsHome: skills };
+  const launch = async (call: codexRun.RunCall) => launchArgsIn(homes, call, call.tools, await listOnce());
   return {
-    run: (call: Record<string, unknown>, _hooks: runContext.HarnessHooks) => runIn(runner, homes, call),
+    run: (call: Record<string, unknown>, hooks: runContext.HarnessHooks) =>
+      codexRun.run(runner, { codexHome: home, launch }, call as unknown as codexRun.RunCall, hooks),
     interactiveArgs: notImplemented as (agent: unknown, opening: string, options?: unknown) => string[],
     metrics: notImplemented as (session: string) => null,
     validate: (agent: unknown) => validateIn(listOnce, homes, agent),
