@@ -10,8 +10,11 @@ import * as jobWatcher from './job-watcher.ts';
 // job's watcher and termination (lib/job-watcher.ts) and taskkill; and the helper processes that list and kill (exec.ts
 // runs the command).
 
-// How often both watchers poll: a Windows snapshot costs about 38 ms, about 11% of one core at this gap (#531).
+// How often the POSIX watcher polls.
 const POLL_GAP_MS = 250;
+// How often the Windows watcher polls: a snapshot costs about 38 ms, about 4% of one core at this gap against 11% at
+// 250 ms, and at 250 ms concurrent commands' watchers delayed gg's own timers under load (#531).
+const WINDOWS_POLL_GAP_MS = 1000;
 // How long a killed process group may take to empty before cleanup says it could not confirm that. SIGKILL takes effect
 // at once, so what is left past this is stuck in the kernel, or a zombie nothing reaps (a container with no init).
 const GROUP_EXIT_WAIT_MS = 30_000;
@@ -108,7 +111,7 @@ export type Watcher = ReturnType<typeof watchDescendants>;
 // A command's watcher: its job's on Windows, the POSIX one over its descendants, or none for an uncontained Windows
 // command or a spawn that failed.
 export function watch({ child, job }: containment.Started, kernel32: containment.Kernel32 | null) {
-  if (job && kernel32) return jobWatcher.watch(job, kernel32, POLL_GAP_MS);
+  if (job && kernel32) return jobWatcher.watch(job, kernel32, WINDOWS_POLL_GAP_MS);
   return process.platform === 'win32' || !child.pid ? null : watchDescendants(child.pid);
 }
 

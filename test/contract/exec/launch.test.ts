@@ -172,16 +172,18 @@ test('output that arrives while onIdle is pending re-arms the stall clock', CASE
   // b reaching gg before the stall check asks onIdle would pass without testing the rule, so the case records it
   let idlePending = false;
   let bWhilePending = false;
+  // the child prints b once onIdle has written go, an event rather than a time (docs/testing.md rule 1)
+  const go = join(scratch, 'pending-output.go');
+  const printB = "console.log('b'); setTimeout(() => process.exit(0), 300);";
+  const waitForGo = `if (require('fs').existsSync(${JSON.stringify(go)})) { clearInterval(poll); ${printB} }`;
   const result = await launch({
     command: process.execPath,
-    args: [
-      '-e',
-      "console.log('a'); setTimeout(() => { console.log('b'); setTimeout(() => process.exit(0), 300); }, 2500);",
-    ],
+    args: ['-e', `console.log('a'); const poll = setInterval(() => { ${waitForGo} }, 20);`],
     stallMs: 2000,
     onLine: (line) => line === 'b' && ((bWhilePending = idlePending), sawB()),
     onIdle: async () => {
       idlePending = true;
+      writeFileSync(go, '');
       await seenB;
       return null;
     },
