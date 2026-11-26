@@ -177,6 +177,7 @@ for (const site of SITES) {
     t.after(() => processProbe.endProcessIn(pidFile));
     const { kernel32 } = kernel32Doubles.breakawayJobs(['gg-job', 'new-job', 'terminate']);
     const { cleanup } = await site.finishes(kernel32, gitBash.backgroundNode(pidFile));
+    t.after(() => cleanup.closeJob?.());
     const escapee = pidIn(pidFile);
     assert.equal(cleanup.confirmed, false, JSON.stringify(cleanup));
     const survivor = cleanup.survivors.find((listed) => listed.pid === escapee);
@@ -191,6 +192,7 @@ for (const site of SITES) {
     t.after(() => processProbe.endProcessIn(pidFile));
     const { kernel32 } = kernel32Doubles.breakawayJobs(['gg-job', 'terminate']);
     const { cleanup } = await site.finishes(kernel32, gitBash.backgroundNode(pidFile));
+    t.after(() => cleanup.closeJob?.());
     const escapee = pidIn(pidFile);
     assert.equal(cleanup.confirmed, false, JSON.stringify(cleanup));
     assert.ok(alive(escapee), 'refused, it runs on');
