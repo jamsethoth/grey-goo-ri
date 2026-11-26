@@ -461,3 +461,18 @@ test('childInJob: an argv that ends printing no pid says so, with what it printe
     { lines: ['no pid'], pid: null, inJob: null, failure: 'string' },
   );
 });
+
+// A Harness never rejects for an expected failure (docs/interfaces/harness.md), so a refused cleanup is the probe's
+// failure.
+test(
+  'childInJob: a job that refuses termination gives a failure naming it, not a rejection',
+  options.WIN_CASE,
+  async () => {
+    const seen = await exec
+      .createExec({ kernel32: kernel32Doubles.withKernel32({ TerminateJobObject: () => 0 }) })
+      .childInJob({ command: process.execPath, args: ['-e', 'console.log(process.pid)'] });
+    assert.equal(seen.pid, null, JSON.stringify(seen));
+    assert.equal(seen.inJob, null);
+    assert.match(seen.failure ?? '', /TerminateJobObject/);
+  },
+);

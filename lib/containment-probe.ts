@@ -61,13 +61,20 @@ export const childInJob =
     const wall = setTimeout(() => fail(`${command} printed no pid within ${wallMs} ms`), wallMs);
     const result = await seen;
     clearTimeout(wall);
-    // The gate's own libuv job ends the argv with it when gg's could not be made.
-    if (job) job.terminate();
-    else child.kill();
-    await job?.emptied();
-    job?.close();
-    // An escaped child can hold the pipes for as long as it runs.
-    stdout.destroy();
-    stderr.destroy();
-    return result;
+    try {
+      // The gate's own libuv job ends the argv with it when gg's could not be made.
+      if (job) job.terminate();
+      else child.kill();
+      await job?.emptied();
+      job?.close();
+      return result;
+    } catch (err) {
+      // A job not confirmed empty keeps its handle, as process-tree.ts's terminateJob does: kill-on-close ends it at
+      // gg's exit.
+      return { ...result, pid: null, inJob: null, failure: `gg's job could not be ended: ${(err as Error).message}` };
+    } finally {
+      // An escaped child can hold the pipes for as long as it runs.
+      stdout.destroy();
+      stderr.destroy();
+    }
   };
