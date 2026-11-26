@@ -210,7 +210,7 @@ function launch(kernel32: containment.Kernel32 | null, options: LaunchOptions): 
       if (exited) return giveUp();
       if (stopped || !child.pid) return; // no pid: the spawn failed, and its error rejects the launch
       stopped = why;
-      watcher?.stop();
+      void watcher?.stop(); // ends the snapshots now; takeDown joins their thread (#531)
       const { survivors, cleanupErrors } = await processTree.takeDown(started, kernel32, watcher, {});
       if (survivors.length) reportStarted();
       else await started.spawned;
@@ -236,7 +236,7 @@ function launch(kernel32: containment.Kernel32 | null, options: LaunchOptions): 
     child.on('exit', async (code: number | null, signal: NodeJS.Signals | null) => {
       if (stopped) return;
       exited = true;
-      watcher?.stop();
+      void watcher?.stop(); // ends the snapshots now; settle joins their thread (#531)
       await started.spawned;
       const settled = await processTree.settle(started, kernel32, watcher, {});
       if (!(await Promise.race([closed.then(() => true), gaveUp.then(() => false)])))
@@ -365,7 +365,7 @@ function shell(
     const stopClock = startClock({ timeoutMs, signal: testHooks.signal, timers: testHooks.timers }, async () => {
       if (exited) return giveUp();
       timedOut = true; // the kill makes 'exit' and 'close' fire first; the timeout result below wins
-      watcher?.stop();
+      void watcher?.stop(); // ends the snapshots now; takeDown joins their thread (#531)
       const { survivors, cleanupErrors } = await processTree.takeDown(started, kernel32, watcher, testHooks);
       for (const pipe of pipesOf(child)) pipe.destroy(); // orphans may still hold the pipes
       const taken = { survivors, cleanupErrors };
@@ -382,7 +382,7 @@ function shell(
       if (timedOut) return;
       exited = true;
       testHooks.onExit?.();
-      watcher?.stop();
+      void watcher?.stop(); // ends the snapshots now; settle joins their thread (#531)
       const settled = await processTree.settle(started, kernel32, watcher, testHooks);
       // With no leftover alive every writer is gone, so the pipes close once read to the end, and a line that arrived
       // late is still read. A process that left the containment can hold them on; holding them is how it shows.
