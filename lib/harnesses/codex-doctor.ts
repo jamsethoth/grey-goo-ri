@@ -45,7 +45,7 @@ const PROBE_SCHEMA = {
 };
 
 // The launch profile's argv, environment and files for a probe's call (codex.ts builds it).
-export type ProfileLaunch = (call: codex.CodexCall) => codex.Launch;
+export type ProfileLaunch = (call: codex.CodexCall) => Promise<codex.Launch>;
 
 type Runner = Pick<exec.Exec, 'launch'>;
 type Check = runContext.DoctorCheck;
@@ -146,13 +146,21 @@ const probes = (runner: Runner, home: string, profile: ProfileLaunch) =>
     // shortcut: exec starts only inside a git repository, which Codex finds by a .git above the cwd, so an empty one
     // stands in for git init; run git init should Codex read the repository.
     mkdirSync(join(cwd, '.git'), { recursive: true });
-    const launch = (call: codex.CodexCall, input: string) => {
-      const launched = profile(call);
+    const launch = async (call: codex.CodexCall, input: string) => {
+      const launched = await profile(call);
       for (const [path, text] of Object.entries(launched.files)) writeFileSync(path, text);
       return said(runner, home, launched.argv, { cwd, env: launched.env, input, wallMs: cliDoctor.PROBE_WALL_MS });
     };
     const call = { agent: PROBE_AGENT, schema: PROBE_SCHEMA, cwd, runDirectory: directory, access: 'read-only' };
-    const ran = await launch({ ...call, marker: 'profile-probe', resume: null }, PROBE_BRIEF);
+    let ran: cliDoctor.Said;
+    try {
+      ran = await launch({ ...call, marker: 'profile-probe', resume: null }, PROBE_BRIEF);
+    } catch (err) {
+      // The profile launches over the listing, whose failure is the probe's and leaves the cheap checks standing.
+      return [
+        cliDoctor.failed('profile-probe', `the launch profile's call could not start: ${(err as Error).message}`),
+      ];
+    }
     const profileChecked = probeCheck(
       'profile-probe',
       "the launch profile's call",
@@ -160,19 +168,27 @@ const probes = (runner: Runner, home: string, profile: ProfileLaunch) =>
       'the launch profile answered under MXC in its output schema',
     );
     const { threadId } = streamOf(ran.lines);
-    if (!profileChecked.ok || threadId === null) return [profileChecked];
+    if (!profileChecked.ok) return [profileChecked];
+    if (threadId === null)
+      return [
+        profileChecked,
+        cliDoctor.failed('resume-probe', "the launch profile's call named no thread, so there is none to resume"),
+      ];
     const resumed = await launch({ ...call, marker: 'resume-probe', resume: threadId }, RESUME_BRIEF);
     const resumedThread = streamOf(resumed.lines).threadId;
-    const resumeChecked =
-      resumedThread !== null && resumedThread !== threadId
-        ? cliDoctor.failed('resume-probe', `codex exec resume ${threadId} ran thread ${resumedThread} instead`)
-        : probeCheck(
-            'resume-probe',
-            'codex exec resume',
-            resumed,
-            `codex exec resume continued thread ${threadId} in its output schema`,
-          );
-    return [profileChecked, resumeChecked];
+    const checked = probeCheck(
+      'resume-probe',
+      'codex exec resume',
+      resumed,
+      `codex exec resume continued thread ${threadId} in its output schema`,
+    );
+    const ranInstead = resumedThread === null ? 'named no thread' : `ran thread ${resumedThread} instead`;
+    return [
+      profileChecked,
+      !checked.ok || resumedThread === threadId
+        ? checked
+        : cliDoctor.failed('resume-probe', `codex exec resume ${threadId} ${ranInstead}`),
+    ];
   });
 
 // The cheap checks, then under probe the model probes. A CLI that cannot start is the one failure: the checks that

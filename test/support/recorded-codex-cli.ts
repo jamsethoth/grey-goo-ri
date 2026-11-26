@@ -48,14 +48,17 @@ export const OLD_VERSION = '0.170.0';
 
 // How a case changes the CLI that answers, beside the launch's own changes: the version --version prints, the
 // logged-out recording for login status, the sandbox command failing as an unknown sandbox value did or exiting 0 with
-// no marker line as the cmd recording did, and the exec recording a model call replays: the profile probe's, and the
-// resume probe's.
+// no marker line as the cmd recording did, the exec recording a model call replays: the profile probe's, and the
+// resume probe's, and the one of them whose stream lost its thread.started line; and the MCP servers the server listing
+// names in place of the recorded none.
 export interface CodexState extends cliReplay.LaunchState {
   version?: string;
   loggedOut?: boolean;
   sandbox?: 'unavailable' | 'no-marker';
   profile?: string;
   resume?: string;
+  unthreaded?: 'profile' | 'resume';
+  servers?: string[];
 }
 
 const sameArgv = (left: readonly string[], right: readonly string[]) =>
@@ -63,8 +66,16 @@ const sameArgv = (left: readonly string[], right: readonly string[]) =>
 
 // An exec recording's stream and exit code.
 function modelCall(args: readonly string[], state: CodexState): cliReplay.Answer {
-  const name = args.includes('resume') ? (state.resume ?? 'resume-flags-before') : (state.profile ?? 'start');
-  const stdout = readFileSync(new URL(`${name}.jsonl`, FIXTURES), 'utf8');
+  const call = args.includes('resume') ? 'resume' : 'profile';
+  const name = call === 'resume' ? (state.resume ?? 'resume-flags-before') : (state.profile ?? 'start');
+  const recorded = readFileSync(new URL(`${name}.jsonl`, FIXTURES), 'utf8');
+  const stdout =
+    state.unthreaded === call
+      ? recorded
+          .split('\n')
+          .filter((line) => !line.includes('"thread.started"'))
+          .join('\n')
+      : recorded;
   const { exitCode, stderr } = JSON.parse(readFileSync(new URL(`${name}.json`, FIXTURES), 'utf8')) as {
     exitCode: number;
     stderr: string;
@@ -77,8 +88,19 @@ function sandboxAnswer(state: CodexState): cliReplay.Answer {
   return recordedCommand(state.sandbox === 'no-marker' ? 'cli-sandbox-mxc-no-marker' : 'cli-sandbox-mxc');
 }
 
+// The server listing as codex.ts's list starts it; its recording left out the -c, which changes nothing here.
+const MCP_LIST_ARGV = ['mcp', 'list', '--json', '-c', 'features.plugins=false'];
+
+function serverListing(state: CodexState): cliReplay.Answer {
+  const recorded = recordedCommand('cli-mcp-list');
+  if (state.servers === undefined) return recorded;
+  return { ...recorded, stdout: JSON.stringify(state.servers.map((name) => ({ name, enabled: true }))) };
+}
+
 export function answer(args: readonly string[], state: CodexState = {}): cliReplay.Answer {
   if (args[0] === 'exec') return modelCall(args, state);
+  if (sameArgv(args, ['plugin', 'list', '--json'])) return recordedCommand('cli-plugin-list');
+  if (sameArgv(args, MCP_LIST_ARGV)) return serverListing(state);
   if (sameArgv(args, ['--version'])) {
     const recorded = recordedCommand('cli-version');
     return state.version === undefined ? recorded : { ...recorded, stdout: `codex-cli ${state.version}\n` };

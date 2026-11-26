@@ -597,6 +597,19 @@ test('gg doctor --probe asks no copy when the hand-off probe failed', async () =
   );
 });
 
+// The fork probe copies the profile probe's Session, so a profile call that names none fails it instead of skipping it.
+test('a profile probe whose init line names no Session fails the fork probe', async () => {
+  const { fork, launches } = await probeChecks({
+    profile: eachLine((line) => (isInit(line) ? { ...line, session_id: undefined } : line)),
+  });
+  assert.equal(fork?.ok, false, fork?.message ?? 'no fork-probe check');
+  assert.equal(fork.severity, 'error');
+  assert.deepEqual(
+    launches.filter(({ args }) => args.includes('--fork-session')),
+    [],
+  );
+});
+
 const pluralOf = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 // #494, Q1 A and Q2 A: every check the Claude Harness's doctor reports, read from the doctor itself in each state of

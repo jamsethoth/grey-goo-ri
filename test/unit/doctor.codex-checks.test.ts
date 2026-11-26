@@ -294,3 +294,47 @@ test('a failed profile probe is an error and runs no resume probe', async (t) =>
     [],
   );
 });
+
+// D17 A of #481: only the Agent's listing turns a configured server on, so the probes launch over the listing a Run's
+// call gets, which switches off each server the probe Agent does not list, and the plugins with it.
+test('under --probe both probe calls switch off each configured MCP server and the plugins', async (t) => {
+  const { launches } = await codexDoctor(t, { servers: ['playwright'] }, { probe: true });
+  const calls = launches.filter(({ args }) => isModelCall(args));
+  assert.equal(calls.length, 2, JSON.stringify(calls.map(({ args }) => args)));
+  for (const { args } of calls) {
+    assert.ok(args.includes('mcp_servers={"playwright"={enabled=false}}'), JSON.stringify(args));
+    assert.equal(args[args.indexOf('--disable') + 1], 'plugins', JSON.stringify(args));
+  }
+});
+
+test('a listing that fails under --probe fails the profile probe, naming its command', async (t) => {
+  const { named, launches } = await codexDoctor(t, { fails: 'mcp' }, { probe: true });
+  const profile = named('profile-probe');
+  assert.equal(profile?.ok, false, profile?.message ?? 'no profile-probe check');
+  assert.equal(profile.severity, 'error');
+  assert.ok(profile.message.includes('codex mcp list'), profile.message);
+  assert.equal(named('version')?.ok, true, 'the cheap checks still report');
+  assert.deepEqual(
+    launches.filter(({ args }) => isModelCall(args)),
+    [],
+  );
+});
+
+// A resume probe needs the profile probe's thread, so a profile call that names none fails it instead of skipping it.
+test('a profile probe whose stream names no thread fails the resume probe', async (t) => {
+  const { named, launches } = await codexDoctor(t, { unthreaded: 'profile' }, { probe: true });
+  const resume = named('resume-probe');
+  assert.equal(resume?.ok, false, resume?.message ?? 'no resume-probe check');
+  assert.equal(resume.severity, 'error');
+  assert.deepEqual(
+    launches.filter(({ args }) => args.includes('resume')),
+    [],
+  );
+});
+
+test('a resume probe whose stream names no thread fails', async (t) => {
+  const { named } = await codexDoctor(t, { unthreaded: 'resume' }, { probe: true });
+  const resume = named('resume-probe');
+  assert.equal(resume?.ok, false, resume?.message ?? 'no resume-probe check');
+  assert.equal(resume.severity, 'error');
+});

@@ -257,7 +257,12 @@ const profileProbe = (runner: Runner, profile: ProfileLaunch) =>
     const checks = [profileCheck(ran), handoffCheck(ran)];
     // The fork needs a Session that handed off, in the same directory, where the CLI keeps it.
     const { sessionId } = claudeStream.read(ran.lines);
-    if (checks.some(({ ok }) => !ok) || sessionId === null) return checks;
+    if (checks.some(({ ok }) => !ok)) return checks;
+    if (sessionId === null)
+      return [
+        ...checks,
+        cliDoctor.failed('fork-probe', "the launch profile's call named no Session, so none can be copied"),
+      ];
     return [...checks, forkCheck(await launch(forkCall(directory, sessionId), FORK_BRIEF), sessionId)];
   });
 

@@ -379,12 +379,11 @@ export const createCli = (
   const homes = { codexHome: home, skillsHome: skills };
   return {
     validate: (agent: unknown) => validateIn(listOnce, homes, agent),
-    // shortcut: the probes launch with no listing, so a plugin is off and a configured MCP server on; list them should
-    // a probe need the listing a Run's call gets.
+    // The probes launch over the listing a Run's call gets, so a server the probe Agent does not list is off (D17 A).
     doctor: (options: runContext.DoctorOptions) =>
       codexDoctor.doctor(runner, options, {
         home,
-        profile: (call) => launchArgsIn(homes, call, resolveTools(call.agent), { plugins: [], mcp: [] }),
+        profile: async (call) => launchArgsIn(homes, call, resolveTools(call.agent), await listOnce()),
       }),
   };
 };
