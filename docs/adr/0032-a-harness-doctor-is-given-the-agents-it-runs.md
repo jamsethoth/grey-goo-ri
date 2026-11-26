@@ -11,8 +11,10 @@ lists such a plugin has its rewritten commands fail. ADR 0028's `doctor({ probe 
 Agent, so no check could warn of it. The owner decided Clarify's Q4 A and Q5 A on 2026-11-26.
 
 1. **`doctor({ probe, agents })`.** `agents` holds each Agent the admitted Flows' Vertices run on that Harness, once,
-   by the name the Vertices use, as declared (`DoctorOptions`, `lib/run-context.ts`). An Agent no admitted Flow runs is
-   not given. `probe` keeps ADR 0028's meaning.
+   by the name the Vertices use, as declared (`DoctorOptions`, `lib/run-context.ts`). An inline Agent, or one that
+   differs from the Agent already under its name (a Vertex's own keys over it, or the other Source's Agent of that
+   name), is given by `<flow>.<vertex>` of the first Vertex that runs it; an Agent equal to one already given is given
+   once. An Agent no admitted Flow runs is not given. `probe` keeps ADR 0028's meaning.
 2. **Claude's doctor warns** once for each Agent and each plugin it lists that declares a hook able to rewrite a shell
    command before it runs: a `PreToolUse` or `PermissionRequest` hook, in the plugin's `hooks/hooks.json` or its
    `plugin.json`'s `hooks` field (a path, an inline map, or a list of either), whose tool filter matches the

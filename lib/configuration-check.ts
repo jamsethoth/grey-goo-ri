@@ -3,6 +3,7 @@
 // Execution Records whose Flow is gone, and preflight over every admitted Flow's Harnesses. The commands differ only
 // in how they present it, and in gg run's choice of Flow (#362). Both also read the repository's GitHub owner/name.
 import { existsSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 import * as config from './config.ts';
 import type * as github from './github.ts';
 import * as contract from './harnesses/contract.ts';
@@ -146,16 +147,20 @@ interface PreflightHarness {
   doctor?(options: runContext.DoctorOptions): runContext.DoctorReport | Promise<runContext.DoctorReport>;
 }
 
-// Each registered Harness a Vertex's Agent selects, with the Agents the Flows run on it by name, as declared
-// (#484 Q4 A).
+// Each registered Harness a Vertex's Agent selects, with the Agents the Flows run on it, as declared: by the name the
+// Vertices use, or, for an inline Agent or one that differs from the Agent already under its name, by
+// `<flow>.<vertex>` of the first Vertex that runs it; an Agent equal to one already given is given once (#484 D1 A).
 function agentsByHarness(flows: model.DeclaredFlowJson[], harnesses: Record<string, unknown>) {
   const used = new Map<string, Record<string, jsonValue.JsonValue>>();
   for (const flow of flows)
-    for (const { use, agent } of Object.values(flow.ticket.vertices)) {
+    for (const [id, { use, agent }] of Object.entries(flow.ticket.vertices)) {
       const harnessName = referencePaths.isRecord(agent) ? agent.harness : undefined;
-      if (typeof harnessName !== 'string' || !Object.hasOwn(harnesses, harnessName) || typeof use !== 'string')
-        continue;
-      used.set(harnessName, { ...used.get(harnessName), [use]: agent });
+      if (typeof harnessName !== 'string' || !Object.hasOwn(harnesses, harnessName)) continue;
+      const agents = used.get(harnessName) ?? {};
+      used.set(harnessName, agents);
+      if (typeof use === 'string' && !Object.hasOwn(agents, use)) agents[use] = agent;
+      else if (!Object.values(agents).some((given) => isDeepStrictEqual(given, agent)))
+        agents[`${flow.name}.${id}`] = agent;
     }
   return used;
 }

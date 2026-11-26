@@ -10,7 +10,8 @@ interface RecordedCommand extends cliReplay.RecordedCommand {
   stderr: string;
 }
 
-const recordedCommand = (name: string) =>
+// The recorded no-model command `name` (test/fixtures/codex/<name>.json).
+export const recordedCommand = (name: string) =>
   JSON.parse(readFileSync(new URL(`${name}.json`, FIXTURES), 'utf8')) as RecordedCommand;
 
 // Every recorded no-model command, by its argv after the executable.
@@ -22,13 +23,8 @@ export const recordedCommands = (): RecordedCommand[] =>
 // The line doctor's sandbox command prints once it ran under MXC.
 export const MXC_MARKER = 'GG-MXC-PROBE';
 
-// The recorded MXC command, whose Start-Sleep only held it while its processes were listed: doctor's command is the
-// same without it.
-const RECORDED_SANDBOX = recordedCommand('cli-sandbox-mxc').argv;
-export const SANDBOX_ARGV: readonly string[] = [
-  ...RECORDED_SANDBOX.slice(0, -1),
-  RECORDED_SANDBOX.at(-1)!.split(';')[0]!,
-];
+// The recorded MXC command, recorded as doctor runs it (#484 D3 A).
+export const SANDBOX_ARGV: readonly string[] = recordedCommand('cli-sandbox-mxc').argv;
 
 // The argv of each command doctor's cheap mode may start on win32 (the sandbox command only there): none is a model
 // call.
@@ -38,10 +34,8 @@ export const CHEAP_ARGVS: readonly (readonly string[])[] = [
   ...(process.platform === 'win32' ? [SANDBOX_ARGV] : []),
 ];
 
-// Whether a recording answers `args`: one whose argv is the same, or the recorded MXC command for doctor's, which is
-// that command less its Start-Sleep.
-export const isRecorded = (args: readonly string[]) =>
-  recordedCommands().some(({ argv }) => sameArgv(argv, args)) || sameArgv(args, SANDBOX_ARGV);
+// Whether a recording answers `args`: one whose argv is the same.
+export const isRecorded = (args: readonly string[]) => recordedCommands().some(({ argv }) => sameArgv(argv, args));
 
 // A version below the pinned minimum, 0.171.0, the version #479's recordings came from.
 export const OLD_VERSION = '0.170.0';

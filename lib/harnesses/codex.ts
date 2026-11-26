@@ -10,6 +10,9 @@ import * as codexDoctor from './codex-doctor.ts';
 import * as codexPlugins from './codex-plugins.ts';
 import * as codexSkills from './codex-skills.ts';
 
+// The doctor's sandbox command, for scripts/record-codex.ts to record as the doctor runs it (#484 D2 A).
+export { SANDBOX_ARGS } from './codex-doctor.ts';
+
 // The paths that configure Codex, which gg protects from every agent (request 3.2).
 export const protectedPaths: string[] = ['.codex/', 'AGENTS.md'];
 

@@ -1,7 +1,7 @@
 {
   "cliVersion": "codex-cli 0.171.0",
   "command": "cli-sandbox-mxc",
-  "purpose": "#484: a PowerShell command under MXC, in gg's CODEX_HOME, as doctor's sandbox check runs it; its Start-Sleep held it while its processes were listed (evidence.job), which doctor's command leaves out",
+  "purpose": "#484: doctor's sandbox command, a PowerShell command under MXC in gg's CODEX_HOME that prints its marker line",
   "argv": [
     "sandbox",
     "-c",
@@ -10,7 +10,7 @@
     "powershell.exe",
     "-NoProfile",
     "-Command",
-    "Write-Output GG-MXC-PROBE; Start-Sleep -Seconds 8"
+    "Write-Output GG-MXC-PROBE"
   ],
   "home": "gg",
   "repository": "plain",
@@ -21,72 +21,7 @@
   "evidence": {
     "job": {
       "contained": true,
-      "whileMarked": {
-        "jobMembers": [
-          {
-            "pid": 96736,
-            "exe": "node.exe",
-            "commandLine": "\"C:\\Program Files\\nodejs\\node.exe\" <gg>\\lib\\containment-gate.ts"
-          },
-          {
-            "pid": 89980,
-            "exe": "conhost.exe",
-            "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
-          },
-          {
-            "pid": 73348,
-            "exe": "codex.exe",
-            "commandLine": "codex sandbox -c \"windows.sandbox=\\\"mxc\\\"\" -- powershell.exe -NoProfile -Command \"Write-Output GG-MXC-PROBE; Start-Sleep -Seconds 8\""
-          },
-          {
-            "pid": 48220,
-            "exe": "codex.exe",
-            "commandLine": "\"<home>\\.codex\\packages\\standalone\\current\\bin\\codex.exe\" --__codex-windows-mxc <home>\\.agents\\gg\\codex"
-          },
-          {
-            "pid": 5804,
-            "exe": "powershell.exe",
-            "commandLine": "powershell.exe -NoProfile -Command \"Write-Output GG-MXC-PROBE; Start-Sleep -Seconds 8\""
-          },
-          {
-            "pid": 102348,
-            "exe": "conhost.exe",
-            "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
-          }
-        ],
-        "markerProcesses": [
-          {
-            "pid": 102224,
-            "exe": "bash.exe",
-            "inJob": false
-          },
-          {
-            "pid": 91292,
-            "exe": "bash.exe",
-            "inJob": false
-          },
-          {
-            "pid": 16484,
-            "exe": "timeout.exe",
-            "inJob": false
-          },
-          {
-            "pid": 18736,
-            "exe": "timeout.exe",
-            "inJob": false
-          },
-          {
-            "pid": 73348,
-            "exe": "codex.exe",
-            "inJob": true
-          },
-          {
-            "pid": 5804,
-            "exe": "powershell.exe",
-            "inJob": true
-          }
-        ]
-      },
+      "whileMarked": null,
       "afterKill": null,
       "leftAfterExit": []
     }

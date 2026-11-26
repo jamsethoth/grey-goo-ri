@@ -11,6 +11,7 @@ import * as github from '../../lib/github.ts';
 import * as cliDoctor from '../../lib/harnesses/cli-doctor.ts';
 import * as codex from '../../lib/harnesses/codex.ts';
 import * as shipped from '../../lib/harnesses/shipped.ts';
+import * as recordCodexCommands from '../../scripts/record-codex-commands.ts';
 import * as caseEnv from '../support/case-env.ts';
 import * as exampleSource from '../support/example-source.ts';
 import * as fakeGh from '../support/fake-gh.ts';
@@ -203,6 +204,19 @@ test("every cheap command the Codex doctor starts runs in gg's CODEX_HOME and is
   for (const { args, env } of launches) {
     assert.equal(env?.CODEX_HOME, codex.codexHome(), `codex ${args.join(' ')} runs in gg's CODEX_HOME`);
     assert.ok(recordedCodexCli.isRecorded(args), `codex ${args.join(' ')} has a recording in test/fixtures/codex/`);
+  }
+});
+
+// D3 A of #484: each cheap command's recording was made from the recorder's one entry for it in gg's CODEX_HOME, with
+// the argv the doctor starts, so a re-record records what the doctor runs.
+test('each cheap command the Codex doctor starts is recorded from its recorder entry, argv for argv', async (t) => {
+  const { launches } = await codexDoctor(t);
+  for (const { args } of launches) {
+    const entries = recordCodexCommands.COMMANDS.filter(
+      ({ argv, home = 'gg', profile, trusted }) => home === 'gg' && !profile && !trusted && sameArgv(argv, args),
+    );
+    assert.equal(entries.length, 1, `the recorder lists codex ${args.join(' ')} once in gg's CODEX_HOME`);
+    assert.deepEqual(recordedCodexCli.recordedCommand(entries[0]!.name).argv, args, `${entries[0]!.name}'s argv`);
   }
 });
 
