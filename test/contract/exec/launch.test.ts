@@ -191,12 +191,14 @@ test("onIdle's last activity re-arms the stall clock for what is left of stallMs
   assert.deepEqual({ timedOut: result.timedOut, asks }, { timedOut: 'stall', asks: [3000, 3200] });
 });
 
-// onIdle, asked at the 2000 ms stall, writes go, waits to see b, which the child prints on go and then stays quiet, and
-// takes `waited` ms more on the case's clock before it answers. The clock re-arms from b for what is left of stallMs:
-// it asks again at 4000 when 500 ms were taken, and stops at once when 2100 were, where the rule's breach (re-arming
-// from the ask, or for a full stallMs) would ask at another time or not stop.
+// onIdle, asked at the 2000 ms stall, moves the case's clock 300 ms and writes go, so b, which the child prints on go
+// and then stays quiet, comes 300 ms after the ask; onIdle waits to see b and takes `waited` ms more before it answers.
+// The clock re-arms from b for what is left of stallMs: it asks again at 4300 when 500 or 1800 ms were taken, and stops
+// at once when 2100 were. Re-arming from the ask would stop at once in the 1800 row, and re-arming for a full stallMs
+// from the answer would not stop at once in the 2100 row.
 for (const { waited, rest, expected } of [
-  { waited: 500, rest: 1500, expected: { timedOut: 'stall', asks: [2000, 4000] } },
+  { waited: 500, rest: 1500, expected: { timedOut: 'stall', asks: [2000, 4300] } },
+  { waited: 1800, rest: 200, expected: { timedOut: 'stall', asks: [2000, 4300] } },
   { waited: 2100, rest: 0, expected: { timedOut: 'stall', asks: [2000] } },
 ])
   test(
@@ -215,6 +217,7 @@ for (const { waited, rest, expected } of [
       const asks: number[] = [];
       const answers = [
         async () => {
+          clock.tick(300);
           writeFileSync(go, '');
           await seenB;
           clock.tick(waited);
