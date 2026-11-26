@@ -12,24 +12,27 @@ import * as containment from './containment.ts';
 export function watch(job: containment.Job, kernel32: containment.Kernel32, gapMs: number) {
   const linked: commandCleanup.Linked = new Map();
   const poll = () => {
-    const starts = new Map<number, bigint | null>();
+    const starts = new Map<number, bigint | 'closed' | null>();
     const startOf = (pid: number) => {
       if (!starts.has(pid)) starts.set(pid, containment.startOf(kernel32, pid));
-      return starts.get(pid) as bigint | null;
+      return starts.get(pid) ?? null;
     };
     try {
       const entries = containment.processes(kernel32);
-      const toLink = commandCleanup.newlyLinked(linked, job.members(), entries, {
-        selfPid: process.pid,
-        startOf,
-        exited: job.exited,
-      });
+      const members = job.members();
+      const watchReads = { selfPid: process.pid, startOf, exited: job.exited };
+      const toLink = commandCleanup.newlyLinked(linked, members, entries, watchReads);
+      const closed = commandCleanup.closedLinked(linked, members, entries, watchReads);
       for (const entry of entries) {
+        const { pid, parentPid } = entry;
         // a linked pid gg could not open, or whose handle has signalled, is never held twice
-        if (!toLink.includes(entry.pid) || linked.has(entry.pid)) continue;
+        if (linked.has(pid)) continue;
+        // closed to gg: named at cleanup, never ended (#531 decision 1)
+        if (closed.includes(pid))
+          linked.set(pid, { ...containment.describe(kernel32, pid), parentPid, started: null, held: false });
         // held only if it is still the process linked at this start
-        const held = job.hold(entry, starts.get(entry.pid) as bigint);
-        if (held) linked.set(entry.pid, held);
+        const held = toLink.includes(pid) ? job.hold(entry, starts.get(pid) as bigint) : null;
+        if (held) linked.set(pid, held);
       }
     } catch {} // a snapshot or a job that cannot be read links nothing this time; the job's termination says the rest
   };

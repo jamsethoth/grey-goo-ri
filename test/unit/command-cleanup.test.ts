@@ -161,6 +161,30 @@ test('a linked process gg could not open is a survivor, neither ended nor confir
   );
 });
 
+test("a member's child whose start is closed to gg is named closed, not linked, and never seeds its own child", () => {
+  // the job holds ROOT; 201, started by it, is closed to gg, and 202 is 201's own child
+  const entries = [entryOf(ROOT, 1), entryOf(201, ROOT), entryOf(202, 201)];
+  const startOf: commandCleanup.StartOf = (pid) =>
+    pid === 201 ? 'closed' : startsOf({ 1: 1n, [ROOT]: 20n, 202: 40n })(pid);
+  const watch = { selfPid: SELF, startOf, exited: () => false };
+  assert.deepEqual(commandCleanup.newlyLinked(new Map(), [ROOT], entries, watch), []);
+  assert.deepEqual(commandCleanup.closedLinked(new Map(), [ROOT], entries, watch), [201]);
+  const linked: commandCleanup.Linked = new Map([
+    [201, { pid: 201, created: null, commandLine: null, parentPid: ROOT, started: null, held: false }],
+  ]);
+  assert.deepEqual(commandCleanup.newlyLinked(linked, [ROOT], entries, watch), []);
+  assert.deepEqual(commandCleanup.closedLinked(linked, [ROOT], entries, watch), []);
+});
+
+test("a held process's start is the one it was linked at, so its child links though its start is now closed", () => {
+  const linked: commandCleanup.Linked = new Map([[201, heldOf(201, ROOT, 30n)]]);
+  const entries = [entryOf(ROOT, 1), entryOf(201, ROOT), entryOf(202, 201)];
+  const startOf: commandCleanup.StartOf = (pid) =>
+    pid === 201 ? 'closed' : startsOf({ 1: 1n, [ROOT]: 20n, 202: 40n })(pid);
+  const watch = { selfPid: SELF, startOf, exited: () => false };
+  assert.deepEqual(commandCleanup.newlyLinked(linked, [ROOT], entries, watch), [202]);
+});
+
 test(
   "a seen descendant's pid reused between two polls by an unrelated process is not linked, adopted or ended, " +
     'on Windows',

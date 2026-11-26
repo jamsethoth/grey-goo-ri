@@ -155,27 +155,21 @@ export function growTree(
 // Windows parent pid is not cleared when the parent ends and can be reused, so a process joins only if it started no
 // earlier than the parent it names (#297). One whose start cannot be read, gone or closed to gg, is left out, with what
 // it started. startOf gives a process's start as a FILETIME.
-export const linkedPids = (
-  rootPid: number,
-  entries: ProcessEntry[],
-  selfPid: number,
-  startOf: (pid: number) => bigint | null,
-): number[] => linkedFrom([rootPid], entries, selfPid, startOf);
+export const linkedPids = (rootPid: number, entries: ProcessEntry[], selfPid: number, startOf: StartOf): number[] =>
+  linkedFrom([rootPid], entries, selfPid, startOf);
 
-function linkedFrom(
-  seeds: number[],
-  entries: ProcessEntry[],
-  selfPid: number,
-  startOf: (pid: number) => bigint | null,
-): number[] {
-  const starts = new Map<number, bigint | null>();
+// A process's start as a FILETIME; 'closed' for one running that gg may not open, null for one gone.
+export type StartOf = (pid: number) => bigint | 'closed' | null;
+
+function linkedFrom(seeds: number[], entries: ProcessEntry[], selfPid: number, startOf: StartOf): number[] {
+  const starts = new Map<number, bigint | 'closed' | null>();
   const started = (pid: number) => {
     if (!starts.has(pid)) starts.set(pid, startOf(pid));
-    return starts.get(pid) as bigint | null;
+    return starts.get(pid);
   };
   const startedAfterParent = ([pid, parentPid]: ProcessRow) => {
     const [child, parent] = [started(pid), started(parentPid)];
-    return child !== null && parent !== null && child >= parent;
+    return typeof child === 'bigint' && typeof parent === 'bigint' && child >= parent;
   };
   const rows = entries.map(({ pid, parentPid }): ProcessRow => [pid, parentPid, '']);
   const linked: number[] = [];
@@ -195,19 +189,29 @@ export type Linked = Map<number, LinkedProcess>;
 // The Windows watcher's update from one snapshot: each process outside the job's members newly linked to a member or a
 // linked process whose handle has not signalled, by #297's rule, never selfPid. startOf gives a process's start, and
 // exited whether a linked process's handle has signalled. Only a held handle keeps a pid from naming another process,
-// so a linked process gg could not open, or one whose handle has signalled, is never a seed.
-export function newlyLinked(
-  linked: Linked,
-  members: number[],
-  entries: ProcessEntry[],
-  {
-    selfPid,
-    startOf,
-    exited,
-  }: { selfPid: number; startOf: (pid: number) => bigint | null; exited: (pid: number) => boolean },
-): number[] {
-  const seeds = [...linked.values()].filter(({ pid, held }) => held && !exited(pid)).map(({ pid }) => pid);
-  return linkedFrom([...members, ...seeds], entries, selfPid, startOf);
+// so a linked process gg could not open, or one whose handle has signalled, is never a seed. A held seed's start is the
+// one it was linked at, which a process closed to gg would not give again.
+export function newlyLinked(linked: Linked, members: number[], entries: ProcessEntry[], watch: WatchReads): number[] {
+  const heldStarts = new Map(heldSeeds(linked, watch.exited).map(({ pid, started }) => [pid, started]));
+  const startOf = (pid: number) => heldStarts.get(pid) ?? watch.startOf(pid);
+  return linkedFrom([...members, ...heldStarts.keys()], entries, watch.selfPid, startOf);
+}
+
+// What the Windows watcher reads of a snapshot's processes: selfPid, each process's start, and whether a linked
+// process's handle has signalled.
+type WatchReads = { selfPid: number; startOf: StartOf; exited: (pid: number) => boolean };
+
+const heldSeeds = (linked: Linked, exited: (pid: number) => boolean) =>
+  [...linked.values()].filter(({ pid, held }) => held && !exited(pid));
+
+// Each process not yet linked whose start is closed to gg, started by a member or a held seed: gg can neither check its
+// start against its parent's nor hold it, so the watcher names it a survivor and never a seed (#531 decision 1).
+export function closedLinked(linked: Linked, members: number[], entries: ProcessEntry[], watch: WatchReads): number[] {
+  const seeds = new Set([...members, ...heldSeeds(linked, watch.exited).map(({ pid }) => pid)]);
+  return entries
+    .filter(({ pid, parentPid }) => seeds.has(parentPid) && !seeds.has(pid) && !linked.has(pid))
+    .filter(({ pid }) => pid !== watch.selfPid && watch.startOf(pid) === 'closed')
+    .map(({ pid }) => pid);
 }
 
 // What a Windows cleanup ends through its handles: each linked process gg holds that is still running.

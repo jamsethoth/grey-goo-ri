@@ -55,6 +55,7 @@ const COMMAND_LINE_INFORMATION = 60; // a UNICODE_STRING of 16 bytes, its charac
 const COMMAND_LINE_ROOM = 16 + 65_536;
 const FILETIME_TO_UNIX_MS = 11_644_473_600_000n; // a FILETIME counts 100 ns from 1601
 const ERROR_MORE_DATA = 234;
+const ERROR_ACCESS_DENIED = 5; // a gone pid gives ERROR_INVALID_PARAMETER instead
 const SNAPSHOT_PROCESSES = 0x2;
 const PROCESS_ENTRY_SIZE = 568; // PROCESSENTRY32W: pid at byte 8, parent pid at 32, exe name (260 UTF-16 units) at 44
 const INVALID_HANDLE = 0xffff_ffff_ffff_ffffn;
@@ -96,14 +97,14 @@ export function processes(kernel32: Kernel32): commandCleanup.ProcessEntry[] {
 // The pids still linked to rootPid through parent pids, each started no earlier than its parent, for the fallback that
 // has no job to list. Throws when the command's own start cannot be read, since no link to it can then be checked.
 export function linkedDescendants(kernel32: Kernel32, rootPid: number): number[] {
-  if (startOf(kernel32, rootPid) === null) throw failure(kernel32, `the start of command pid ${rootPid}`);
+  if (typeof startOf(kernel32, rootPid) !== 'bigint') throw failure(kernel32, `the start of command pid ${rootPid}`);
   return commandCleanup.linkedPids(rootPid, processes(kernel32), process.pid, (pid) => startOf(kernel32, pid));
 }
 
-// A process's start as a FILETIME, or null for one gone or closed to gg.
-export function startOf(kernel32: Kernel32, pid: number): bigint | null {
+// A process's start as a FILETIME; 'closed' for one running that gg may not open, null for one gone.
+export function startOf(kernel32: Kernel32, pid: number): bigint | 'closed' | null {
   const handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED, 0, pid);
-  if (!handle) return null;
+  if (!handle) return kernel32.GetLastError() === ERROR_ACCESS_DENIED ? 'closed' : null;
   try {
     return creationTime(kernel32, handle);
   } finally {

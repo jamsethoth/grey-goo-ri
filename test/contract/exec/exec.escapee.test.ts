@@ -186,6 +186,20 @@ for (const site of SITES) {
     assert.ok(alive(escapee), 'it was named as running');
   });
 
+  // Closed to gg, as one run under another account is, the escapee can be neither held nor ended (#531 decision 1).
+  test(`${site.name}: an escapee gg cannot read is a survivor with confirmed false`, WIN_CASE, async (t) => {
+    const pidFile = join(scratch, `${site.name}-closed.pid`);
+    t.after(() => processProbe.endProcessIn(pidFile));
+    const { kernel32 } = kernel32Doubles.breakawayJobs([], { closedOutside: true });
+    const { cleanup } = await site.finishes(kernel32, gitBash.backgroundNode(pidFile));
+    t.after(() => cleanup.closeJob?.());
+    const escapee = pidIn(pidFile);
+    assert.equal(cleanup.confirmed, false, JSON.stringify(cleanup));
+    const survivor = cleanup.survivors.find((listed) => listed.pid === escapee);
+    assert.ok(survivor, `escapee ${escapee} missing from ${JSON.stringify(cleanup.survivors)}`);
+    assert.ok(alive(escapee), 'it was named as running');
+  });
+
   // The escapee sits in a job of its own whose termination is refused, so only closing that job's handle ends it.
   test(`${site.name}: a held cleanup's closeJob ends an escapee adopted into a job of its own`, WIN_CASE, async (t) => {
     const pidFile = join(scratch, `${site.name}-close-job.pid`);
