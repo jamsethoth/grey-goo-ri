@@ -14,6 +14,7 @@ const SIGNATURES = {
   QueryInformationJobObject: { arguments: ['pointer', 'int32', 'buffer', 'uint32', 'pointer'], return: 'int32' },
   AssignProcessToJobObject: { arguments: ['pointer', 'pointer'], return: 'int32' },
   TerminateJobObject: { arguments: ['pointer', 'uint32'], return: 'int32' },
+  TerminateProcess: { arguments: ['pointer', 'uint32'], return: 'int32' },
   OpenProcess: { arguments: ['uint32', 'int32', 'uint32'], return: 'pointer' },
   CloseHandle: { arguments: ['pointer'], return: 'int32' },
   GetLastError: { arguments: [], return: 'uint32' },

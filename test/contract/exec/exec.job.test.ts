@@ -171,27 +171,12 @@ test('runShell: a child that asks to break away fails to start', WIN_CASE, async
   assert.equal(pidIn(sleeperPid), 0, 'the child that asked to break away ran');
 });
 
-// A path as bash reads it inside single quotes, in forward slashes so no backslash is read as an escape. A ' or " would
-// end a quote and a % would be expanded by cmd.exe; no path these cases use holds one.
-function bashQuoted(path: string) {
-  if (/['"%]/.test(path)) throw new Error(`a Git Bash case cannot quote ${path}`);
-  return `'${path.replaceAll('\\', '/')}'`;
-}
-
-// Git Bash starts each non-MSYS child asking to break away from the job (ADR 0030). The background node writes its pid
-// and runs on, its output away from gg's pipes, which it would otherwise hold open past the result; bash exits once the
-// pid is written, so the node has started before the command ends.
-function gitBashBackgroundNode(pidFile: string) {
-  const [node, script, pid] = [process.execPath, childScripts.LONG_LIVED, pidFile].map(bashQuoted);
-  return `${node} ${script} ${pid} >/dev/null 2>&1 </dev/null & until [ -s ${pid} ]; do sleep 0.1; done`;
-}
-
 const CONTAINED = { confirmed: true, survivors: [], reason: null, containment: { kind: 'job' } };
 
 test("a Git Bash command's background node ends with runShell", WIN_CASE, async (t) => {
   const pidFile = join(scratch, 'git-bash-run-shell.pid');
   t.after(() => processProbe.endProcessIn(pidFile));
-  const result = await exec.runShell(`"${gitBash.gitBash()}" -c "${gitBashBackgroundNode(pidFile)}"`, {
+  const result = await exec.runShell(`"${gitBash.gitBash()}" -c "${gitBash.backgroundNode(pidFile)}"`, {
     timeoutMs: 60_000,
   });
   assert.equal(result.code, 0, result.output);
@@ -204,7 +189,7 @@ test("a Git Bash command's background node ends with its launch", WIN_CASE, asyn
   t.after(() => processProbe.endProcessIn(pidFile));
   const result = await exec
     .createExec()
-    .launch({ command: gitBash.gitBash(), args: ['-c', gitBashBackgroundNode(pidFile)], wallMs: 60_000 });
+    .launch({ command: gitBash.gitBash(), args: ['-c', gitBash.backgroundNode(pidFile)], wallMs: 60_000 });
   assert.equal(result.code, 0, result.stderrTail);
   assert.equal(alive(pidIn(pidFile)), false, 'the background node runs on past the result');
   assert.deepEqual(result.cleanup, CONTAINED);

@@ -15,6 +15,64 @@ export const withKernel32 = (replaced: Replaced) => ({ ...realKernel32, ...repla
 // A kernel32 that cannot create a job, as when the job object is refused.
 export const noJob = () => withKernel32({ CreateJobObjectW: () => 0n });
 
+// What gg may do with a process outside its job, in the order it tries them (ADR 0030 decision 3): put it in gg's job,
+// in a new job of its own, or terminate it.
+export type Adoption = 'gg-job' | 'new-job' | 'terminate';
+
+const EXTENDED_LIMIT_INFORMATION = 9; // LimitFlags at byte 16
+const BREAKAWAY_OK = 0x800;
+// A handle as kernel32's functions take one.
+type Handle = Parameters<containment.Kernel32['CloseHandle']>[0];
+
+// A kernel32 whose jobs let a child break away, as gg's did before #530, so Git Bash's node leaves gg's job as a
+// packaged app's child does (ADR 0021's replaced-function seam, #531). attempts records by pid each Adoption gg tries
+// for a process outside gg's own start, and each Adoption in refused fails for it; refused 'terminate' fails every
+// job's termination but gg's too. gg's job is the first job made, and its own start the first process put in one.
+export function breakawayJobs(refused: Adoption[] = []) {
+  const real = realKernel32!;
+  const attempts = new Map<number, Adoption[]>();
+  const pids = new Map<Handle, number>();
+  let ggJob: Handle | undefined;
+  let started = false;
+  const tried = (handle: Handle, adoption: Adoption) => {
+    const pid = pids.get(handle) ?? 0;
+    attempts.set(pid, [...(attempts.get(pid) ?? []), adoption]);
+    return !refused.includes(adoption);
+  };
+  const kernel32 = withKernel32({
+    CreateJobObjectW: (...create) => {
+      const job = real.CreateJobObjectW(...create);
+      ggJob ??= job;
+      return job;
+    },
+    SetInformationJobObject: (job, kind, limits, length) => {
+      const flags = limits as Buffer;
+      if (kind === EXTENDED_LIMIT_INFORMATION) flags.writeUInt32LE(flags.readUInt32LE(16) | BREAKAWAY_OK, 16);
+      return real.SetInformationJobObject(job, kind, limits, length);
+    },
+    OpenProcess: (access, inherit, pid) => {
+      const handle = real.OpenProcess(access, inherit, pid);
+      if (handle) pids.set(handle, pid);
+      return handle;
+    },
+    CloseHandle: (handle) => {
+      pids.delete(handle);
+      return real.CloseHandle(handle);
+    },
+    AssignProcessToJobObject: (job, handle) => {
+      const ggStart = !started;
+      started = true;
+      if (ggStart || tried(handle, job === ggJob ? 'gg-job' : 'new-job'))
+        return real.AssignProcessToJobObject(job, handle);
+      return 0;
+    },
+    TerminateProcess: (handle, code) => (tried(handle, 'terminate') ? real.TerminateProcess(handle, code) : 0),
+    TerminateJobObject: (job, code) =>
+      job !== ggJob && refused.includes('terminate') ? 0 : real.TerminateJobObject(job, code),
+  });
+  return { kernel32, attempts };
+}
+
 // A kernel32 whose job refuses termination, with the pids the job listed, so a case can see they all end. Each is
 // recorded as the job lists it, while it runs.
 export function refusedTermination() {
