@@ -342,14 +342,14 @@ test('a Claude Agent listing mcp is one unsupported-agent-field error, which no 
   assert.deepEqual(repeated, []);
 });
 
-// An exec whose launch records its call and starts nothing.
-const launchless = (launched: unknown[]) =>
-  ({
-    launch: (...args: unknown[]) => {
-      launched.push(args);
-      throw new Error('no CLI starts at this preflight');
-    },
-  }) as unknown as Parameters<typeof shipped.shipped>[0];
+// An exec whose launch records its call and starts nothing, and which runs no containment probe.
+const launchless = (launched: unknown[]): Parameters<typeof shipped.shipped>[0] => ({
+  launch: (...args) => {
+    launched.push(args);
+    throw new Error('no CLI starts at this preflight');
+  },
+  childInJob: () => Promise.reject(new Error('no containment probe runs at this preflight')),
+});
 
 // A Codex Agent with nothing to list starts no listing at preflight, where only the doctor's cheap commands start
 // (#484), and Codex stays refused until #482 builds its run.
