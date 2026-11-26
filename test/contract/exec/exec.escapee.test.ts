@@ -192,11 +192,12 @@ for (const site of SITES) {
     await waitFor(() => !alive(escapee), t.signal); // one left running fails at the case timeout
   });
 
-  // The escapee's child starts outside gg's job too, so it is linked through the escapee and adopted in its turn.
+  // gg's job refusing it, as it refuses a packaged app's process, the escapee goes into a job of its own, so its child
+  // starts outside gg's job whether or not the escapee was adopted yet, is linked through it and adopted in its turn.
   test(`${site.escapee}'s child is adopted in its turn and ended`, WIN_CASE, async (t) => {
     const pidFile = join(scratch, `${site.name}-child.pid`);
     t.after(() => processProbe.endProcessIn(pidFile)); // its parent, the escapee, ends with it
-    const { kernel32, attempts } = kernel32Doubles.breakawayJobs();
+    const { kernel32, attempts } = kernel32Doubles.breakawayJobs(['gg-job']);
     const scripts = [childScripts.LINKED_STARTER, childScripts.LONG_LIVED];
     const { cleanup } = await site.finishes(kernel32, gitBash.backgroundNode(pidFile, { scripts }));
     const child = pidIn(pidFile);

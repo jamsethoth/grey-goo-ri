@@ -536,3 +536,14 @@ test('no containment is never confirmed, and a report that names none reads as n
     false,
   );
 });
+
+test('a process started by a linked process is linked once the shell between them and the job has exited', () => {
+  // the job holds ROOT; the shell 150 that started the packaged pwsh 201 has exited, and 201 has since started 202
+  const linked: commandCleanup.Linked = new Map([[201, heldOf(201, 150, 30n)]]);
+  const entries = [entryOf(ROOT, 1), entryOf(201, 150), entryOf(202, 201)];
+  const starts = startsOf({ 1: 1n, [ROOT]: 20n, 201: 30n, 202: 40n });
+  assert.deepEqual(
+    commandCleanup.newlyLinked(linked, [ROOT], entries, { selfPid: SELF, startOf: starts, exited: () => false }),
+    [202],
+  );
+});
