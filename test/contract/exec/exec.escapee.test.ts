@@ -133,6 +133,22 @@ for (const site of SITES) {
     assert.deepEqual(attempts.get(escapee)?.slice(0, 1), ['gg-job'], JSON.stringify([...attempts]));
   });
 
+  // Only the watcher's periodic snapshot runs before the command ends; cleanup's last poll comes after. So an escapee
+  // adopted while its command waits on the go file was linked by it. A watch that links nothing leaves the escapee to
+  // the poll after the command's time limit, and the case fails on timedOut.
+  test(`${site.escapee} is adopted while its command still runs`, WIN_CASE, async (t) => {
+    const pidFile = join(scratch, `${site.name}-periodic.pid`);
+    const go = join(scratch, `${site.name}-periodic.go`).split(sep).join('/');
+    t.after(() => processProbe.endProcessIn(pidFile));
+    const { kernel32, attempts } = kernel32Doubles.breakawayJobs();
+    const ran = site.finishes(kernel32, `${gitBash.backgroundNode(pidFile)}; until [ -e ${go} ]; do sleep 0.1; done`);
+    await waitFor(() => attempts.has(pidIn(pidFile)), t.signal);
+    writeFileSync(go, '');
+    const { cleanup, timedOut } = await ran;
+    assert.equal(alive(pidIn(pidFile)), false, 'the escapee runs on past the result');
+    assert.deepEqual({ cleanup, timedOut }, { cleanup: CONTAINED, timedOut: false });
+  });
+
   test(`${site.escapee} is ended when its command times out`, WIN_CASE, async (t) => {
     const pidFile = join(scratch, `${site.name}-timed-out.pid`);
     t.after(() => processProbe.endProcessIn(pidFile));
