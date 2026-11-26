@@ -43,6 +43,7 @@ const NOT_UNIT = [
   'lib/git-default-branch.ts',
   'lib/process-tree.ts',
   'lib/job-watcher.ts',
+  'lib/snapshot-worker.ts',
   'lib/containment.ts',
   'lib/containment-gate.ts',
   'lib/command-shim.ts',

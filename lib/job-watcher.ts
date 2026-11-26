@@ -1,4 +1,5 @@
 import { setTimeout as wait } from 'node:timers/promises';
+import { Worker } from 'node:worker_threads';
 import * as commandCleanup from './command-cleanup.ts';
 import * as containment from './containment.ts';
 
@@ -7,18 +8,18 @@ import * as containment from './containment.ts';
 // at cleanup the job terminated, and each linked process ended and confirmed gone, or named (ADR 0030 decision 3).
 
 // Each process outside the job linked to its members, held and adopted as it is linked, keyed by pid. Every gapMs, each
-// watcher over its own snapshot (#531's choices). Cleanup polls once more before it ends the job, since a process can
-// start outside it after the last poll.
+// watcher over its own snapshot (#531's choices), taken on its own thread (snapshotThread). Cleanup polls once more, on
+// gg's thread, before it ends the job, since a process can start outside it after the last poll.
 export function watch(job: containment.Job, kernel32: containment.Kernel32, gapMs: number) {
   const linked: commandCleanup.Linked = new Map();
-  const poll = () => {
+  const link = (snapshot: () => commandCleanup.ProcessEntry[]) => {
     const starts = new Map<number, bigint | 'closed' | null>();
     const startOf = (pid: number) => {
       if (!starts.has(pid)) starts.set(pid, containment.startOf(kernel32, pid));
       return starts.get(pid) ?? null;
     };
     try {
-      const entries = containment.processes(kernel32);
+      const entries = snapshot();
       const members = job.members();
       const watchReads = { selfPid: process.pid, startOf, exited: job.exited };
       const toLink = commandCleanup.newlyLinked(linked, members, entries, watchReads);
@@ -36,14 +37,46 @@ export function watch(job: containment.Job, kernel32: containment.Kernel32, gapM
       }
     } catch {} // a snapshot or a job that cannot be read links nothing this time; the job's termination says the rest
   };
+  const snapshots = snapshotThread();
   const cancel = new AbortController();
   const loop = (async () => {
     while (!cancel.signal.aborted) {
-      poll();
+      const entries = await snapshots.take().catch(() => null);
+      if (entries && !cancel.signal.aborted) link(() => entries);
       await wait(gapMs, undefined, { signal: cancel.signal }).catch(() => {});
     }
+    snapshots.close();
   })();
-  return { linked, poll, stop: () => (cancel.abort(), loop) };
+  return { linked, poll: () => link(() => containment.processes(kernel32)), stop: () => (cancel.abort(), loop) };
+}
+
+type Answer = { entries: commandCleanup.ProcessEntry[] } | { error: string };
+
+// A thread that answers each take with a process snapshot (lib/snapshot-worker.ts), so a slow one blocks no timer or
+// exit event on gg's thread (#531 D1 A). Unref'd, it never keeps gg running; once it fails, every take rejects.
+function snapshotThread() {
+  const worker = new Worker(new URL('./snapshot-worker.ts', import.meta.url));
+  worker.unref();
+  let pending: PromiseWithResolvers<commandCleanup.ProcessEntry[]> | null = null;
+  let failed: Error | null = null;
+  const fail = (err: Error) => {
+    failed = err;
+    pending?.reject(err);
+  };
+  worker.on('message', (answer: Answer) =>
+    'entries' in answer ? pending?.resolve(answer.entries) : pending?.reject(new Error(answer.error)),
+  );
+  worker.on('error', fail);
+  worker.on('exit', () => fail(new Error('the snapshot thread exited')));
+  return {
+    take: () => {
+      if (failed) return Promise.reject(failed);
+      pending = Promise.withResolvers();
+      worker.postMessage(null);
+      return pending.promise;
+    },
+    close: () => void worker.terminate(),
+  };
 }
 
 export type JobWatcher = ReturnType<typeof watch>;

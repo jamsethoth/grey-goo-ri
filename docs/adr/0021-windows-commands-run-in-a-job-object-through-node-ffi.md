@@ -50,7 +50,10 @@ created the job, and wrote its answers as `\x01GGJOB` notes into the command's o
   directory before `PATH`, unless `NoDefaultCurrentDirectoryInExePath` is set, and an agent can write there; this was
   checked on Node 26.13 with a planted `taskkill.exe`.
 - `bin/gg.ts` opens the kernel32 functions once and passes them down through `exec.createExec` (ADR 0019). A test
-  passes `null` or a copy with some functions replaced.
+  passes `null` or a copy with some functions replaced. (Amended 2026-11-26 for grey-goo-ri issue #531, decision D1 A:
+  every `node:ffi` call is synchronous, so the Windows watcher's periodic process snapshot runs on a worker thread
+  that opens kernel32 itself, `lib/snapshot-worker.ts`, and blocks none of the clocks judging the command; a test's
+  replaced snapshot functions reach only the cleanup's last poll, on gg's thread.)
 
 ## node:ffi is experimental
 

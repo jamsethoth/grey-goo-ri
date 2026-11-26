@@ -13,7 +13,7 @@ import * as jobWatcher from './job-watcher.ts';
 // How often the POSIX watcher polls.
 const POLL_GAP_MS = 250;
 // How often the Windows watcher polls: a snapshot costs about 38 ms, about 4% of one core at this gap against 11% at
-// 250 ms, and at 250 ms concurrent commands' watchers delayed gg's own timers under load (#531).
+// 250 ms (#531 decision 4).
 const WINDOWS_POLL_GAP_MS = 1000;
 // How long a killed process group may take to empty before cleanup says it could not confirm that. SIGKILL takes effect
 // at once, so what is left past this is stuck in the kernel, or a zombie nothing reaps (a container with no init).
