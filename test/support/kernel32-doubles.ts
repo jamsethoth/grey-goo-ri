@@ -36,6 +36,7 @@ export function breakawayJobs(refused: Adoption[] = []) {
   let started = false;
   const tried = (handle: Handle, adoption: Adoption) => {
     const pid = pids.get(handle) ?? 0;
+    if (!attempts.has(pid)) processProbe.remember(pid); // held by gg's handle, so the pid is still this process
     attempts.set(pid, [...(attempts.get(pid) ?? []), adoption]);
     return !refused.includes(adoption);
   };

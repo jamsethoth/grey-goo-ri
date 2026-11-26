@@ -25,13 +25,14 @@ function bashQuoted(path: string) {
 // A Git Bash script whose background node runs scripts with pidFile last, which the last script writes; Git Bash starts
 // each non-MSYS child asking to break away from the job (ADR 0030). Its output is away from gg's pipes, which it would
 // otherwise hold open past the result. Then bash exits once the pid is written, so the node has started before the
-// command ends, or with waits it waits for the node, so only a clock ends the command.
+// command ends, or once the node has ended unwritten, as gg ends one no job takes when it sees it; or with waits it
+// waits for the node, so only a clock ends the command.
 export function backgroundNode(
   pidFile: string,
   { scripts = [childScripts.LONG_LIVED], waits = false }: { scripts?: string[]; waits?: boolean } = {},
 ) {
   const [node, ...args] = [process.execPath, ...scripts, pidFile].map(bashQuoted);
   const pid = args.at(-1);
-  const then = waits ? 'wait' : `until [ -s ${pid} ]; do sleep 0.1; done`;
+  const then = waits ? 'wait' : `until [ -s ${pid} ] || ! kill -0 $! 2>/dev/null; do sleep 0.1; done`;
   return `${node} ${args.join(' ')} >/dev/null 2>&1 </dev/null & ${then}`;
 }

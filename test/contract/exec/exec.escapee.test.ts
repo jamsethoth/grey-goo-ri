@@ -159,11 +159,17 @@ for (const site of SITES) {
     t.after(() => processProbe.endProcessIn(pidFile));
     const { kernel32, attempts } = kernel32Doubles.breakawayJobs(['gg-job', 'new-job']);
     const { cleanup } = await site.finishes(kernel32, gitBash.backgroundNode(pidFile));
-    const escapee = pidIn(pidFile);
-    assert.equal(alive(escapee), false, `escapee ${escapee} runs on past the result`);
+    // Ended at first sight, maybe before it wrote its pid, so each process whose adoption was tried is checked. One
+    // never linked runs on and writes its pid, which then names a process tried.
+    const written = pidIn(pidFile);
+    if (written)
+      assert.ok(attempts.has(written), `escapee ${written} was never adopted: ${JSON.stringify([...attempts])}`);
+    assert.ok(attempts.size > 0, 'no adoption was tried');
+    for (const [escapee, order] of attempts) {
+      assert.equal(alive(escapee), false, `escapee ${escapee} runs on past the result`);
+      assert.deepEqual(order.slice(0, 3), ['gg-job', 'new-job', 'terminate'], JSON.stringify([...attempts]));
+    }
     assert.deepEqual(cleanup, CONTAINED);
-    const order = attempts.get(escapee)?.slice(0, 3);
-    assert.deepEqual(order, ['gg-job', 'new-job', 'terminate'], JSON.stringify([...attempts]));
   });
 
   test(`${site.name}: an escapee gg cannot end is a survivor with confirmed false`, WIN_CASE, async (t) => {
