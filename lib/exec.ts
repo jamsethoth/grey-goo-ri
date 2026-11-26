@@ -130,7 +130,7 @@ export interface ShellOptions {
 // What launch runs: an argv with no shell, contained, under a stall clock, a wall clock and the Run's cancel signal.
 // onIdle answers when the stall clock runs out: the time (ms since the epoch) of the last activity the caller saw, from
 // which the clock re-arms for what is left of stallMs, or null. testHooks are a test's alone: stall and wall count from
-// when testHooks.signal aborts, as runShell's timeout does (#475).
+// when testHooks.signal aborts, as runShell's timeout does (#475), and on testHooks.clock when given (#531 D2 B).
 export interface LaunchOptions {
   command: string;
   args: string[];
@@ -143,7 +143,7 @@ export interface LaunchOptions {
   onStarted?: (containment: commandCleanup.CleanupContainment) => void;
   onLine?: (line: string) => void;
   onIdle?: () => number | null | Promise<number | null>;
-  testHooks?: Pick<TestHooks, 'signal'>;
+  testHooks?: Pick<TestHooks, 'signal'> & { clock?: launchClock.Clock };
 }
 
 // What a launch ended with: how the process exited, which clock or the cancel stopped it, its stderr's end, and what

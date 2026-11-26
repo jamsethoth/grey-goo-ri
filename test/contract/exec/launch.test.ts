@@ -141,65 +141,104 @@ test('stderr output resets the stall clock too', CASE, async () => {
   assert.deepEqual({ code: result.code, timedOut: result.timedOut, lines }, { code: 0, timedOut: null, lines: [] });
 });
 
-// Asked at the first stall, onIdle says the last activity was 2800 ms before it, so the clock re-arms for the 200 ms
-// left of stallMs and stops the process near 3200 ms, 2.3 s before the wall clock. A full stallMs from the ask, near
-// 6000 ms, would reach the wall clock first.
+// A launch's clock the case moves: tick(ms) moves the time on and fires each timer then due (#531 D2 B).
+function manualClock() {
+  type Timer = { run: () => void; due: number };
+  let now = 0;
+  const armed = new Set<Timer>();
+  return {
+    now: () => now,
+    setTimeout: (run: () => void, ms: number) => {
+      const timer = { run, due: now + ms };
+      armed.add(timer);
+      return timer;
+    },
+    clearTimeout: (timer: unknown) => void armed.delete(timer as Timer),
+    tick: (ms: number) => {
+      now += ms;
+      for (const timer of [...armed].filter(({ due }) => due <= now)) {
+        armed.delete(timer);
+        timer.run();
+      }
+    },
+  };
+}
+
+// The microtasks a tick starts (onIdle's ask and the clock's re-arm after it) all run before setImmediate's callback.
+const settled = () => new Promise((resolve) => setImmediate(resolve));
+
+// Asked at the first stall, at 3000 ms on the case's clock, onIdle says the last activity was 2800 ms before it, so the
+// clock re-arms for the 200 ms left of stallMs and asks again at 3200, where a full stallMs from the ask would wait to
+// 6000, past the 5500 ms wall clock.
 test("onIdle's last activity re-arms the stall clock for what is left of stallMs", UNSANDBOXED_CASE, async (t) => {
+  const clock = manualClock();
   const pidFile = join(scratch, 'idle.pid');
   t.after(() => processProbe.endProcessIn(pidFile));
-  const asked: number[] = [];
-  const result = await launch({
+  const asks: number[] = [];
+  const running = launch({
     command: process.execPath,
     args: [childScripts.LONG_LIVED, pidFile],
     stallMs: 3000,
     wallMs: 5500,
-    onIdle: () => {
-      asked.push(Date.now());
-      return (asked[0] ?? 0) - 2800;
-    },
+    testHooks: { clock },
+    onIdle: () => (asks.push(clock.now()), asks.length === 1 ? clock.now() - 2800 : null),
   });
-  assert.deepEqual(
-    { timedOut: result.timedOut, askedAgain: asked.length >= 2 },
-    { timedOut: 'stall', askedAgain: true },
-  );
+  await processProbe.waitFor(() => processProbe.pidIn(pidFile) > 0, t.signal);
+  clock.tick(3000);
+  await settled();
+  clock.tick(200);
+  const result = await running;
+  assert.deepEqual({ timedOut: result.timedOut, asks }, { timedOut: 'stall', asks: [3000, 3200] });
 });
 
-// onIdle, asked at the 2 s stall, writes go and waits to see b, which the child prints on go and then stays quiet. The
-// stall that ends the launch is asked again a full stallMs after b, on gg's own clock: a lower bound no load can break,
-// where the rule's breach asks again as soon as onIdle answers.
-test('output that arrives while onIdle is pending re-arms the stall clock', CASE, async () => {
-  let sawB = () => {};
-  const seenB = new Promise<void>((resolve) => (sawB = resolve));
-  // b reaching gg before the stall check asks onIdle would pass without testing the rule, so the case records it
-  let idlePending = false;
-  let bWhilePending = false;
-  let bAt = 0;
-  const asks: number[] = [];
-  // the child prints b once onIdle has written go, an event rather than a time (docs/testing.md rule 1)
-  const go = join(scratch, 'pending-output.go');
-  const printB = "console.log('b'); setInterval(() => {}, 1000);";
-  const waitForGo = `if (require('fs').existsSync(${JSON.stringify(go)})) { clearInterval(poll); ${printB} }`;
-  const answers = [
+// onIdle, asked at the 2000 ms stall, writes go, waits to see b, which the child prints on go and then stays quiet, and
+// takes `waited` ms more on the case's clock before it answers. The clock re-arms from b for what is left of stallMs:
+// it asks again at 4000 when 500 ms were taken, and stops at once when 2100 were, where the rule's breach (re-arming
+// from the ask, or for a full stallMs) would ask at another time or not stop.
+for (const { waited, rest, expected } of [
+  { waited: 500, rest: 1500, expected: { timedOut: 'stall', asks: [2000, 4000] } },
+  { waited: 2100, rest: 0, expected: { timedOut: 'stall', asks: [2000] } },
+])
+  test(
+    `output that arrives while onIdle is pending re-arms the stall clock, less the ${waited} ms onIdle took after it`,
+    CASE,
     async () => {
-      idlePending = true;
-      writeFileSync(go, '');
+      const clock = manualClock();
+      let sawA = () => {};
+      const seenA = new Promise<void>((resolve) => (sawA = resolve));
+      let sawB = () => {};
+      const seenB = new Promise<void>((resolve) => (sawB = resolve));
+      // the child prints b once onIdle has written go, an event rather than a time (docs/testing.md rule 1)
+      const go = join(scratch, `pending-output-${waited}.go`);
+      const printB = "console.log('b'); setInterval(() => {}, 1000);";
+      const waitForGo = `if (require('fs').existsSync(${JSON.stringify(go)})) { clearInterval(poll); ${printB} }`;
+      const asks: number[] = [];
+      const answers = [
+        async () => {
+          writeFileSync(go, '');
+          await seenB;
+          clock.tick(waited);
+          return null;
+        },
+        async () => null,
+      ];
+      const running = launch({
+        command: process.execPath,
+        args: ['-e', `console.log('a'); const poll = setInterval(() => { ${waitForGo} }, 20);`],
+        stallMs: 2000,
+        testHooks: { clock },
+        onLine: (line) => (line === 'a' ? sawA() : line === 'b' && sawB()),
+        onIdle: () => answers[asks.push(clock.now()) - 1]!(),
+      });
+      await seenA;
+      clock.tick(2000);
       await seenB;
-      return null;
+      await settled();
+      clock.tick(rest);
+      const result = await running;
+      assert.deepEqual({ timedOut: result.timedOut, asks }, expected);
     },
-    async () => null,
-  ];
-  const result = await launch({
-    command: process.execPath,
-    args: ['-e', `console.log('a'); const poll = setInterval(() => { ${waitForGo} }, 20);`],
-    stallMs: 2000,
-    onLine: (line) => line === 'b' && ((bAt = Date.now()), (bWhilePending = idlePending), sawB()),
-    onIdle: () => answers[asks.push(Date.now()) - 1]!(),
-  });
-  assert.deepEqual(
-    { timedOut: result.timedOut, bWhilePending, asks: asks.length, reArmedFromB: asks[1]! - bAt >= 1000 },
-    { timedOut: 'stall', bWhilePending: true, asks: 2, reArmedFromB: true },
   );
-});
 
 // The wall clock counts from when the child has written its pid, so the stop comes after the process the case checks.
 test('launch stops a process past wallMs and says wall', UNSANDBOXED_CASE, async (t) => {

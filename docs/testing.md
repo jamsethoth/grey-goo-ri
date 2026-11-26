@@ -20,7 +20,7 @@ entry point since #199 (ADR 0019).
    waits on the event it
    asserts on (a PID file written, a lock taken, a run settled), never on a fixed duration; a wait may be bounded
    only by the case's own timeout (#143). Time-dependent logic takes the injected clock (`{ now, sleep }`), not the
-   wall clock. Nine cases measure real time, recorded as exceptions because their subject is real time across
+   wall clock. Seven cases measure real time, recorded as exceptions because their subject is real time across
    processes, or in two a regular expression's own running time, which no injected clock reaches. None compares one
    process's clock with another's: two processes' `Date.now()` can disagree by a millisecond on Windows, so an order
    between processes is shown causally, by what one saw of the other's writes (#260):
@@ -35,12 +35,6 @@ entry point since #199 (ADR 0019).
    - `test/contract/exec/launch.test.ts`, `output resets the stall clock` and `stderr output resets the stall clock
      too`: a child's output, arriving across processes, keeps a 5 s stall clock from firing over 6 s; each gap is
      100 ms, and the first line waits only on node's start (twice on Windows, behind the gate).
-   - `test/contract/exec/launch.test.ts`, `onIdle's last activity re-arms the stall clock for what is left of
-     stallMs`: the re-armed stall fires near 3.2 s, 2.3 s before the wall clock, where a full stall from the ask
-     would come after it.
-   - `test/contract/exec/launch.test.ts`, `output that arrives while onIdle is pending re-arms the stall clock`: the stall
-     that ends it is asked again no sooner than 1 s after output that arrived while onIdle was pending, on gg's own
-     clock; onIdle answers only after it saw the output.
    - `test/unit/cli-recording.test.ts`, `a one-letter username's many occurrences with no address after them are
      redacted at once`: a synchronous regular expression blocks the timer a test timeout runs on, so the case bounds
      the redaction at 1 s after it returns (measured worst under 1 ms), and a return of the backtracking #480 fixed
@@ -126,6 +120,7 @@ options it builds, so none outlives the case:
 | the `integrity` option; `integrity.createIntegrity(git, fs, locks)` (`crashFs`, `test/support/crash-fs.ts`) | runs the fake integrity; crashes a restore's write |
 | the `exec` option | answers the suite's command with red or green output; says whether a held call's processes are gone (`cleanupConfirmed`) |
 | `exec.runShell`'s `testHooks` option: `timers`, `onWatch`, `signal` and the rest | moves the timeout clock; sees which descendants the POSIX watcher has listed |
+| `exec.launch`'s `testHooks` option: `clock` (`{ now, setTimeout, clearTimeout }`) and `signal` | moves the stall and wall clocks, so a stall rule is checked with no real-time margin (#531 D2 B); holds them until the process the case checks has started |
 | `exec.createExec({ kernel32 })` | runs Windows commands with no `node:ffi` (`null`) or with kernel32 calls that fail |
 
 ## Test sizes
