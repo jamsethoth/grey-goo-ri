@@ -143,15 +143,22 @@ interface PreflightHarness {
   run?: unknown;
   validate?(agent: unknown): Promise<{ ok: boolean; errors: string[] }>;
   resolveTools: runContext.Harness['resolveTools'];
-  doctor?(options: { probe: boolean }): runContext.DoctorReport | Promise<runContext.DoctorReport>;
+  doctor?(options: runContext.DoctorOptions): runContext.DoctorReport | Promise<runContext.DoctorReport>;
 }
 
-// The name of each registered Harness a Vertex's Agent selects.
-const harnessNamesOf = (flow: model.DeclaredFlowJson, harnesses: Record<string, unknown>) =>
-  Object.values(flow.ticket.vertices).flatMap(({ agent }) => {
-    const harnessName = referencePaths.isRecord(agent) ? agent.harness : undefined;
-    return typeof harnessName === 'string' && Object.hasOwn(harnesses, harnessName) ? [harnessName] : [];
-  });
+// Each registered Harness a Vertex's Agent selects, with the Agents the Flows run on it by name, as declared
+// (#484 Q4 A).
+function agentsByHarness(flows: model.DeclaredFlowJson[], harnesses: Record<string, unknown>) {
+  const used = new Map<string, Record<string, jsonValue.JsonValue>>();
+  for (const flow of flows)
+    for (const { use, agent } of Object.values(flow.ticket.vertices)) {
+      const harnessName = referencePaths.isRecord(agent) ? agent.harness : undefined;
+      if (typeof harnessName !== 'string' || !Object.hasOwn(harnesses, harnessName) || typeof use !== 'string')
+        continue;
+      used.set(harnessName, { ...used.get(harnessName), [use]: agent });
+    }
+  return used;
+}
 
 // Each Vertex's registered Harness, checked by name before any GitHub access, in the Flow as written: a Flow with an
 // error is checked too, so gg doctor and gg run list the same errors (#362).
@@ -191,17 +198,17 @@ async function harnessProblems(
 // `passes` (#494).
 async function doctorProblems(
   found: report.Report,
-  harnessNames: Set<string>,
+  used: Map<string, Record<string, jsonValue.JsonValue>>,
   { harnesses, probe, passes }: { harnesses: Record<string, unknown>; probe: boolean; passes: string[] },
 ) {
-  for (const harnessName of harnessNames) {
+  for (const [harnessName, agents] of used) {
     const harness = harnesses[harnessName] as PreflightHarness;
     // shortcut: a shipped Harness builds no doctor until its slice, so it has no checks to run; drop this in #482,
     // which needs the last one's doctor (#484) once it builds that Harness's run.
     if (!harness.doctor) continue;
     let checks: runContext.DoctorCheck[];
     try {
-      ({ checks } = await harness.doctor({ probe }));
+      ({ checks } = await harness.doctor({ probe, agents }));
     } catch (err) {
       checks = [{ name: 'doctor', ok: false, severity: 'error', message: (err as Error).message.split('\n')[0]! }];
     }
@@ -303,7 +310,10 @@ export async function check({
   // with them (D5 of #422).
   const commands = parsed.settings?.commands ?? parsed.commands ?? {};
   for (const [, { declared }] of admitted) await harnessProblems(environment, declared, { harnesses, commands });
-  const used = new Set(admitted.flatMap(([, { declared }]) => harnessNamesOf(declared, harnesses)));
+  const used = agentsByHarness(
+    admitted.map(([, { declared }]) => declared),
+    harnesses,
+  );
   const passes: string[] = [];
   await doctorProblems(environment, used, { harnesses, probe, passes });
   return {

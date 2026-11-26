@@ -40,3 +40,45 @@ export function pluginDirectory(plugin: string, configDirectory: string): string
         if (readObject(join(candidate, '.claude-plugin', 'plugin.json'))?.name === plugin) return candidate;
   throw new Error(`plugin ${plugin} is not installed`);
 }
+
+// Whether Claude fires a hook whose tool filter is `matcher` on `tool`: left out, empty or `*` is every tool; letters,
+// digits, `_`, `-`, spaces, `|` and `,` alone are a list of exact names; anything else is an unanchored regular
+// expression, which Claude cannot compile when it is invalid, so it fires on nothing.
+function matches(matcher: unknown, tool: string): boolean {
+  if (matcher === undefined || matcher === '' || matcher === '*') return true;
+  if (typeof matcher !== 'string') return false;
+  if (/^[\w ,|-]+$/.test(matcher)) return matcher.split(/[|,]/).some((name) => name.trim() === tool);
+  try {
+    return new RegExp(matcher).test(tool);
+  } catch {
+    return false;
+  }
+}
+
+// The hook maps a plugin declares, which Claude merges: hooks/hooks.json's, and plugin.json's `hooks`, a path from the
+// plugin's root to a file like hooks/hooks.json, an inline map, or a list of either.
+function hookMaps(directory: string): unknown[] {
+  const declared = readObject(join(directory, '.claude-plugin', 'plugin.json'))?.hooks;
+  return [
+    readObject(join(directory, 'hooks', 'hooks.json'))?.hooks,
+    ...[declared ?? []]
+      .flat()
+      .map((entry: unknown) => (typeof entry === 'string' ? readObject(join(directory, entry))?.hooks : entry)),
+  ];
+}
+
+// Only these events run before a tool and can change its input (#484 Q5 A); the others act after it ran.
+const REWRITING_EVENTS = ['PreToolUse', 'PermissionRequest'];
+
+// Whether the plugin in `directory` declares a hook that can rewrite `tool`'s input before it runs (#484 Q5 A). gg
+// judges by what the plugin declares, not by what its hook's command does.
+export const rewrites = (directory: string, tool: string): boolean =>
+  hookMaps(directory).some(
+    (map) =>
+      referencePaths.isRecord(map) &&
+      REWRITING_EVENTS.some((event) =>
+        [map[event] ?? []]
+          .flat()
+          .some((group: unknown) => referencePaths.isRecord(group) && matches(group.matcher, tool)),
+      ),
+  );

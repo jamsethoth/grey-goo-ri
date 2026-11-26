@@ -355,5 +355,10 @@ export const createCli = (
   run: (call, hooks) => runIn(runner, configDirectory, call as unknown as RunCall, hooks),
   interactiveArgs: notImplemented,
   metrics: notImplemented,
-  doctor: (options) => claudeDoctor.doctor(runner, options, probeLaunch(configDirectory)),
+  doctor: (options) =>
+    claudeDoctor.doctor(runner, options, {
+      profile: probeLaunch(configDirectory),
+      rewrites: (plugin) =>
+        claudePlugins.rewrites(claudePlugins.pluginDirectory(plugin, configDirectory), shellOf(process.platform)),
+    }),
 });

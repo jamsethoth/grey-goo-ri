@@ -23,7 +23,7 @@ code.
 | `run(call, hooks)` | runs one Attempt; reports it has started through `hooks.started`; ends the Attempt when `hooks.signal` aborts; resolves `{ response, result, failure }` |
 | `interactiveArgs(agent, opening, opts)` | argv for an interactive session opened with `opening` |
 | `metrics(session)` | cumulative Usage of a Session |
-| `doctor({ probe })` | the Harness's checks of its CLI, resolving a `DoctorReport`: cheap checks with no model call, run by `gg doctor` and `gg run` preflight once per used Harness, and with `probe` the model probes `gg doctor --probe` adds (ADR 0028) |
+| `doctor({ probe, agents })` | the Harness's checks of its CLI and of the Agents it runs, resolving a `DoctorReport`: cheap checks with no model call, run by `gg doctor` and `gg run` preflight once per used Harness, and with `probe` the model probes `gg doctor --probe` adds (ADR 0028, ADR 0032) |
 
 `HARNESS_METHODS` lists these names in this order:
 
@@ -277,11 +277,13 @@ The subset is the common ground of the Harnesses' structured-output modes: Codex
 property and no extras. It is also narrow enough for gg's own validation and path typing (`validateResponse`,
 `fieldType`). Whatever `structuredOutput` says, the orchestrator validates every `response` against the schema.
 
-## `doctor({ probe })`
+## `doctor({ probe, agents })`
 
-`gg doctor` and `gg run` preflight call `doctor({ probe: false })` once on each Harness the admitted Flows' Agents use;
-`gg doctor --probe` passes `probe: true`, which adds the Harness's model probes (ADR 0028). Without `probe` it starts
-no model call. It resolves a `DoctorReport`: `ok` is false when a check whose `severity` is `error` failed, and each
+`gg doctor` and `gg run` preflight call `doctor({ probe: false, agents })` once on each Harness the admitted Flows'
+Agents use; `gg doctor --probe` passes `probe: true`, which adds the Harness's model probes (ADR 0028). Without
+`probe` it starts no model call. `agents` holds each Agent the admitted Flows' Vertices run on that Harness, once, by
+the name the Vertices use, as declared (`DoctorOptions`, `lib/run-context.ts`; ADR 0032), so a check can judge an
+Agent, as Claude's warns of a listed plugin whose hook can rewrite a shell command. It resolves a `DoctorReport`: `ok` is false when a check whose `severity` is `error` failed, and each
 check names itself, says whether it passed and what it saw. gg reports each failed check as one
 `harness-doctor-failed` Problem `{ harness, check, reason }`, an error or a warning as its `severity` says. A Harness
 that builds no `doctor` runs no checks.
@@ -323,7 +325,7 @@ is refused (`events.Usage`, `events.md`).
 ## The fake harness
 
 `test/support/fake-harness.ts` stands in for a Harness in every test: it never spawns anything, and a test scripts it.
-Its scripting version is `FAKE_HARNESS_VERSION = 6`, and every scripting key below is frozen with it. Its
+Its scripting version is `FAKE_HARNESS_VERSION = 7`, and every scripting key below is frozen with it. Its
 `launchProfile` is `null`, which a test replaces on the object it builds. Its result holds null for `repositoryDigest`,
 `agentCliVersion`, `effectiveModel` and `effectiveEffort` unless a script gives one.
 
