@@ -428,3 +428,36 @@ test("a survivor's child that outlives it keeps the hold", options.POSIX_CASE, a
   process.kill(-pgid, 'SIGKILL');
   await processProbe.waitFor(() => exec.cleanupConfirmed({ kind: 'group', pgid }), t.signal);
 });
+
+// ADR 0030 decision 5 (#533): the containment probe starts its argv as launch does, behind the gate in a new job, and
+// asks at the first line that is a pid alone whether that pid is in the job. A child the argv starts is.
+test(
+  "childInJob: a child the argv starts is in the argv's job at the line naming its pid",
+  options.WIN_CASE,
+  async () => {
+    const child = 'console.log(process.pid); setTimeout(() => {}, 1500)';
+    const spawnChild = `spawn(process.execPath, ['-e', ${JSON.stringify(child)}], { stdio: 'inherit' })`;
+    const script = `require('node:child_process').${spawnChild}`;
+    const seen = await exec.createExec().childInJob({ command: process.execPath, args: ['-e', script] });
+    assert.equal(seen.failure, null);
+    assert.equal(typeof seen.pid, 'number', JSON.stringify(seen));
+    assert.notEqual(seen.pid, process.pid);
+    assert.equal(seen.inJob, true, JSON.stringify(seen));
+  },
+);
+
+// A process outside the job, as Windows starts a packaged app's, stands in here as this test's own process.
+test("childInJob: a pid outside the argv's job reads as outside it", options.WIN_CASE, async () => {
+  const seen = await exec
+    .createExec()
+    .childInJob({ command: process.execPath, args: ['-e', `console.log(${process.pid})`] });
+  assert.deepEqual(seen, { lines: [String(process.pid)], pid: process.pid, inJob: false, failure: null });
+});
+
+test('childInJob: an argv that ends printing no pid says so, with what it printed', options.WIN_CASE, async () => {
+  const seen = await exec.createExec().childInJob({ command: process.execPath, args: ['-e', "console.log('no pid')"] });
+  assert.deepEqual(
+    { ...seen, failure: typeof seen.failure },
+    { lines: ['no pid'], pid: null, inJob: null, failure: 'string' },
+  );
+});

@@ -3,7 +3,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import * as cliDoctor from '../../lib/harnesses/cli-doctor.ts';
+import * as storeAlias from '../support/store-alias.ts';
 
 // The launch the module is handed, as a small test may name it without importing lib/exec.ts.
 type Runner = Parameters<typeof cliDoctor.said>[0];
@@ -161,4 +163,11 @@ test("a probe's temporary directory is there for its use and gone after it", asy
     Promise.resolve({ directory, during: existsSync(directory) }),
   );
   assert.deepEqual({ during: seen.during, after: existsSync(seen.directory) }, { during: true, after: false });
+});
+
+// ADR 0030 decision 2: the Store's pwsh on PATH is an app execution alias, a link whose target existsSync cannot stat,
+// so the shell is found by the link and judged packaged by where it leads (#533).
+test('the shell a link on PATH starts is found, and judged packaged by its target under WindowsApps', (t) => {
+  const bin = storeAlias.storeAlias(t);
+  assert.deepEqual(cliDoctor.findShell('pwsh.exe', bin), { path: join(bin, 'pwsh.exe'), packaged: true });
 });

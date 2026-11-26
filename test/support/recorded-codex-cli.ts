@@ -2,6 +2,7 @@
 // sandbox commands #484 recorded), and a model call from an exec recording (#479). `recordedCodexCli` gives them
 // through cli-replay.ts's launch double, in-process, a small test's stand-in for the CLI.
 import { readdirSync, readFileSync } from 'node:fs';
+import type * as containmentProbe from '../../lib/containment-probe.ts';
 import * as cliReplay from './cli-replay.ts';
 
 const FIXTURES = new URL('../fixtures/codex/', import.meta.url);
@@ -111,6 +112,33 @@ export function answer(args: readonly string[], state: CodexState = {}): cliRepl
   throw new Error(`the recorded Codex CLI has no answer for codex ${args.join(' ')}`);
 }
 
-// A launch that answers each argv in-process as the recorded Codex CLI does, and every launch it was asked for.
+// #533's one real codex sandbox call, under MXC in the Store's pwsh, started behind the gate in a new job: the lines it
+// printed, the pid of the pwsh command's node child, and whether that child was in the job at its line (it was).
+interface ContainmentRecording {
+  lines: string[];
+  childPid: number;
+  childInJobAtLine: boolean;
+}
+export const CONTAINMENT_RECORDING = 'containment-sandbox-mxc-store-pwsh';
+
+// The containment probe as the recording answers it, the child outside gg's job instead when the case `escapes`.
+function probedUnderMxc({ escapes = false }: CodexState): containmentProbe.ChildInJob {
+  const recorded = JSON.parse(
+    readFileSync(new URL(`${CONTAINMENT_RECORDING}.json`, FIXTURES), 'utf8'),
+  ) as ContainmentRecording;
+  return {
+    lines: recorded.lines,
+    pid: recorded.childPid,
+    inJob: escapes ? false : recorded.childInJobAtLine,
+    failure: null,
+  };
+}
+
+// A launch that answers each argv in-process as the recorded Codex CLI does, and every launch it was asked for; and
+// the containment probe, answered by the recording.
 export const recordedCodexCli = (state: CodexState = {}) =>
-  cliReplay.replayLaunch((args) => answer(args, state), state);
+  cliReplay.replayLaunch(
+    (args) => answer(args, state),
+    state,
+    () => probedUnderMxc(state),
+  );
