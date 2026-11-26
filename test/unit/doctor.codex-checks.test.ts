@@ -81,7 +81,7 @@ async function codexDoctor(
 ) {
   machine(t, options);
   const cli = recordedCodexCli.recordedCodexCli(state);
-  const report = await codex.createCli(cli).doctor({ probe });
+  const report = await codex.createCli(cli).doctor({ probe, agents: {} });
   const named = (name: string) => report.checks.find((check) => check.name === name);
   return { ...report, named, launches: cli.launches };
 }

@@ -379,7 +379,7 @@ export const createCli = (
   return {
     validate: (agent: unknown) => validateIn(listOnce, homes, agent),
     // Stub (#484 Red): the cheap checks and the probes are Green's.
-    doctor: (_options: { probe: boolean }): Promise<runContext.DoctorReport> =>
+    doctor: (_options: runContext.DoctorOptions): Promise<runContext.DoctorReport> =>
       Promise.resolve({ ok: true, checks: [] }),
   };
 };

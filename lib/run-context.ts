@@ -102,6 +102,12 @@ export interface DoctorReport {
   ok: boolean;
   checks: DoctorCheck[];
 }
+// What gg gives a Harness's doctor (#484 Q4 A): whether to add the model probes, and each Agent the admitted Flows run
+// on that Harness, by name, as declared.
+export interface DoctorOptions {
+  probe: boolean;
+  agents: Record<string, jsonValue.JsonValue>;
+}
 // `signal` travels beside the call, never inside it: the copy the Harness gets would turn it into `{}`.
 export interface HarnessHooks {
   started(report: HarnessStarted): void;

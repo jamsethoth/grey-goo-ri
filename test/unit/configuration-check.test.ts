@@ -166,7 +166,7 @@ test('preflight runs the cheap doctor of each Harness the Flows use, once, and o
   const recording = (name: string) => ({
     ...fakeHarness.fakeHarness({ name }),
     doctor: (options: unknown) => {
-      doctored.push([name, options]);
+      doctored.push([name, { probe: (options as runContext.DoctorOptions).probe }]);
       return Promise.resolve({ ok: true, checks: [] });
     },
   });
@@ -186,6 +186,30 @@ test('preflight runs the cheap doctor of each Harness the Flows use, once, and o
     doctored.toSorted(([left], [right]) => left.localeCompare(right)),
     [...used].sort().map((name) => [name, { probe: false }]),
   );
+});
+
+// Q4 A of #484: a Harness's doctor sees each Agent it runs once, by the name the Vertices use, so Claude's can warn
+// about an Agent's listed plugins; an Agent no admitted Flow runs is not given.
+test("each Harness's doctor is given, by name, the Agents the admitted Flows run on it, and no other", async () => {
+  const repository = repositorySource();
+  const other = repositorySource().flows.default as golden.ConfiguredFlow;
+  repository.agents.other = { ...repository.agents.implementer, harness: 'other' };
+  (other.ticket.vertices.red as { use: string }).use = 'other';
+  repository.flows.other = other;
+  const given = new Map<string, unknown>();
+  const recording = (name: string) => ({
+    ...fakeHarness.fakeHarness({ name }),
+    doctor: (options: runContext.DoctorOptions) => {
+      given.set(name, options.agents);
+      return Promise.resolve({ ok: true, checks: [] });
+    },
+  });
+  await checkOf(sources(repository), { harnesses: { fake: recording('fake'), other: recording('other') } });
+  assert.ok(Object.hasOwn(repository.agents, 'reviewer'), 'an Agent no Vertex runs is declared');
+  assert.deepEqual(Object.fromEntries(given), {
+    fake: { implementer: repository.agents.implementer },
+    other: { other: repository.agents.other },
+  });
 });
 
 // Every pass and failure a check can report, each a warning or an error.

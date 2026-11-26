@@ -202,7 +202,7 @@ test('gg doctor warns, naming gg doctor --probe, when the help stops saying bare
 // D2 A: a cheap command that times out keeps its reason, and a hung --help claims no change to its --bare line.
 test('gg doctor reports the timeout of a claude --version or --help that does not finish', async () => {
   const checksOf = async (hangs: string) =>
-    (await claude.createCli(recordedCli.recordedCli({ hangs })).doctor({ probe: false })).checks;
+    (await claude.createCli(recordedCli.recordedCli({ hangs })).doctor({ probe: false, agents: {} })).checks;
   const version = (await checksOf('--version')).find(({ name }) => name === 'version');
   assert.ok(version?.message.endsWith('claude --version timed out'), version?.message ?? 'no version check');
   const help = (await checksOf('--help')).find(({ name }) => name === 'bare-help');
@@ -213,7 +213,7 @@ test('gg doctor reports the timeout of a claude --version or --help that does no
 // D5 A: a cheap command that exits with an error names its exit; a failed --help claims no change to its --bare line.
 test('gg doctor names the exit of a claude --version or --help that fails having printed nothing', async () => {
   const checksOf = async (fails: string) =>
-    (await claude.createCli(recordedCli.recordedCli({ fails })).doctor({ probe: false })).checks;
+    (await claude.createCli(recordedCli.recordedCli({ fails })).doctor({ probe: false, agents: {} })).checks;
   const version = (await checksOf('--version')).find(({ name }) => name === 'version');
   assert.ok(version?.message.endsWith('claude --version exited 1'), version?.message ?? 'no version check');
   const help = (await checksOf('--help')).find(({ name }) => name === 'bare-help');
@@ -236,7 +236,7 @@ test('gg doctor names a failed claude auth status whole and a cheap command ende
     for (const [ending, reason] of SILENT_ENDINGS) {
       const { checks } = await claude
         .createCli(recordedCli.recordedCli({ [ending]: argv[0] }))
-        .doctor({ probe: false });
+        .doctor({ probe: false, agents: {} });
       const expected = `claude ${argv.join(' ')} ${reason}`;
       if (!checks.some(({ message }) => message.endsWith(expected) && !message.includes('no longer')))
         unnamed.push(expected);
@@ -283,7 +283,7 @@ async function probeChecks(state: recordedCli.CliState) {
     settings.push(path === undefined ? undefined : (JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>));
     return cli.launch(options);
   };
-  const { checks } = await claude.createCli({ launch }).doctor({ probe: true });
+  const { checks } = await claude.createCli({ launch }).doctor({ probe: true, agents: {} });
   const named = (name: string) => checks.find((check) => check.name === name);
   const checked = {
     bare: named('bare-probe'),
@@ -613,7 +613,7 @@ test('gg doctor prints one passed line per passed check, before the warnings, an
   ])
     for (const probe of [false, true]) {
       const where = `${state}, probe ${probe}`;
-      const { checks } = await claude.createCli(recordedCli.recordedCli(cliState)).doctor({ probe });
+      const { checks } = await claude.createCli(recordedCli.recordedCli(cliState)).doctor({ probe, agents: {} });
       const { text } = await doctorOverCli(cliState, { probe });
       const lines = text.split('\n').slice(0, -1);
       const passed = lines.filter((line) => line.startsWith('passed: '));

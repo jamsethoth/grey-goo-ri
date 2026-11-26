@@ -214,7 +214,7 @@ export interface ClaudeCli {
   run: runContext.Harness['run'];
   interactiveArgs(agent: unknown, opening: string, options?: unknown): string[];
   metrics(session: string): events.Usage | null;
-  doctor(options: { probe: boolean }): Promise<runContext.DoctorReport>;
+  doctor(options: runContext.DoctorOptions): Promise<runContext.DoctorReport>;
 }
 
 // What run reads of the call beyond launchArgs's (docs/interfaces/harness.md, SentCall).
