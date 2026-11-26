@@ -346,6 +346,15 @@ test('a profile probe whose stream names no thread fails the resume probe', asyn
   );
 });
 
+test('a probe whose answer is not in its output schema fails', async (t) => {
+  for (const call of ['profile', 'resume'] as const) {
+    const { named } = await codexDoctor(t, { prose: call }, { probe: true });
+    const probe = named(`${call}-probe`);
+    assert.equal(probe?.ok, false, probe?.message ?? `no ${call}-probe check`);
+    assert.match(probe.message, /no answer in its output schema/);
+  }
+});
+
 test('a resume probe whose stream names no thread fails', async (t) => {
   const { named } = await codexDoctor(t, { unthreaded: 'resume' }, { probe: true });
   const resume = named('resume-probe');

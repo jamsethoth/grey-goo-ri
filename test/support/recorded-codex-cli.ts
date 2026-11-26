@@ -43,7 +43,8 @@ export const OLD_VERSION = '0.170.0';
 // How a case changes the CLI that answers, beside the launch's own changes: the version --version prints, the
 // logged-out recording for login status, the sandbox command failing as an unknown sandbox value did or exiting 0 with
 // no marker line as the cmd recording did, the exec recording a model call replays: the profile probe's, and the
-// resume probe's, and the one of them whose stream lost its thread.started line; and the MCP servers the server listing
+// resume probe's, and the one of them whose stream lost its thread.started line, and the one whose answer is prose; and
+// the MCP servers the server listing
 // names in place of the recorded none.
 export interface CodexState extends cliReplay.LaunchState {
   version?: string;
@@ -52,6 +53,7 @@ export interface CodexState extends cliReplay.LaunchState {
   profile?: string;
   resume?: string;
   unthreaded?: 'profile' | 'resume';
+  prose?: 'profile' | 'resume';
   servers?: string[];
 }
 
@@ -63,13 +65,17 @@ function modelCall(args: readonly string[], state: CodexState): cliReplay.Answer
   const call = args.includes('resume') ? 'resume' : 'profile';
   const name = call === 'resume' ? (state.resume ?? 'resume-flags-before') : (state.profile ?? 'start');
   const recorded = readFileSync(new URL(`${name}.jsonl`, FIXTURES), 'utf8');
-  const stdout =
+  const threaded =
     state.unthreaded === call
       ? recorded
           .split('\n')
           .filter((line) => !line.includes('"thread.started"'))
           .join('\n')
       : recorded;
+  const stdout =
+    state.prose === call
+      ? threaded.replace(/"type":"agent_message","text":"(?:[^"\\]|\\.)*"/g, '"type":"agent_message","text":"Done."')
+      : threaded;
   const { exitCode, stderr } = JSON.parse(readFileSync(new URL(`${name}.json`, FIXTURES), 'utf8')) as {
     exitCode: number;
     stderr: string;

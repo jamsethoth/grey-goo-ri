@@ -161,7 +161,8 @@ test('a hook whose tool filter matches only other tools is no warning', async (t
   assert.deepEqual(await rewriteWarnings(t, plugins, agents), [CONTROL_WARNING]);
 });
 
-test('a plugin is one warning for each Agent that lists it, however many shell hooks it declares', async (t) => {
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('a plugin is one warning for each Agent that lists it, however many shell hooks it declares or times it is listed', async (t) => {
   const plugins = {
     'twice@mkt': {
       hooksJson: { ...claudePluginHome.hookOn('PreToolUse', SHELL), ...claudePluginHome.hookOn('PermissionRequest') },
@@ -169,8 +170,14 @@ test('a plugin is one warning for each Agent that lists it, however many shell h
     },
     'quiet@mkt': {},
   };
-  const agents = { writer: ['twice@mkt'], reviewer: ['quiet@mkt', 'twice@mkt'], idle: ['quiet@mkt'] };
+  const agents = { writer: ['twice@mkt', 'twice@mkt'], reviewer: ['quiet@mkt', 'twice@mkt'], idle: ['quiet@mkt'] };
   assert.deepEqual(await rewriteWarnings(t, plugins, agents), ['reviewer twice@mkt', 'writer twice@mkt']);
+});
+
+// A listed plugin that is not installed is preflight's error, not a warning here, and the doctor's other checks stand.
+test('a listed plugin that is not installed is no warning, and the other plugins are still checked', async (t) => {
+  const { plugins, agents } = withControl({ plugins: {}, agents: { ghost: ['absent@mkt'] }, expected: [] });
+  assert.deepEqual(await rewriteWarnings(t, plugins, agents), [CONTROL_WARNING]);
 });
 
 // The rule over every site (DoD 4): every event, every place a hook is declared and every form of tool filter.
