@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as wait } from 'node:timers/promises';
 import type * as commandCleanup from '../../../lib/command-cleanup.ts';
 import type * as containment from '../../../lib/containment.ts';
 import * as exec from '../../../lib/exec.ts';
@@ -228,3 +229,55 @@ for (const site of SITES) {
     assert.ok(attempts.has(child), `no adoption of ${child} was tried: ${JSON.stringify([...attempts])}`);
   });
 }
+
+// The calls of one process snapshot, any of which a loaded machine makes slow.
+const SNAPSHOT_CALLS = ['CreateToolhelp32Snapshot', 'Process32FirstW', 'Process32NextW'] as const;
+type SnapshotCall = (typeof SNAPSHOT_CALLS)[number];
+const SLOW_MS = 1500;
+
+// A kernel32 whose call slow blocks the thread that makes it for SLOW_MS once in each snapshot walk, as a snapshot on a
+// loaded machine does.
+function slowSnapshot(slow: SnapshotCall) {
+  const real = kernel32Doubles.realKernel32!;
+  let walking = false; // Process32NextW is called per entry, and blocks on the first of each walk only
+  const blockIf = (call: SnapshotCall) => {
+    if (call === slow && !(call === 'Process32NextW' && walking))
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, SLOW_MS);
+  };
+  return kernel32Doubles.withKernel32({
+    CreateToolhelp32Snapshot: (...args) => {
+      blockIf('CreateToolhelp32Snapshot');
+      return real.CreateToolhelp32Snapshot(...args);
+    },
+    Process32FirstW: (...args) => {
+      blockIf('Process32FirstW');
+      walking = false;
+      return real.Process32FirstW(...args);
+    },
+    Process32NextW: (...args) => {
+      blockIf('Process32NextW');
+      walking = true;
+      return real.Process32NextW(...args);
+    },
+  });
+}
+
+// The watcher's periodic snapshot must not block gg's thread, where the stall, wall and heartbeat clocks that judge the
+// command run (#531 D1). The timer is sampled from the command's start, once its synchronous spawn has returned (under
+// load that spawn alone takes over 500 ms), for 4.3 s of the command's 6, so the watcher polls in the sample at least
+// twice, and cleanup's own last poll, made on gg's thread once the command has exited, is outside it.
+for (const site of SITES)
+  for (const call of SNAPSHOT_CALLS)
+    test(`${site.name}'s watcher keeps gg's timers on time while ${call} is slow`, WIN_CASE, async () => {
+      const ran = site.finishes(slowSnapshot(call), 'sleep 6');
+      let mostLate = 0;
+      let last = Date.now();
+      const sampler = setInterval(() => {
+        mostLate = Math.max(mostLate, Date.now() - last - 50);
+        last = Date.now();
+      }, 50);
+      await wait(4300);
+      clearInterval(sampler);
+      await ran;
+      assert.ok(mostLate < 500, `a 50 ms timer fired ${mostLate} ms late while the command ran`);
+    });
