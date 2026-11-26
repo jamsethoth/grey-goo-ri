@@ -212,8 +212,14 @@ for (const { waited, rest, expected } of [
       const seenB = new Promise<void>((resolve) => (sawB = resolve));
       // the child prints b once onIdle has written go, an event rather than a time (docs/testing.md rule 1)
       const go = join(scratch, `pending-output-${waited}.go`);
-      const printB = "console.log('b'); setInterval(() => {}, 1000);";
-      const waitForGo = `if (require('fs').existsSync(${JSON.stringify(go)})) { clearInterval(poll); ${printB} }`;
+      // go reaches the child as its argument, data rather than code
+      const printsBOnGo = [
+        "console.log('a');",
+        'const poll = setInterval(() => {',
+        "  if (!require('fs').existsSync(process.argv[1])) return;",
+        "  clearInterval(poll); console.log('b'); setInterval(() => {}, 1000);",
+        '}, 20);',
+      ].join('\n');
       const asks: number[] = [];
       const answers = [
         async () => {
@@ -227,7 +233,7 @@ for (const { waited, rest, expected } of [
       ];
       const running = launch({
         command: process.execPath,
-        args: ['-e', `console.log('a'); const poll = setInterval(() => { ${waitForGo} }, 20);`],
+        args: ['-e', printsBOnGo, go],
         stallMs: 2000,
         testHooks: { clock },
         onLine: (line) => (line === 'a' ? sawA() : line === 'b' && sawB()),
