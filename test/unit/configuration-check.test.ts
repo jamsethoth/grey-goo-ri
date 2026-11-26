@@ -1,7 +1,7 @@
-import { test, type TestContext } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { delimiter, join } from 'node:path';
+import { readdirSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type * as config from '../../lib/config.ts';
 import * as configurationCheck from '../../lib/configuration-check.ts';
@@ -9,13 +9,13 @@ import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as procedureKinds from '../../lib/procedures.ts';
 import type * as runContext from '../../lib/run-context.ts';
 import * as report from '../../lib/validate/report.ts';
-import * as caseEnv from '../support/case-env.ts';
 import * as corruptRecords from '../support/corrupt-records.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
 import type * as golden from '../support/golden.ts';
 import * as recordedCli from '../support/recorded-cli.ts';
 import * as runFixture from '../support/run-fixture.ts';
 import * as seededRecords from '../support/seeded-records.ts';
+import * as storeAlias from '../support/store-alias.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
 const REPOSITORY_FILE = '/repo/.agents/gg/gg.json';
@@ -129,15 +129,8 @@ test('preflight names a Harness that fails in a Flow --flow does not name', asyn
 
 // The preflight stop for Claude is gone (#425, G7): the Claude Harness shipped builds passes preflight over a CLI
 // logged in at the minimum version, whose cheap checks preflight runs (#427).
-// An unpackaged pwsh first on PATH until the case ends, so the shell check passes whatever the machine's first is.
-function unpackagedShellFirst(t: TestContext) {
-  const directory = tempDirectory.tempDirectory(t, 'gg-check-shell-');
-  writeFileSync(join(directory, 'pwsh.exe'), '');
-  caseEnv.caseEnv(t, { PATH: [directory, process.env.PATH ?? ''].join(delimiter) });
-}
-
 test('preflight admits the Claude Harness shipped builds over a logged-in CLI', async (t) => {
-  unpackagedShellFirst(t);
+  storeAlias.unpackagedShellFirst(t);
   const repository = repositorySource();
   Object.assign(repository.agents.implementer!, { harness: 'claude' });
   const { claude } = shipped.shipped(recordedCli.recordedCli());
@@ -146,7 +139,7 @@ test('preflight admits the Claude Harness shipped builds over a logged-in CLI', 
 
 // Q1 A: a failed check is one error for the Harness, at no configuration path, naming the check.
 test('preflight fails a Flow whose Claude CLI is logged out', async (t) => {
-  unpackagedShellFirst(t);
+  storeAlias.unpackagedShellFirst(t);
   const repository = repositorySource();
   Object.assign(repository.agents.implementer!, { harness: 'claude' });
   const { claude } = shipped.shipped(recordedCli.recordedCli({ loggedOut: true }));
