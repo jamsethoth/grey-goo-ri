@@ -2,6 +2,7 @@
 // configuration-check.test.ts, which is at its line cap.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as util from 'node:util';
 import type * as config from '../../lib/config.ts';
 import * as configurationCheck from '../../lib/configuration-check.ts';
 import type * as runContext from '../../lib/run-context.ts';
@@ -40,7 +41,8 @@ function userSource(name: string, change: (user: Repository) => void) {
 
 // Each shape a Vertex can give its Agent in, as the case builds it, and the Agents the fake Harness's doctor is then
 // given: a used Agent by its name; an inline one, or one that differs from the Agent already under its name, by
-// `<flow>.<vertex>` of the first Vertex that runs it; an Agent equal to one already given, once (#484 F1, D1 A).
+// `<flow>.<vertex>` of the first Vertex that runs it, or its next free `#<n>` when that is taken; an Agent equal to one
+// already given, once (#484 F1, D1 A, F6, F7, D4 A).
 const AGENT_SHAPES: Record<string, () => { configuration: config.Configuration; agents: Record<string, unknown> }> = {
   used: () => {
     const repository = repositorySource();
@@ -76,6 +78,42 @@ const AGENT_SHAPES: Record<string, () => { configuration: config.Configuration; 
       agents: { implementer: repository.agents.implementer, 'user:mine.red': user.agents.implementer },
     };
   },
+  // An own key, as JSON.parse reads gg.json, so the name stays data (#174, #484 F6).
+  'named __proto__': () => {
+    const repository = repositorySource();
+    const agent = { ...repository.agents.implementer, plugins: ['rewriter'] };
+    repository.agents = Object.fromEntries([['__proto__', agent]]) as Repository['agents'];
+    for (const vertex of Object.values(repository.flows.default!.ticket.vertices) as Record<string, unknown>[])
+      if (vertex.use !== undefined) vertex.use = '__proto__';
+    return { configuration: sources(repository), agents: Object.fromEntries([['__proto__', agent]]) };
+  },
+  'inline, then an identical named one': () => {
+    const repository = repositorySource();
+    const { implementer } = repository.agents;
+    const red = repository.flows.default!.ticket.vertices.red as Record<string, unknown>;
+    delete red.use;
+    Object.assign(red, implementer);
+    return { configuration: sources(repository), agents: { 'default.red': implementer } };
+  },
+  'two names for one Agent': () => {
+    const repository = repositorySource();
+    const { implementer } = repository.agents;
+    repository.agents.twin = structuredClone(implementer);
+    (repository.flows.default!.ticket.vertices.green as Record<string, unknown>).use = 'twin';
+    return { configuration: sources(repository), agents: { implementer } };
+  },
+  // A taken key gets the next free suffix (#484 D4 A).
+  'named like a Vertex key': () => {
+    const repository = repositorySource();
+    const { implementer } = repository.agents;
+    const named = { ...implementer, plugins: ['rewriter'] };
+    repository.agents = { 'default.green': named };
+    const { red, green } = repository.flows.default!.ticket.vertices as Record<string, Record<string, unknown>>;
+    red!.use = 'default.green';
+    delete green!.use;
+    Object.assign(green!, implementer);
+    return { configuration: sources(repository), agents: { 'default.green': named, 'default.green#2': implementer } };
+  },
 };
 
 test('every shape a Vertex gives its Agent in reaches its Harness doctor once, under a name of its own', async () => {
@@ -97,5 +135,17 @@ test('every shape a Vertex gives its Agent in reaches its Harness doctor once, u
       shape,
     );
     assert.deepEqual(given, [agents], shape);
+    // Whatever its key: no Agent given twice, and every Agent a Vertex runs given.
+    const givenAgents = given.flatMap((byName) => Object.values(byName as Record<string, unknown>));
+    givenAgents.forEach((agent, index) =>
+      assert.ok(!givenAgents.slice(index + 1).some((other) => util.isDeepStrictEqual(agent, other)), shape),
+    );
+    for (const { declared } of checked.flows.values())
+      for (const { agent } of Object.values(declared.ticket.vertices))
+        if (agent != null)
+          assert.ok(
+            givenAgents.some((other) => util.isDeepStrictEqual(agent, other)),
+            shape,
+          );
   }
 });
