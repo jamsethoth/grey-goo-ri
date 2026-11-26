@@ -27,7 +27,9 @@ created the job, and wrote its answers as `\x01GGJOB` notes into the command's o
   and ends stdin. Nothing the command starts is outside the job, and the command reads EOF, as it read NUL before.
   The gate line is not empty, since `set /p` given an empty line leaves the error level at 1, which a bare `exit /b`
   or `if errorlevel` in the command would read; the variable is then cleared. The gate also swallows any stdin
-  written with the gate line, so this start is only for commands given no stdin.
+  written with the gate line, so this start is only for commands given no stdin. Amended 2026-11-25 (grey-goo-ri
+  issue #530, ADR 0030 decision 1): the job sets kill-on-close alone, with no breakaway-OK, so a child that asks to
+  break away fails to start, and Git Bash's children stay in the job.
 - On timeout gg terminates the job and lists its members until it is empty. A job it cannot read or terminate is
   reported, its processes named as survivors, and its handle kept, so kill-on-close takes them when gg exits.
 - gg holds the job's only handle, so the job's processes also die when gg does. The result names its containment,

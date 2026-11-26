@@ -4,6 +4,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as containment from '../../../lib/containment.ts';
+import * as exec from '../../../lib/exec.ts';
+import * as runSuite from '../../../scripts/run-suite.ts';
 import * as childScripts from '../../support/child-scripts.ts';
 import * as kernel32Doubles from '../../support/kernel32-doubles.ts';
 import * as processProbe from '../../support/process-probe.ts';
@@ -79,4 +81,50 @@ test('describe of a pid that is gone, or with no kernel32, names only the pid', 
     commandLine: null,
   });
   assert.deepEqual(containment.describe(null, 7), { pid: 7, created: null, commandLine: null });
+});
+
+// Every job gg creates, for a Check's shell runner, a launch and the suite launcher, sets kill-on-close alone, so a
+// child that asks to break away fails to start (ADR 0030 decision 1). Each entry gives the limit flags of every job it
+// set up. The suite launcher's job is never given this test process, as in test/contract/exec/run-suite.test.ts.
+test('every job gg creates sets kill-on-close alone, with no breakaway', options.WIN_CASE, async (t) => {
+  const real = kernel32Doubles.realKernel32 as containment.Kernel32;
+  const flagsOf = async (
+    enter: (kernel32: containment.Kernel32) => Promise<unknown>,
+    replaced: Parameters<typeof kernel32Doubles.withKernel32>[0] = {},
+  ) => {
+    const flags: number[] = [];
+    const recorded = kernel32Doubles.withKernel32({
+      SetInformationJobObject: (...call) => {
+        flags.push((call[2] as Buffer).readUInt32LE(16)); // the limit flags, at byte 16 of the extended limits
+        return real.SetInformationJobObject(...call);
+      },
+      ...replaced,
+    });
+    await enter(recorded);
+    return flags;
+  };
+  let stageJob = 0n;
+  t.after(() => real.CloseHandle(stageJob));
+  const killOnJobClose = 0x2000;
+  assert.deepEqual(
+    {
+      "a Check's shell runner": await flagsOf((kernel32) =>
+        exec
+          .createExec({ kernel32 })
+          .runShell(childScripts.nodeCommand(t, childScripts.PRINTS_LINE, 'ran'), { timeoutMs: 60_000 }),
+      ),
+      'a launch': await flagsOf((kernel32) =>
+        exec.createExec({ kernel32 }).launch({ command: process.execPath, args: ['-e', ''], wallMs: 60_000 }),
+      ),
+      'the suite launcher': await flagsOf((kernel32) => runSuite.holdStage(kernel32), {
+        CreateJobObjectW: (...args) => (stageJob = real.CreateJobObjectW(...args)),
+        AssignProcessToJobObject: () => 1,
+      }),
+    },
+    {
+      "a Check's shell runner": [killOnJobClose],
+      'a launch': [killOnJobClose],
+      'the suite launcher': [killOnJobClose],
+    },
+  );
 });
