@@ -153,6 +153,7 @@ test('the coverage stage runs test/unit in one process over lib/ outside its bou
       '--test-coverage-exclude=lib/git-temp-index.ts',
       '--test-coverage-exclude=lib/git-default-branch.ts',
       '--test-coverage-exclude=lib/process-tree.ts',
+      '--test-coverage-exclude=lib/job-watcher.ts',
       '--test-coverage-exclude=lib/containment.ts',
       '--test-coverage-exclude=lib/containment-gate.ts',
       '--test-coverage-exclude=lib/command-shim.ts',
