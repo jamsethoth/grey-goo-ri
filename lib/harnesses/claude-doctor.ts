@@ -257,7 +257,12 @@ const profileProbe = (runner: Runner, profile: ProfileLaunch) =>
     const checks = [profileCheck(ran), handoffCheck(ran)];
     // The fork needs a Session that handed off, in the same directory, where the CLI keeps it.
     const { sessionId } = claudeStream.read(ran.lines);
-    if (checks.some(({ ok }) => !ok) || sessionId === null) return checks;
+    if (checks.some(({ ok }) => !ok)) return checks;
+    if (sessionId === null)
+      return [
+        ...checks,
+        cliDoctor.failed('fork-probe', "the launch profile's call named no Session, so none can be copied"),
+      ];
     return [...checks, forkCheck(await launch(forkCall(directory, sessionId), FORK_BRIEF), sessionId)];
   });
 
@@ -319,10 +324,46 @@ async function bareProbe(runner: Runner): Promise<Check> {
   );
 }
 
+// Whether a listed plugin declares a hook that can rewrite a shell command before it runs (claude.ts reads it). One
+// that is not installed is resolveTools's error at preflight, so it throws here and is no warning.
+export type PluginRewrites = (plugin: string) => boolean;
+
+// Each Agent's listed plugin whose hook can rewrite a shell command, once however many such hooks it declares: gg
+// refuses a rewritten command (Q13' A, #484 Q5 A), so the Agent's commands may fail.
+function pluginChecks(agents: runContext.DoctorOptions['agents'], rewrites: PluginRewrites): Check[] {
+  return Object.entries(agents).flatMap(([agentName, agent]) => {
+    const listed = referencePaths.isRecord(agent) && Array.isArray(agent.plugins) ? agent.plugins : [];
+    return [...new Set(listed)].flatMap((plugin) => {
+      if (typeof plugin !== 'string') return [];
+      try {
+        if (!rewrites(plugin)) return [];
+      } catch {
+        return [];
+      }
+      return [
+        cliDoctor.failed(
+          'plugin-hooks',
+          `agent ${agentName} lists plugin ${plugin}, whose hook can rewrite shell commands before they run, ` +
+            'and gg refuses a rewritten command',
+          'warning',
+        ),
+      ];
+    });
+  });
+}
+
 // The cheap checks, then under probe the model probes. A CLI that cannot start is the one failure: the checks that
 // read what it prints do not run.
-export async function doctor(runner: Runner, { probe }: { probe: boolean }, profile: ProfileLaunch) {
-  const checks = [...(process.platform === 'win32' ? [shellCheck()] : []), ggCheck()];
+export async function doctor(
+  runner: Runner,
+  { probe, agents }: runContext.DoctorOptions,
+  { profile, rewrites }: { profile: ProfileLaunch; rewrites: PluginRewrites },
+) {
+  const checks = [
+    ...(process.platform === 'win32' ? [shellCheck()] : []),
+    ggCheck(),
+    ...pluginChecks(agents, rewrites),
+  ];
   const version = await said(runner, ['--version']);
   if (!version.started) checks.push(cliDoctor.failed('executable', `claude cannot start: ${version.failure}`));
   else {

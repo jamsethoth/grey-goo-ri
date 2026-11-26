@@ -390,12 +390,12 @@ const CHEAP_CHECKS = ['executable', 'version', 'login', 'bare-help'];
 // Each check doctor ran that failed, by name, but gg's own place on PATH, which reads the machine, not the CLI
 // (test/unit/doctor.cli-checks.test.ts holds it).
 const failedChecks = async (fake: claudeOverFakeCli.ClaudeOverFakeCli) =>
-  (await fake.harness.doctor({ probe: false })).checks
+  (await fake.harness.doctor({ probe: false, agents: {} })).checks
     .filter(({ ok, name }) => !ok && name !== 'gg-on-path')
     .map(({ name, severity }) => ({ name, severity }));
 
 test('doctor passes every cheap check of the recorded CLI', CASE, async (t) => {
-  const { checks, ok } = await fakeCli(t, { scenario: 'success' }).harness.doctor({ probe: false });
+  const { checks, ok } = await fakeCli(t, { scenario: 'success' }).harness.doctor({ probe: false, agents: {} });
   assert.deepEqual(
     CHEAP_CHECKS.filter((name) => !checks.some((check) => check.name === name && check.ok)),
     [],

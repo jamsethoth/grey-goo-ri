@@ -6,8 +6,12 @@ import type * as model from '../model.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
 import * as cliDoctor from './cli-doctor.ts';
+import * as codexDoctor from './codex-doctor.ts';
 import * as codexPlugins from './codex-plugins.ts';
 import * as codexSkills from './codex-skills.ts';
+
+// The doctor's sandbox command, for scripts/record-codex.ts to record as the doctor runs it (#484 D2 A).
+export { SANDBOX_ARGS } from './codex-doctor.ts';
 
 // The paths that configure Codex, which gg protects from every agent (request 3.2).
 export const protectedPaths: string[] = ['.codex/', 'AGENTS.md'];
@@ -368,7 +372,7 @@ async function validateIn(listOnce: () => Promise<Listings>, homes: Homes, agent
 }
 
 // The members built from the exec shipped.ts is given: validate, which lists what Codex has installed once per
-// preflight; run and doctor are #482's and #484's.
+// preflight, and doctor (#484); run is #482's.
 export const createCli = (
   runner: Runner,
   { codexHome: home = codexHome(), skillsHome: skills = skillsHome() }: Partial<Homes> = {},
@@ -376,5 +380,13 @@ export const createCli = (
   let listing: Promise<Listings> | undefined;
   const listOnce = () => (listing ??= list(runner, home));
   const homes = { codexHome: home, skillsHome: skills };
-  return { validate: (agent: unknown) => validateIn(listOnce, homes, agent) };
+  return {
+    validate: (agent: unknown) => validateIn(listOnce, homes, agent),
+    // The probes launch over the listing a Run's call gets, so a server the probe Agent does not list is off (D17 A).
+    doctor: (options: runContext.DoctorOptions) =>
+      codexDoctor.doctor(runner, options, {
+        home,
+        profile: async (call) => launchArgsIn(homes, call, resolveTools(call.agent), await listOnce()),
+      }),
+  };
 };

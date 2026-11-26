@@ -1,6 +1,7 @@
 // The commands scripts/record-codex.ts records that are no model call (#479), so no budget counts them: the version,
-// login, doctor report, listings and help the Codex Harness reads, and debug prompt-input for issue decisions 2, 3 and
-// 7. In an argument, {base} is the command's directory.
+// login, MXC sandbox command, doctor report, listings and help the Codex Harness reads, and debug prompt-input for
+// issue decisions 2, 3 and 7. In an argument, {base} is the command's directory.
+import * as codex from '../lib/harnesses/codex.ts';
 
 // A command that is no model call: its argv after the executable, the CODEX_HOME it runs under, the repository it
 // runs in, and whether gg's empty-start keys go before its own argv.
@@ -25,6 +26,12 @@ export const COMMANDS: CliCommand[] = [
     purpose: 'the login doctor reads, in an empty CODEX_HOME',
     argv: ['login', 'status'],
     home: 'empty',
+  },
+  {
+    name: 'cli-sandbox-mxc',
+    purpose:
+      "#484: doctor's sandbox command, a PowerShell command under MXC in gg's CODEX_HOME that prints its marker line",
+    argv: codex.SANDBOX_ARGS,
   },
   { name: 'cli-doctor', purpose: "codex's own doctor report, in gg's CODEX_HOME", argv: ['doctor', '--json'] },
   {
