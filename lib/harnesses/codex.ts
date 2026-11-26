@@ -1,12 +1,14 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import * as config from '../config.ts';
+import * as commandCleanup from '../command-cleanup.ts';
 import type * as exec from '../exec.ts';
 import type * as model from '../model.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
 import * as cliDoctor from './cli-doctor.ts';
 import * as codexDoctor from './codex-doctor.ts';
+import * as contract from './contract.ts';
 import * as codexPlugins from './codex-plugins.ts';
 import * as codexSkills from './codex-skills.ts';
 
@@ -371,8 +373,25 @@ async function validateIn(listOnce: () => Promise<Listings>, homes: Homes, agent
   return { ok: !errors.length, errors, hinted: tools.hinted };
 }
 
-// The members built from the exec shipped.ts is given: validate, which lists what Codex has installed once per
-// preflight, and doctor (#484); run is #482's.
+const notImplemented = (): never => {
+  throw new Error('not implemented');
+};
+
+// shortcut: Red's stub of one Attempt through codex exec, a failed call that starts nothing; Green builds it (#482).
+const runIn = (_runner: Runner, _homes: Homes, _call: unknown): ReturnType<runContext.Harness['run']> => {
+  const usage = { cumulative: contract.emptyUsage(capabilities), delta: contract.emptyUsage(capabilities) };
+  const result = {
+    status: 'completed' as const,
+    sessionId: null,
+    transcriptPath: null,
+    usage,
+    cleanup: commandCleanup.NO_COMMAND,
+  };
+  return Promise.resolve({ response: null, result, failure: null });
+};
+
+// The members built from the exec shipped.ts is given: run (#482), validate, which lists what Codex has installed
+// once per preflight, and doctor (#484); interactiveArgs and metrics throw "not implemented" until their slices.
 export const createCli = (
   runner: Runner,
   { codexHome: home = codexHome(), skillsHome: skills = skillsHome() }: Partial<Homes> = {},
@@ -381,6 +400,9 @@ export const createCli = (
   const listOnce = () => (listing ??= list(runner, home));
   const homes = { codexHome: home, skillsHome: skills };
   return {
+    run: (call: Record<string, unknown>, _hooks: runContext.HarnessHooks) => runIn(runner, homes, call),
+    interactiveArgs: notImplemented as (agent: unknown, opening: string, options?: unknown) => string[],
+    metrics: notImplemented as (session: string) => null,
     validate: (agent: unknown) => validateIn(listOnce, homes, agent),
     // The probes launch over the listing a Run's call gets, so a server the probe Agent does not list is off (D17 A).
     doctor: (options: runContext.DoctorOptions) =>
