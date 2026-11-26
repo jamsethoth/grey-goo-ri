@@ -93,8 +93,8 @@ function finishedNote(cleanup: processTree.Settled) {
   return left + cleanupNote(cleanup);
 }
 
-// How a shell command was held: in a job (Windows: the command and all it starts), or not, with containmentError saying
-// why when a Windows command runs uncontained.
+// How a shell command was held: in a job (Windows: the command and all it starts, a process started outside it adopted
+// or ended by its watcher), or not, with containmentError saying why when a Windows command runs uncontained.
 export type Containment = { containment: 'job' } | { containment: 'none'; containmentError?: string };
 
 // A shell command's run: its exit code and combined output, and what its Command Cleanup found. A timed-out run has
@@ -183,14 +183,14 @@ function eachLine(stream: Readable, onLine: (line: string) => void) {
 }
 
 // Start an argv contained, with no shell; see LaunchOptions. Nothing is left running when it resolves: a stop takes the
-// tree down, and an exit ends what the argv left, as runShell does; cleanup says what it found. A launch whose
-// executable cannot start rejects with the spawn error.
+// tree down, and an exit ends what the argv left, with what its watcher linked, as runShell does; cleanup says what it
+// found. A launch whose executable cannot start rejects with the spawn error.
 function launch(kernel32: containment.Kernel32 | null, options: LaunchOptions): Promise<LaunchResult> {
   return new Promise((resolve, reject) => {
     const started = startArgv(kernel32, options);
     const { child } = started;
     const cleanupContainment = cleanupContainmentOf(started);
-    const watcher = process.platform === 'win32' || !child.pid ? null : processTree.watchDescendants(child.pid);
+    const watcher = processTree.watch(started, kernel32);
     const closed = new Promise((settled) => child.on('close', settled));
     const { promise: gaveUp, resolve: giveUp } = Promise.withResolvers<void>();
     let stopped: launchClock.Stop | null = null;
@@ -266,8 +266,8 @@ export type Exec = ReturnType<typeof createExec>;
 
 // Run a repo-declared command line (e.g. "npm test") through the platform shell. timeoutMs bounds the command from the
 // call, or from when testHooks.signal aborts.
-// The result names its containment: job (Windows: the command and all it starts held in a job object) or none, with
-// containmentError saying why when a Windows command runs uncontained. Nothing is left running when it answers, whether
+// The result names its containment: job (Windows: the command and all it starts held in a job object, or adopted or
+// ended by its watcher) or none, with containmentError saying why. Nothing is left running when it answers, whether
 // the command finished or timed out (L6): it ends its leftovers, waits for its output pipes to close, and says what it
 // found in cleanup. On timeout it also resolves with timedOut: true, survivors: [{ pid, error }] for processes that
 // could not be killed or confirmed gone, and cleanupErrors. A command that finishes names what it left as
@@ -360,8 +360,8 @@ function shell(
     // The clock also bounds the wait for a finished command's pipes, which a process cleanup cannot find may hold.
     let giveUp = () => {};
     const gaveUp = new Promise<void>((wake) => (giveUp = wake));
-    const watcher = process.platform === 'win32' ? null : processTree.watchDescendants(child.pid!);
-    if (watcher) testHooks.onWatch?.(watcher.seen);
+    const watcher = processTree.watch(started, kernel32);
+    if (watcher && 'seen' in watcher) testHooks.onWatch?.(watcher.seen);
     const stopClock = startClock({ timeoutMs, signal: testHooks.signal, timers: testHooks.timers }, async () => {
       if (exited) return giveUp();
       timedOut = true; // the kill makes 'exit' and 'close' fire first; the timeout result below wins

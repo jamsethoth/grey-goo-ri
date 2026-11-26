@@ -155,8 +155,9 @@ export type Job = {
   emptied(): Promise<void>;
   // A process the watcher linked outside the job's members, held by a handle gg keeps open, so its pid names no other
   // process while it is, and adopted through it: into this job, else a new kill-on-close job, else ended (ADR 0030
-  // decision 3). One gg cannot open is not held, and named as far as the system will say.
-  hold(entry: commandCleanup.ProcessEntry): commandCleanup.LinkedProcess;
+  // decision 3). One gg cannot open is not held, and named as far as the system will say; one whose start is not the
+  // start it was linked at is another process under a reused pid, so null, and left alone.
+  hold(entry: commandCleanup.ProcessEntry, started: bigint): commandCleanup.LinkedProcess | null;
   // whether a held process's handle has signalled; never for one gg does not hold, which it cannot see end
   exited(pid: number): boolean;
   // ends each held pid through its adopted job and its handle, and resolves once each whose end was accepted has exited
@@ -202,11 +203,18 @@ function linkedHoldings(kernel32: Kernel32, ggJob: bigint) {
     kernel32.TerminateProcess(handle, 1); // refused, it stays held, and its cleanup names it
     return null;
   };
-  const hold = ({ pid, parentPid }: commandCleanup.ProcessEntry): commandCleanup.LinkedProcess => {
+  const hold = (
+    { pid, parentPid }: commandCleanup.ProcessEntry,
+    started: bigint,
+  ): commandCleanup.LinkedProcess | null => {
     const handle = kernel32.OpenProcess(PROCESS_HELD, 0, pid);
     if (!handle) return { ...describe(kernel32, pid), parentPid, started: null, held: false };
+    // Its pid named another process when it was linked, reused since: not the watcher's to adopt or end (#531).
+    if (creationTime(kernel32, handle) !== started) {
+      kernel32.CloseHandle(handle);
+      return null;
+    }
     const named = { pid, created: createdAt(kernel32, handle), commandLine: commandLineOf(kernel32, handle) };
-    const started = creationTime(kernel32, handle);
     held.set(pid, { handle, job: adopt(handle) });
     return { ...named, parentPid, started, held: true };
   };

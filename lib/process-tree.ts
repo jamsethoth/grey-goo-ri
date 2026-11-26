@@ -3,11 +3,14 @@ import type { Readable } from 'node:stream';
 import { setTimeout as wait } from 'node:timers/promises';
 import * as commandCleanup from './command-cleanup.ts';
 import * as containment from './containment.ts';
+import * as jobWatcher from './job-watcher.ts';
 
 // The processes a shell command leaves, found and killed as lib/command-cleanup.ts decides, whichever way the command
 // was held: the POSIX process listing, the watcher that follows a command's descendants and the group kill; the Windows
-// job's termination and taskkill; and the helper processes that list and kill (exec.ts runs the command).
+// job's watcher and termination (lib/job-watcher.ts) and taskkill; and the helper processes that list and kill (exec.ts
+// runs the command).
 
+// How often both watchers poll: a Windows snapshot costs about 38 ms, about 11% of one core at this gap (#531).
 const POLL_GAP_MS = 250;
 // How long a killed process group may take to empty before cleanup says it could not confirm that. SIGKILL takes effect
 // at once, so what is left past this is stuck in the kernel, or a zombie nothing reaps (a container with no init).
@@ -101,6 +104,13 @@ export function watchDescendants(rootPid: number) {
 }
 
 export type Watcher = ReturnType<typeof watchDescendants>;
+
+// A command's watcher: its job's on Windows, the POSIX one over its descendants, or none for an uncontained Windows
+// command or a spawn that failed.
+export function watch({ child, job }: containment.Started, kernel32: containment.Kernel32 | null) {
+  if (job && kernel32) return jobWatcher.watch(job, kernel32, POLL_GAP_MS);
+  return process.platform === 'win32' || !child.pid ? null : watchDescendants(child.pid);
+}
 
 const errorCode = (err: unknown) => (err as NodeJS.ErrnoException).code;
 
@@ -222,36 +232,6 @@ const killLeftovers = async (
         () => snapshot(snapshotCommand, AbortSignal.timeout(leftoverListingWaitMs)),
       );
 
-// Windows: terminate the job and wait until it is empty. A job not confirmed empty keeps gg's handle, so kill-on-close
-// takes what is left when gg exits.
-async function terminateJob(
-  job: containment.Job,
-  rootPid: number,
-  kernel32: containment.Kernel32 | null,
-): Promise<commandCleanup.Cleanup> {
-  let refused: string | undefined;
-  try {
-    job.terminate();
-  } catch (err) {
-    refused = (err as Error).message;
-  }
-  const cleanupErrors = refused ? [refused] : [];
-  try {
-    if (refused) {
-      const survivors = job
-        .members()
-        .map((pid) => ({ ...containment.describe(kernel32, pid), error: `termination refused: ${refused}` }));
-      return { survivors, cleanupErrors };
-    }
-    await job.emptied();
-    job.close();
-    return { survivors: [], cleanupErrors };
-  } catch (err) {
-    cleanupErrors.push(`could not verify the job is empty: ${(err as Error).message}`);
-    return { survivors: [{ ...containment.describe(kernel32, rootPid), error: 'not verified gone' }], cleanupErrors };
-  }
-}
-
 // Windows without a job: taskkill /T takes down what is still linked to the shell; orphans cannot be found. The linked
 // descendants are listed first, while the links exist, to be named if taskkill is refused. taskkill is let finish:
 // stopped partway on a loaded machine it can kill the shell but not the children it then no longer finds. /T spares a
@@ -298,13 +278,13 @@ async function takeDownTree(
 export function takeDown(
   { child, job, containmentError }: containment.Started,
   kernel32: containment.Kernel32 | null,
-  watcher: Watcher | null,
+  watcher: Watcher | jobWatcher.JobWatcher | null,
   testHooks: CleanupHooks,
 ) {
   const { killPid = (pid: number) => process.kill(pid, 'SIGKILL'), snapshotCommand, taskkillCommand } = testHooks;
   // The pid is unset only when spawn fails, which 'error' reports before a timeout can fire.
   const pid = child.pid as number;
-  if (job) return terminateJob(job, pid, kernel32);
+  if (job) return jobWatcher.terminate(job, pid, kernel32, watcher as jobWatcher.JobWatcher | null);
   if (process.platform === 'win32') return takeDownTree(pid, kernel32, taskkillCommand, containmentError);
   return killTree(pid, (watcher as Watcher).seen, killPid, snapshotCommand);
 }
@@ -312,33 +292,19 @@ export function takeDown(
 // What a finished command's cleanup did, with what it found running.
 export type Settled = commandCleanup.Cleanup & { leftovers: commandCleanup.NamedProcess[] };
 
-// The job's command exited: what it left running is named, then the job is terminated. An unreadable job names nothing,
-// and its termination says the rest.
-async function settleJob(
-  job: containment.Job,
-  rootPid: number,
-  kernel32: containment.Kernel32 | null,
-): Promise<Settled> {
-  let leftovers: commandCleanup.NamedProcess[] = [];
-  try {
-    leftovers = job.leftovers(rootPid).map((pid) => containment.describe(kernel32, pid));
-  } catch {}
-  return { ...(await terminateJob(job, rootPid, kernel32)), leftovers };
-}
-
 // A command that has exited: what it left is ended, as its containment allows. With no job on Windows nothing is: a
 // parent pid is not cleared when the parent ends and can be reused, so an unrelated older process can read as the
 // command's child (PR #294), and the result stays unconfirmed for a human.
 export function settle(
   { child, job, containmentError }: containment.Started,
   kernel32: containment.Kernel32 | null,
-  watcher: Watcher | null,
+  watcher: Watcher | jobWatcher.JobWatcher | null,
   testHooks: CleanupHooks,
 ): Promise<Settled> {
   const { killPid = (pid: number) => process.kill(pid, 'SIGKILL') } = testHooks;
   // The pid is unset only when spawn fails, which 'error' reports with no 'exit'.
   const pid = child.pid as number;
-  if (job) return settleJob(job, pid, kernel32);
+  if (job) return jobWatcher.settle(job, pid, kernel32, watcher as jobWatcher.JobWatcher | null);
   if (process.platform === 'win32')
     return Promise.resolve({ survivors: [], cleanupErrors: [containmentError as string], leftovers: [] });
   return killLeftovers(pid, (watcher as Watcher).seen, killPid, testHooks);

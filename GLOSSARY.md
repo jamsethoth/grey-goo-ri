@@ -198,15 +198,17 @@ file reads, which is not a Declared Command.
 _Avoid_: script, task, allowed command
 
 **Containment**:
-A Windows job object holding a shell command and everything it starts, so Command Cleanup ends them all. On POSIX,
+A Windows job object holding a shell command and everything it starts, so Command Cleanup ends them all. A process
+Windows starts outside it, as it does a packaged app's, is adopted when the watcher links it: into the job, else into a
+new kill-on-close job gg holds, which Command Cleanup ends and closes with it, else it is ended. On POSIX,
 or when the job cannot be set up, the command runs uncontained (`containment: 'none'`), and a timeout kills the tree
 its watcher saw on POSIX, or the tree taskkill finds on Windows.
 _Avoid_: Confinement (which limits what an agent may touch)
 
 **Command Cleanup**:
 What gg does with the processes a shell command leaves, whether it timed out or finished on its own: it ends them. It
-terminates the Containment's job; on POSIX it kills the process group and the tree the watcher saw, and confirms the
-group is empty; on an uncontained Windows command that timed out it runs taskkill, and one that finished it leaves as
+terminates the Containment's job, then ends each process the job's watcher linked outside it and confirms it gone; on
+POSIX it kills the process group and the tree the watcher saw, and confirms the group is empty; on an uncontained Windows command that timed out it runs taskkill, and one that finished it leaves as
 it is, since a Windows parent pid cannot prove a process its child. A process it cannot tie to the command is left
 alone, and each one it could not end or confirm gone is named as a survivor. A command that finishes has what it left
 named as leftovers. Agent Actions and command and tests-fail Checks record the result as their `cleanup` output,
