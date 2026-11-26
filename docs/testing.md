@@ -38,9 +38,9 @@ entry point since #199 (ADR 0019).
    - `test/contract/exec/launch.test.ts`, `onIdle's last activity re-arms the stall clock for what is left of
      stallMs`: the re-armed stall fires near 3.2 s, 2.3 s before the wall clock, where a full stall from the ask
      would come after it.
-   - `test/contract/exec/launch.test.ts`, `output that arrives while onIdle is pending re-arms the stall clock`: a 2 s
-     stall must not fire within 0.3 s of output that arrived while onIdle was pending; onIdle answers only after it saw
-     the output.
+   - `test/contract/exec/launch.test.ts`, `output that arrives while onIdle is pending re-arms the stall clock`: the stall
+     that ends it is asked again no sooner than 1 s after output that arrived while onIdle was pending, on gg's own
+     clock; onIdle answers only after it saw the output.
    - `test/unit/cli-recording.test.ts`, `a one-letter username's many occurrences with no address after them are
      redacted at once`: a synchronous regular expression blocks the timer a test timeout runs on, so the case bounds
      the redaction at 1 s after it returns (measured worst under 1 ms), and a return of the backtracking #480 fixed

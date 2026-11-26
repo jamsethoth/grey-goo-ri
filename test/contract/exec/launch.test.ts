@@ -164,33 +164,40 @@ test("onIdle's last activity re-arms the stall clock for what is left of stallMs
   );
 });
 
-// The child prints b 2.5 s after a, while onIdle, asked at the 2 s stall, waits to see b before it answers; the child
-// exits 0.3 s after b, well inside the 2 s that b re-arms.
+// onIdle, asked at the 2 s stall, writes go and waits to see b, which the child prints on go and then stays quiet. The
+// stall that ends the launch is asked again a full stallMs after b, on gg's own clock: a lower bound no load can break,
+// where the rule's breach asks again as soon as onIdle answers.
 test('output that arrives while onIdle is pending re-arms the stall clock', CASE, async () => {
   let sawB = () => {};
   const seenB = new Promise<void>((resolve) => (sawB = resolve));
   // b reaching gg before the stall check asks onIdle would pass without testing the rule, so the case records it
   let idlePending = false;
   let bWhilePending = false;
+  let bAt = 0;
+  const asks: number[] = [];
   // the child prints b once onIdle has written go, an event rather than a time (docs/testing.md rule 1)
   const go = join(scratch, 'pending-output.go');
-  const printB = "console.log('b'); setTimeout(() => process.exit(0), 300);";
+  const printB = "console.log('b'); setInterval(() => {}, 1000);";
   const waitForGo = `if (require('fs').existsSync(${JSON.stringify(go)})) { clearInterval(poll); ${printB} }`;
-  const result = await launch({
-    command: process.execPath,
-    args: ['-e', `console.log('a'); const poll = setInterval(() => { ${waitForGo} }, 20);`],
-    stallMs: 2000,
-    onLine: (line) => line === 'b' && ((bWhilePending = idlePending), sawB()),
-    onIdle: async () => {
+  const answers = [
+    async () => {
       idlePending = true;
       writeFileSync(go, '');
       await seenB;
       return null;
     },
+    async () => null,
+  ];
+  const result = await launch({
+    command: process.execPath,
+    args: ['-e', `console.log('a'); const poll = setInterval(() => { ${waitForGo} }, 20);`],
+    stallMs: 2000,
+    onLine: (line) => line === 'b' && ((bAt = Date.now()), (bWhilePending = idlePending), sawB()),
+    onIdle: () => answers[asks.push(Date.now()) - 1]!(),
   });
   assert.deepEqual(
-    { code: result.code, timedOut: result.timedOut, bWhilePending },
-    { code: 0, timedOut: null, bWhilePending: true },
+    { timedOut: result.timedOut, bWhilePending, asks: asks.length, reArmedFromB: asks[1]! - bAt >= 1000 },
+    { timedOut: 'stall', bWhilePending: true, asks: 2, reArmedFromB: true },
   );
 });
 
