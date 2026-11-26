@@ -208,13 +208,14 @@ _Avoid_: Confinement (which limits what an agent may touch)
 **Command Cleanup**:
 What gg does with the processes a shell command leaves, whether it timed out or finished on its own: it ends them. It
 terminates the Containment's job, then ends each process the job's watcher linked outside it and confirms it gone; on
-POSIX it kills the process group and the tree the watcher saw, and confirms the group is empty; on an uncontained Windows command that timed out it runs taskkill, and one that finished it leaves as
-it is, since a Windows parent pid cannot prove a process its child. A process it cannot tie to the command is left
-alone, and each one it could not end or confirm gone is named as a survivor. A command that finishes has what it left
-named as leftovers. Agent Actions and command and tests-fail Checks record the result as their `cleanup` output,
-`{ confirmed, survivors, reason, containment }`: when `confirmed` is false no further Action touches the worktree and the
-Ticket holds. An uncontained Windows command is never confirmed, since its orphans cannot be found, and a process that
-starts its own session escapes, an accepted residual risk.
+POSIX it kills the process group and the tree the watcher saw, and confirms the group is empty; on an uncontained
+Windows command that timed out it runs taskkill, and one that finished it leaves as it is, since a Windows parent pid
+cannot prove a process its child. A process it cannot tie to the command is left alone, and each one it could not end or
+confirm gone is named as a survivor. A command that finishes has what it left named as leftovers. Agent Actions and
+command and tests-fail Checks record the result as their `cleanup` output,
+`{ confirmed, survivors, reason, containment }`: when `confirmed` is false no further Action touches the worktree and
+the Ticket holds. An uncontained Windows command is never confirmed, since its orphans cannot be found, and a process
+that starts its own session escapes, an accepted residual risk.
 _Avoid_: cleanup (alone, which also names removing a ticket's worktree), teardown, reaping
 
 **Permission Intent**:
