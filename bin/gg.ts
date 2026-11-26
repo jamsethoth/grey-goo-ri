@@ -22,8 +22,11 @@ import * as work from '../lib/work.ts';
 interface Command {
   summary: string;
   flags?: options.OptionSpec;
-  run?: (parsed: options.ParsedOptions, gh: github.Gh) => Promise<void>;
+  run?: (parsed: options.ParsedOptions, gh: github.Gh, harnesses: Harnesses) => Promise<void>;
 }
+
+// Harnesses by name that join the shipped ones, which the tests that spawn gg pass (F4, #481).
+type Harnesses = Record<string, Record<string, unknown>>;
 
 // What a Run reaches outside itself, built once here and passed down as one `deps`; a test passes fakes in their place
 // (ADR 0019).
@@ -45,15 +48,19 @@ function repositoryPath(parsed: options.ParsedOptions) {
   return path;
 }
 
-function runCommand(parsed: options.ParsedOptions, gh: github.Gh) {
-  return runTickets(parsed, gh, options.positiveInteger(parsed._[0], 'ticket'));
+function runCommand(parsed: options.ParsedOptions, gh: github.Gh, harnesses: Harnesses) {
+  return runTickets({ parsed, gh, harnesses }, options.positiveInteger(parsed._[0], 'ticket'));
 }
 
 // gg run over `target`, and gg work resume, which re-enters its Ticket first (Q3 A).
-async function runTickets(parsed: options.ParsedOptions, gh: github.Gh, target: number, resume?: { vertex: string }) {
+async function runTickets(
+  { parsed, gh, harnesses: joined }: { parsed: options.ParsedOptions; gh: github.Gh; harnesses: Harnesses },
+  target: number,
+  resume?: { vertex: string },
+) {
   const deps = realDeps(gh);
   const { mainRoot } = await deps.git.repoInfo(repositoryPath(parsed));
-  const harnesses = (await import('../lib/harnesses/shipped.ts')).shipped(deps.exec);
+  const harnesses = { ...(await import('../lib/harnesses/shipped.ts')).shipped(deps.exec), ...joined };
   const results = await run.runTarget({
     deps,
     target,
@@ -75,10 +82,10 @@ async function initCommand(parsed: options.ParsedOptions) {
   process.stdout.write(doctor.init(mainRoot, { baseBranch, commonDir: gitCommonDir, harness }));
 }
 
-async function doctorCommand(parsed: options.ParsedOptions, gh: github.Gh) {
+async function doctorCommand(parsed: options.ParsedOptions, gh: github.Gh, joined: Harnesses) {
   const { mainRoot, gitCommonDir } = await git.repoInfo(repositoryPath(parsed));
   const runner = exec.createExec({ kernel32: containment.openKernel32() });
-  const harnesses = (await import('../lib/harnesses/shipped.ts')).shipped(runner);
+  const harnesses = { ...(await import('../lib/harnesses/shipped.ts')).shipped(runner), ...joined };
   const { text, exitCode } = await doctor.doctor({
     config: config.loadSources(mainRoot),
     harnesses,
@@ -95,7 +102,7 @@ async function doctorCommand(parsed: options.ParsedOptions, gh: github.Gh) {
 // person resolve or hand back a stopped Ticket (L12); the rest wait for gg work.
 const WORK_VERBS = ['list', 'resume', 'done', 'abandon', 'reset', 'approve'];
 
-async function workCommand(parsed: options.ParsedOptions, gh: github.Gh) {
+async function workCommand(parsed: options.ParsedOptions, gh: github.Gh, harnesses: Harnesses) {
   const [verb, ticket] = parsed._;
   if (!WORK_VERBS.includes(verb as string))
     throw new options.UsageError(`work takes a verb, one of ${WORK_VERBS.join(', ')}`);
@@ -109,7 +116,7 @@ async function workCommand(parsed: options.ParsedOptions, gh: github.Gh) {
   const target = options.positiveInteger(ticket, 'ticket');
   if (verb === 'resume') {
     if (typeof parsed.at !== 'string') throw new options.UsageError('work resume takes --at <vertex>');
-    return runTickets(parsed, gh, target, { vertex: parsed.at });
+    return runTickets({ parsed, gh, harnesses }, target, { vertex: parsed.at });
   }
   const { mainRoot, gitCommonDir } = await git.repoInfo(repositoryPath(parsed));
   const { repository, repositoryFile } = config.loadSources(mainRoot);
@@ -194,8 +201,9 @@ init, doctor, run, work and ask-session act on the repository holding the curren
 `;
 
 // gg with `argv` after its own path, over `gh`: the entry point passes the real gh, and the tests that spawn gg pass
-// the fake one, since no test runs the real gh (#372).
-export async function main(argv: string[], gh: github.Gh): Promise<void> {
+// the fake one, since no test runs the real gh (#372). `harnesses` joins the shipped Harnesses by name, so the tests
+// that spawn gg run their Agents on a stand-in that starts no CLI (F4, #481).
+export async function main(argv: string[], gh: github.Gh, harnesses: Harnesses = {}): Promise<void> {
   const name = argv[0];
   if (name === undefined || name === '--help') {
     process.stdout.write(usage);
@@ -203,7 +211,7 @@ export async function main(argv: string[], gh: github.Gh): Promise<void> {
     const command = COMMANDS[name];
     try {
       const parsed = options.parseOptions(argv.slice(1), command.flags ?? {});
-      if (command.run) await command.run(parsed, gh);
+      if (command.run) await command.run(parsed, gh, harnesses);
       else {
         process.stderr.write(`gg ${name}: not implemented\n`);
         process.exitCode = 1;

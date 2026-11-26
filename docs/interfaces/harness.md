@@ -2,7 +2,8 @@
 
 Frozen (#23). Every shipped Harness module (`lib/harnesses/claude.ts`, `lib/harnesses/codex.ts`) exports its
 declaration as plain values and `createCli(exec)`, which builds from `exec` the members that start its CLI (`run`,
-`doctor`); `shipped(exec)` in `lib/harnesses/shipped.ts` joins the two, without `createCli`, into an object with the
+`doctor`, and `validate` when it lists what the CLI has installed, as Codex's does once per preflight, #481 Q2 A);
+`shipped(exec)` in `lib/harnesses/shipped.ts` joins the two, without `createCli`, into an object with the
 same contract as the test fake's (`test/support/fake-harness.ts`) (#423, Q1 A). `assertHarness(obj)` in
 `lib/harnesses/contract.ts` checks it and throws naming the first missing method or Capability field. Behaviour is
 decided by request section 3.2; Usage token rules by section 3.7. A change to anything listed here outside the Reserved
@@ -322,7 +323,7 @@ is refused (`events.Usage`, `events.md`).
 ## The fake harness
 
 `test/support/fake-harness.ts` stands in for a Harness in every test: it never spawns anything, and a test scripts it.
-Its scripting version is `FAKE_HARNESS_VERSION = 5`, and every scripting key below is frozen with it. Its
+Its scripting version is `FAKE_HARNESS_VERSION = 6`, and every scripting key below is frozen with it. Its
 `launchProfile` is `null`, which a test replaces on the object it builds. Its result holds null for `repositoryDigest`,
 `agentCliVersion`, `effectiveModel` and `effectiveEffort` unless a script gives one.
 

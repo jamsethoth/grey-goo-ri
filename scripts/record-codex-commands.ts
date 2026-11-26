@@ -27,7 +27,11 @@ export const COMMANDS: CliCommand[] = [
     home: 'empty',
   },
   { name: 'cli-doctor', purpose: "codex's own doctor report, in gg's CODEX_HOME", argv: ['doctor', '--json'] },
-  { name: 'cli-mcp-list', purpose: "the MCP servers gg's CODEX_HOME configures", argv: ['mcp', 'list', '--json'] },
+  {
+    name: 'cli-mcp-list',
+    purpose: "the MCP servers gg's CODEX_HOME configures",
+    argv: ['mcp', 'list', '--json', '-c', 'features.plugins=false'],
+  },
   // Without --json the listing names the whole remote catalog; --json names the installed plugins.
   { name: 'cli-plugin-list', purpose: "the plugins installed in gg's CODEX_HOME", argv: ['plugin', 'list', '--json'] },
   {

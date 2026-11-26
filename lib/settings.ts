@@ -20,7 +20,7 @@ const FEATURE_FLOW_KEYS = new Map([
   ['review', 'flows'],
   ['escalate', 'flows'],
   ['stageTools', 'agents'],
-  ['toolkit', 'harnesses'],
+  ['toolkit', 'plugins'],
   ['escalationEnabled', 'flows'],
   ['maxReviewRounds', 'flows'],
   ['contextBudget', 'agents'],

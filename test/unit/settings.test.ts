@@ -194,7 +194,7 @@ for (const [key, replacement] of [
   ['review', 'flows'],
   ['escalate', 'flows'],
   ['stageTools', 'agents'],
-  ['toolkit', 'harnesses'],
+  ['toolkit', 'plugins'],
   ['escalationEnabled', 'flows'],
   ['maxReviewRounds', 'flows'],
   ['contextBudget', 'agents'],

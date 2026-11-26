@@ -251,7 +251,7 @@ function profileOf(harness: Harness | null) {
   const profile = harness?.launchProfile;
   return {
     launchProfile: profile ? `${profile.name}@${profile.version}` : null,
-    confinement: harness?.capabilities.confinement ?? null,
+    confinement: harness?.capabilities?.confinement ?? null,
   };
 }
 

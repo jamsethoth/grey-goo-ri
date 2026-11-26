@@ -249,7 +249,7 @@ test('records and events carry the frozen version constants', (t) => {
   assert.equal(record.createExecutionRecord(START).schemaVersion, record.RECORD_SCHEMA_VERSION);
   assert.equal(record.createEpicRecord({ commonDir: 'C:/x', epic: 3 }).schemaVersion, record.RECORD_SCHEMA_VERSION);
   assert.equal(events.EVENT_SCHEMA_VERSION, 3);
-  assert.equal(fakeHarness.FAKE_HARNESS_VERSION, 5);
+  assert.equal(fakeHarness.FAKE_HARNESS_VERSION, 6);
   const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-freeze-');
   events.eventLog(directory)('run_start', { run: 'r' });
   assert.deepEqual(

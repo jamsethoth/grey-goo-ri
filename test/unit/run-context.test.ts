@@ -33,3 +33,23 @@ test("the Run context's Flow is the Flow of the value it runs under", async (t) 
   const runContext = runContextModule.createRunContext({ ...fixture.options, pinned });
   assert.equal(runContext.flow, pinned.flow);
 });
+
+// A resumed snapshot can name a stub Harness that declares no Capabilities, so an Action Event names a null
+// confinement rather than crash on it (#428 D6, #481 F15).
+test('an Action Event of a Harness that declares no Capabilities names a null confinement', async (t) => {
+  const fixture = await golden.fixture(t);
+  const stub = { launchProfile: null } as unknown as runContextModule.Harness;
+  const { harness: _harness, ...options } = fixture.options;
+  fixture.executionRecord.configurationSnapshot = {
+    agent: { harness: 'stub' },
+  } as unknown as typeof fixture.executionRecord.configurationSnapshot;
+  const runContext = runContextModule.createRunContext({ ...options, harnesses: { stub } });
+  const emitted: Record<string, unknown>[] = [];
+  runContext.events = ((_type: string, fields: Record<string, unknown>) =>
+    void emitted.push(fields)) as unknown as typeof runContext.events;
+  runContext.emit({ vertex: 'red', visit: 1, action: 'red', recovery: 0 }, 0, {});
+  assert.deepEqual(
+    emitted.map(({ launchProfile, confinement }) => ({ launchProfile, confinement })),
+    [{ launchProfile: null, confinement: null }],
+  );
+});

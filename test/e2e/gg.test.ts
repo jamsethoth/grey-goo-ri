@@ -190,12 +190,12 @@ test('gg run in a repository without a Flow fails preflight naming gg init', (t)
   assert.equal(existsSync(join(repo, '.git', 'gg')), false, 'no gg directory under .git');
 });
 
-test('gg run fails preflight naming the unimplemented harness', (t) => {
+test('gg run fails preflight naming the stand-in harness', (t) => {
   const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
   writeExampleSource(join(repo, '.agents', 'gg'));
   const result = ggIn('run', '1');
   assert.equal(result.status, 1, result.stderr);
-  assert.match(result.stderr, /harness codex: not implemented/);
+  assert.match(result.stderr, STAND_IN_REFUSED);
   assert.equal(existsSync(join(repo, '.git', 'gg')), false, 'no gg directory under .git');
 });
 
@@ -251,28 +251,35 @@ test('gg run accepts --flow with a value', (t) => {
   assertUsage(missing.stderr);
 });
 
-// gg doctor runs gg run's Harness preflight (#362), and the Codex Harness is a stub until slice 3: the example's only
-// errors are each codex Vertex's preflight, and doctor exits 1.
-function assertOnlyStubPreflight(stdout: string, status: number | null) {
+// What preflight says of the stand-in Harness the spawned gg registers (test/support/gg-over-fake-gh.ts, F4).
+const STAND_IN_REFUSED = /harness stand-in: the e2e stand-in starts no CLI/;
+
+// gg doctor runs gg run's Harness preflight (#362), which refuses the stand-in: the example's only errors are each
+// stand-in Vertex's preflight, and doctor exits 1.
+function assertOnlyStandInPreflight(stdout: string, status: number | null) {
   const errors = stdout.split('\n').filter((line) => line.startsWith('error: '));
   assert.ok(errors.length, stdout);
   for (const line of errors)
-    assert.match(
-      line,
-      /^error: flows\.default\.ticket\.vertices\.[\w-]+: vertex [\w-]+: harness codex: not implemented /,
-    );
+    assert.match(line, /^error: flows\.default\.ticket\.vertices\.[\w-]+: vertex [\w-]+: harness stand-in: /);
+  for (const line of errors) assert.match(line, STAND_IN_REFUSED);
   for (const line of errors) assert.ok(line.endsWith(' [harness-preflight-failed]'), line);
   assert.equal(status, 1, stdout);
 }
 
 // The example fixture as the repository's configuration in `directory`: its gg.json and every file it names, each
-// Agent on the Codex Harness, a stub, so no case's gg run can start a real CLI now that Claude passes preflight (#425).
+// Agent on the stand-in Harness, so no case's gg run starts a real CLI, whichever shipped Harness passes preflight
+// (F4).
 function writeExampleSource(directory: string) {
   mkdirSync(directory, { recursive: true });
   for (const name of exampleSource.WRITTEN_NAMES) writeFileSync(join(directory, name), exampleSource.fixtureText(name));
-  const example = JSON.parse(exampleSource.fixtureText('gg.json')) as { agents: Record<string, { harness: string }> };
-  for (const agent of Object.values(example.agents)) agent.harness = 'codex';
-  writeFileSync(join(directory, 'gg.json'), JSON.stringify(example, null, 2));
+  onStandIn(join(directory, 'gg.json'));
+}
+
+// Moves every Agent of the gg.json at `file` onto the stand-in Harness.
+function onStandIn(file: string) {
+  const example = JSON.parse(readFileSync(file, 'utf8')) as { agents: Record<string, { harness: string }> };
+  for (const agent of Object.values(example.agents)) agent.harness = 'stand-in';
+  writeFileSync(file, JSON.stringify(example, null, 2));
 }
 
 // --repo <path> names the repository in place of the current directory, for each command that acts on one (#321). Run
@@ -294,7 +301,7 @@ const REPO_COMMANDS: [
     'doctor',
     ['doctor'],
     (result) => {
-      assertOnlyStubPreflight(String(result.stdout), result.status);
+      assertOnlyStandInPreflight(String(result.stdout), result.status);
       assert.ok(String(result.stdout).includes('\nvertex reviewer\n  procedure: review\n'), String(result.stdout));
     },
   ],
@@ -303,7 +310,7 @@ const REPO_COMMANDS: [
     ['run', '1'],
     (result) => {
       assert.equal(result.status, 1, String(result.stderr));
-      assert.match(String(result.stderr), /harness codex: not implemented/);
+      assert.match(String(result.stderr), STAND_IN_REFUSED);
     },
   ],
 ];
@@ -366,21 +373,27 @@ test('gg init creates the State Database in the git common dir, and a second gg 
   assert.ok(second.stdout.includes(`\ngg init kept the State Database at ${database}.\n`), second.stdout);
 });
 
-// The first thing a person runs: gg init writes both sources, and gg doctor then needs only the test command, until the
-// shipped Harnesses pass preflight.
+// The first thing a person runs: gg init writes both sources, and gg doctor then needs only the test command, its
+// Agents moved onto the stand-in so it starts no CLI (F4).
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
-test("gg init --harness codex then gg doctor reports only the stub Harness's preflight, in a temp repository with a temp GG_HOME", (t) => {
+test('gg init --harness codex then gg doctor on the stand-in reports only its preflight, in a temp repository with a temp GG_HOME', (t) => {
   const { repo, userDirectory, ggIn } = tempRepo(t);
   const init = ggIn('init', '--harness', 'codex');
   assert.equal(init.status, 0, init.stderr);
   assert.ok(existsSync(join(userDirectory, 'gg.json')), "gg init creates the user's gg.json in GG_HOME");
   const file = join(repo, '.agents', 'gg', 'gg.json');
-  const written = JSON.parse(readFileSync(file, 'utf8')) as { baseBranch: string; commands: Record<string, string> };
+  const written = JSON.parse(readFileSync(file, 'utf8')) as {
+    baseBranch: string;
+    commands: Record<string, string>;
+    agents: Record<string, { harness: string }>;
+  };
   assert.equal(written.baseBranch, 'main', "the repository's default branch");
+  assert.deepEqual(new Set(Object.values(written.agents).map((agent) => agent.harness)), new Set(['codex']));
   written.commands.test = 'npm test';
   writeFileSync(file, JSON.stringify(written));
+  onStandIn(file);
   const doctor = ggIn('doctor');
-  assertOnlyStubPreflight(doctor.stdout, doctor.status);
+  assertOnlyStandInPreflight(doctor.stdout, doctor.status);
   assert.match(doctor.stdout, /\n\d+ errors, 2 warnings\n$/);
 });
 
@@ -390,20 +403,20 @@ test("gg doctor reads the repository's configuration and its schemas and prints 
   stateDatabase.create(join(repo, '.git'));
   const result = ggIn('doctor');
   assert.ok(
-    result.stdout.includes('\nvertex reviewer\n  procedure: review\n  agent: reviewer (harness codex)\n'),
+    result.stdout.includes('\nvertex reviewer\n  procedure: review\n  agent: reviewer (harness stand-in)\n'),
     result.stdout + result.stderr,
   );
   assert.ok(result.stdout.includes('\n  routes: misscoped -> end needs-replan, * -> end needs-human\n'), result.stdout);
-  assertOnlyStubPreflight(result.stdout, result.status);
+  assertOnlyStandInPreflight(result.stdout, result.status);
 });
 
-// --probe joins gg doctor's flags (#427, decision 4); the example's Agents run on the Codex stub, so it starts no CLI.
+// --probe joins gg doctor's flags (#427, decision 4); the example's Agents run on the stand-in, so it starts no CLI.
 test('gg doctor takes --probe and reports what gg doctor does', (t) => {
   const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
   writeExampleSource(join(repo, '.agents', 'gg'));
   stateDatabase.create(join(repo, '.git'));
   const result = ggIn('doctor', '--probe');
-  assertOnlyStubPreflight(result.stdout, result.status);
+  assertOnlyStandInPreflight(result.stdout, result.status);
 });
 
 for (const args of [['doctor'], ['run', '1']]) {
