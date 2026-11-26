@@ -176,6 +176,44 @@ export function linkedPids(
   return linked;
 }
 
+// A process the Windows watcher linked: its parent pid and its start as a FILETIME when it was linked, and whether gg
+// holds a handle to it, which keeps its pid from reuse while it is open (ADR 0030 decision 3).
+export interface LinkedProcess extends NamedProcess {
+  parentPid: number;
+  started: bigint | null;
+  held: boolean;
+}
+export type Linked = Map<number, LinkedProcess>;
+
+// The Windows watcher's update from one snapshot: each process outside the job's members newly linked to a member or a
+// linked process whose handle has not signalled, by #297's rule, never selfPid. startOf gives a process's start, and
+// exited whether a linked process's handle has signalled. Stub (#531).
+export function newlyLinked(
+  linked: Linked,
+  members: number[],
+  entries: ProcessEntry[],
+  {
+    selfPid,
+    startOf,
+    exited,
+  }: { selfPid: number; startOf: (pid: number) => bigint | null; exited: (pid: number) => boolean },
+): number[] {
+  void [linked, members, selfPid, startOf, exited];
+  return entries.map(({ pid }) => pid);
+}
+
+// What a Windows cleanup ends through its handles: each linked process still running. Stub (#531).
+export function linkedToEnd(linked: Linked, exited: (pid: number) => boolean): number[] {
+  void exited;
+  return [...linked.keys()];
+}
+
+// What a Windows cleanup could not confirm gone of what its watcher linked, once it has ended it. Stub (#531).
+export function linkedSurvivors(linked: Linked, exited: (pid: number) => boolean): Survivor[] {
+  void [linked, exited];
+  return [];
+}
+
 // The watcher's update from one listing: a seen pid no longer listed is forgotten, since its pid may come to name
 // another process, and each new process linked to rootPid or a seen descendant is recorded with its start time, so it
 // is still recognised after its parent exits and it is reparented.

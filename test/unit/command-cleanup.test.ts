@@ -100,6 +100,114 @@ test('linkedPids never adds selfPid, nor what it starts', () => {
   assert.deepEqual(commandCleanup.linkedPids(ROOT, entries, SELF, starts), [101]);
 });
 
+// A process the Windows watcher linked and holds a handle to, as lib/process-tree.ts records it.
+const heldOf = (pid: number, parentPid: number, started: bigint): commandCleanup.LinkedProcess => ({
+  pid,
+  created: null,
+  commandLine: null,
+  parentPid,
+  started,
+  held: true,
+});
+
+test("a linked process outside the job's members is ended and its cleanup is confirmed only once it is gone", () => {
+  // the job holds the shell (ROOT) and its child 101; the packaged pwsh 201 it started is outside, as is its child 202
+  const entries = [entryOf(ROOT, 1), entryOf(101, ROOT), entryOf(201, ROOT), entryOf(202, 201), entryOf(7, 1)];
+  const starts = startsOf({ 1: 1n, 7: 5n, [ROOT]: 20n, 101: 30n, 201: 30n, 202: 40n });
+  const linked: commandCleanup.Linked = new Map();
+  const noneExited = () => false;
+  const toLink = commandCleanup.newlyLinked(linked, [ROOT, 101], entries, {
+    selfPid: SELF,
+    startOf: starts,
+    exited: noneExited,
+  });
+  assert.deepEqual(toLink, [201, 202], 'each process outside the job linked to it, and nothing else');
+  linked.set(201, heldOf(201, ROOT, 30n));
+  linked.set(202, heldOf(202, 201, 40n));
+  assert.deepEqual(commandCleanup.linkedToEnd(linked, noneExited), [201, 202], 'cleanup ends each through its handle');
+  const stillRunning = commandCleanup.cleanupReport(
+    { kind: 'job' },
+    {
+      survivors: commandCleanup.linkedSurvivors(linked, (pid) => pid === 202),
+      cleanupErrors: [],
+    },
+  );
+  assert.equal(stillRunning.confirmed, false, 'one not yet gone leaves the cleanup unconfirmed');
+  assert.deepEqual(
+    stillRunning.survivors.map((survivor) => survivor.pid),
+    [201],
+  );
+  const gone = commandCleanup.cleanupReport(
+    { kind: 'job' },
+    {
+      survivors: commandCleanup.linkedSurvivors(linked, () => true),
+      cleanupErrors: [],
+    },
+  );
+  assert.equal(gone.confirmed, true, 'confirmed once every linked process is gone');
+});
+
+test('a linked process gg could not open is a survivor, neither ended nor confirmed gone', () => {
+  const linked: commandCleanup.Linked = new Map([
+    [201, { pid: 201, created: null, commandLine: 'pwsh.exe', parentPid: ROOT, started: null, held: false }],
+  ]);
+  assert.deepEqual(
+    commandCleanup.linkedToEnd(linked, () => true),
+    [],
+  );
+  assert.deepEqual(
+    commandCleanup.linkedSurvivors(linked, () => true),
+    [{ pid: 201, created: null, commandLine: 'pwsh.exe', error: 'gg could not open it, so it is not verified gone' }],
+  );
+});
+
+test(
+  "a seen descendant's pid reused between two polls by an unrelated process is not linked, adopted or ended, " +
+    'on Windows',
+  () => {
+    // 201 was linked at start 30 and its handle has signalled; the snapshot lists an unrelated 201, started at 50, and
+    // its child 300
+    const linked: commandCleanup.Linked = new Map([[201, heldOf(201, ROOT, 30n)]]);
+    const exited = (pid: number) => pid === 201;
+    const entries = [entryOf(ROOT, 1), entryOf(201, 1), entryOf(300, 201)];
+    const starts = startsOf({ 1: 1n, [ROOT]: 20n, 201: 50n, 300: 60n });
+    assert.deepEqual(
+      commandCleanup.newlyLinked(linked, [ROOT], entries, { selfPid: SELF, startOf: starts, exited }),
+      [],
+    );
+    assert.deepEqual(commandCleanup.linkedToEnd(linked, exited), []);
+  },
+);
+
+test(
+  "a seen descendant's pid reused between two polls by an unrelated process is not linked, adopted or ended, " +
+    'in the POSIX observe',
+  () => {
+    const seen: Seen = new Map();
+    commandCleanup.observe(
+      seen,
+      ROOT,
+      [
+        [ROOT, 1, 't0'],
+        [101, ROOT, 't1'],
+      ],
+      SELF,
+    );
+    // between the polls 101 exited and an unrelated process took its pid, then started 300
+    const secondPoll: ProcessRow[] = [
+      [ROOT, 1, 't0'],
+      [101, 1, 'reused'],
+      [300, 101, 't3'],
+    ];
+    commandCleanup.observe(seen, ROOT, secondPoll, SELF);
+    assert.deepEqual([...seen.keys()], [], 'neither the reused pid nor its child is seen');
+    assert.deepEqual(commandCleanup.leftoverPlan(ROOT, seen, { processes: secondPoll, error: undefined }, SELF), {
+      kill: [],
+      survivors: [],
+    });
+  },
+);
+
 test('observe records a new descendant with its start time, and no other process', () => {
   const seen: Seen = new Map();
   commandCleanup.observe(

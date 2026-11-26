@@ -14,7 +14,16 @@ const SHIM_VARIABLE = /^@SET /m;
 // it has one, as the shim does. Any other .cmd, a shim for a bin that is not node or that sets a variable among them,
 // is refused, since running it takes a shell. A relative path or PATH entry is read from cwd, as spawn reads it. An
 // .exe or .com found first starts as named.
-export function argvOf(command: string, args: string[], path = process.env.PATH ?? '', cwd = process.cwd()) {
+// A test passes stat to model a candidate it may not read.
+export function argvOf(
+  command: string,
+  args: string[],
+  {
+    path = process.env.PATH ?? '',
+    cwd = process.cwd(),
+    stat = (file) => statSync(file, { throwIfNoEntry: false }),
+  }: { path?: string; cwd?: string; stat?: (file: string) => { isFile(): boolean } | undefined } = {},
+) {
   if (process.platform !== 'win32') return { command, args };
   const candidates = /[\\/]/.test(command)
     ? [resolve(cwd, command)]
@@ -26,7 +35,7 @@ export function argvOf(command: string, args: string[], path = process.env.PATH 
             resolve(cwd, directory.replace(/"/g, ''), command + extension),
           ),
         );
-  const found = candidates.find((file) => statSync(file, { throwIfNoEntry: false })?.isFile());
+  const found = candidates.find((file) => stat(file)?.isFile());
   if (!found || !/\.(?:cmd|bat)$/i.test(found)) return { command, args };
   const text = readFileSync(found, 'utf8');
   const script = NODE_SHIM.test(text) && !SHIM_VARIABLE.test(text) ? NPM_SHIM.exec(text)?.[1] : undefined;

@@ -47,7 +47,7 @@ export function run(
   { cwd, input, allowFail = false, inherit = false, timeoutMs, env }: RunOptions = {},
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
-    const argv = commandShim.argvOf(command, args, env?.PATH, cwd);
+    const argv = commandShim.argvOf(command, args, { path: env?.PATH, cwd });
     const child = spawn(argv.command, argv.args, {
       cwd,
       stdio: inherit ? 'inherit' : ['pipe', 'pipe', 'pipe'],
@@ -163,7 +163,7 @@ const STDERR_TAIL_CHARS = 16_384;
 // An argv started with no shell, and when it started or why it could not: on Windows behind the gate in a job,
 // elsewhere in its own process group. env is merged over gg's environment, as run's is.
 function startArgv(kernel32: containment.Kernel32 | null, { command, args, cwd, env }: LaunchOptions) {
-  const argv = commandShim.argvOf(command, args, env?.PATH, cwd);
+  const argv = commandShim.argvOf(command, args, { path: env?.PATH, cwd });
   const environment = env ? { ...process.env, ...env } : undefined;
   if (process.platform === 'win32') return containment.startArgv(kernel32, argv, { cwd, env: environment });
   const child = spawn(argv.command, argv.args, { cwd, env: environment, detached: true, stdio: 'pipe' });
