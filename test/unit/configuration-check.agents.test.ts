@@ -42,7 +42,7 @@ function userSource(name: string, change: (user: Repository) => void) {
 // Each shape a Vertex can give its Agent in, as the case builds it, and the Agents the fake Harness's doctor is then
 // given: a used Agent by its name; an inline one, or one that differs from the Agent already under its name, by
 // `<flow>.<vertex>` of the first Vertex that runs it, or its next free `#<n>` when that is taken; an Agent equal to one
-// already given, once (#484 F1, D1 A, F6, F7, D4 A).
+// already given, once (#484 F1, D1 A, F6, F7, D4 A, D5 A).
 const AGENT_SHAPES: Record<string, () => { configuration: config.Configuration; agents: Record<string, unknown> }> = {
   used: () => {
     const repository = repositorySource();
@@ -93,7 +93,7 @@ const AGENT_SHAPES: Record<string, () => { configuration: config.Configuration; 
     const red = repository.flows.default!.ticket.vertices.red as Record<string, unknown>;
     delete red.use;
     Object.assign(red, implementer);
-    return { configuration: sources(repository), agents: { 'default.red': implementer } };
+    return { configuration: sources(repository), agents: { implementer } };
   },
   'two names for one Agent': () => {
     const repository = repositorySource();
@@ -113,6 +113,35 @@ const AGENT_SHAPES: Record<string, () => { configuration: config.Configuration; 
     delete green!.use;
     Object.assign(green!, implementer);
     return { configuration: sources(repository), agents: { 'default.green': named, 'default.green#2': implementer } };
+  },
+  // A name a Vertex uses is held before any generated key, whatever the Vertex order (#484 D5 A).
+  'inline, then a named one called like its key': () => {
+    const repository = repositorySource();
+    const { implementer } = repository.agents;
+    const inline = { ...implementer, plugins: ['rewriter'] };
+    repository.agents = { 'default.red': implementer };
+    const { red, green } = repository.flows.default!.ticket.vertices as Record<string, Record<string, unknown>>;
+    delete red!.use;
+    Object.assign(red!, inline);
+    green!.use = 'default.red';
+    return { configuration: sources(repository), agents: { 'default.red': implementer, 'default.red#2': inline } };
+  },
+  'named like a key and its next suffix': () => {
+    const repository = repositorySource();
+    const { implementer } = repository.agents;
+    const first = { ...implementer, plugins: ['a'] };
+    const second = { ...implementer, plugins: ['b'] };
+    repository.agents = { 'default.green': first, 'default.green#2': second };
+    const { red, green } = repository.flows.default!.ticket.vertices as Record<string, Record<string, unknown>>;
+    red!.use = 'default.green';
+    delete green!.use;
+    Object.assign(green!, implementer);
+    repository.flows.other = structuredClone(repository.flows.default!);
+    (repository.flows.other.ticket.vertices.red as Record<string, unknown>).use = 'default.green#2';
+    return {
+      configuration: sources(repository),
+      agents: { 'default.green': first, 'default.green#2': second, 'default.green#3': implementer },
+    };
   },
 };
 
