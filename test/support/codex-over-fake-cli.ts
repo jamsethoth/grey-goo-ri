@@ -43,6 +43,9 @@ export interface FakeCodex {
   stderr?: string;
   // The executable launched in place of codex, node unless a case names one that does not exist.
   command?: string;
+  // Whether each launch checks that the paths it carries hold a space; a case whose calls run in a repository of its
+  // own, whose path holds none, turns it off.
+  spaced?: boolean;
 }
 
 interface Recorded {

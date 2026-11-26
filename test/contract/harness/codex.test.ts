@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { basename, join } from 'node:path';
 import * as briefs from '../../../lib/briefs.ts';
 import * as codex from '../../../lib/harnesses/codex.ts';
+import * as codexDoctor from '../../../lib/harnesses/codex-doctor.ts';
 import * as contract from '../../../lib/harnesses/contract.ts';
 import * as codexOverFakeCli from '../../support/codex-over-fake-cli.ts';
 
@@ -153,6 +154,37 @@ test('the schema with an MCP server active still validates the final message', C
       claim: briefs.validateResponse(call.schema as Parameters<typeof briefs.validateResponse>[0], response).valid,
     },
     { status: 'completed', response: { answer }, claim: true },
+  );
+});
+
+// The versioned regression fixture of request 3.2 (codex#19816), a case of its own: recorded on the Codex gg pins, a
+// call with a config MCP server active sends a plain-text message before the tool call and the schema's JSON as its
+// final message, and gg's response is that final message. A new Codex minimum fails it until it is re-recorded.
+test('codex#19816 regression, recorded on the pinned codex-cli: the response is the final message', CASE, async (t) => {
+  const fixture = (extension: string) =>
+    readFileSync(new URL(`../../fixtures/codex/mcp-schema${extension}`, import.meta.url), 'utf8');
+  const recorded = JSON.parse(fixture('.json')) as { cliVersion: string; lastMessage: string };
+  const messages = fixture('.jsonl')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as { type: string; item?: { type: string; text?: string } })
+    .filter((event) => event.type === 'item.completed' && event.item?.type === 'agent_message')
+    .map((event) => event.item?.text);
+  const fake = fakeCli(t, { scenario: 'mcp-schema' });
+  const { response } = await fake.harness.run(codexCall(fake), hooksOf());
+  assert.deepEqual(
+    {
+      cliVersion: recorded.cliVersion,
+      finalIsLastMessage: messages.at(-1) === recorded.lastMessage,
+      firstIsJson: messages[0]?.startsWith('{'),
+      response,
+    },
+    {
+      cliVersion: `codex-cli ${codexDoctor.MINIMUM_VERSION}`,
+      finalIsLastMessage: true,
+      firstIsJson: false,
+      response: JSON.parse(recorded.lastMessage) as unknown,
+    },
   );
 });
 

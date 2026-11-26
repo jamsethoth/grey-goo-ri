@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type * as config from '../../lib/config.ts';
 import * as configurationCheck from '../../lib/configuration-check.ts';
+import * as contract from '../../lib/harnesses/contract.ts';
 import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as procedureKinds from '../../lib/procedures.ts';
 import type * as runContext from '../../lib/run-context.ts';
@@ -349,8 +350,8 @@ const launchless = (launched: unknown[]) =>
   }) as unknown as Parameters<typeof shipped.shipped>[0];
 
 // A Codex Agent with nothing to list starts no listing at preflight, where only the doctor's cheap commands start
-// (#484), and Codex stays refused until #482 builds its run.
-test('the shipped Codex Harness is refused at preflight as not implemented, starting no listing', async () => {
+// (#484), and with its run built Codex passes preflight: its stop is gone (#482 decision 8).
+test('the shipped Codex Harness passes preflight, starting no listing', async () => {
   const repository = repositorySource();
   // Codex declares network unsupported, so the implementer drops it, which is not this case's subject (owner, T1).
   delete repository.agents.implementer!.network;
@@ -358,20 +359,28 @@ test('the shipped Codex Harness is refused at preflight as not implemented, star
   const launched: unknown[] = [];
   const { codex } = shipped.shipped(launchless(launched));
   const checked = await checkOf(sources(repository), { harnesses: { codex } });
-  assert.deepEqual(
-    errorLines(checked).filter((line) => line.endsWith('[harness-preflight-failed]')),
-    [
-      'error: flows.default.ticket.vertices.red: vertex red: harness codex: not implemented [harness-preflight-failed]',
-      'error: flows.default.ticket.vertices.green: vertex green: harness codex: not implemented ' +
-        '[harness-preflight-failed]',
-    ],
-  );
+  const refused = errorLines(checked).filter((line) => line.endsWith('[harness-preflight-failed]'));
+  assert.deepEqual(refused, []);
   const started = launched.map((args) => (args as [{ args: string[] }])[0].args[0]);
-  assert.deepEqual(
-    started.filter((command) => command === 'plugin' || command === 'mcp'),
-    [],
-    started.join(', '),
-  );
+  const listings = started.filter((command) => command === 'plugin' || command === 'mcp');
+  assert.deepEqual(listings, [], started.join(', '));
+});
+
+// No Harness is a stub at preflight, so neither generic shortcut remains (#482 decision 8): a Harness lacking any
+// contract member, run and validate among them, is refused at each of its Vertices by the contract check's own error.
+test('preflight refuses a Harness lacking any contract member with the contract check', async () => {
+  const refused: Record<string, string[]> = {};
+  const expected: Record<string, string[]> = {};
+  for (const member of contract.HARNESS_METHODS) {
+    const fake: Record<string, unknown> = { ...fakeHarness.fakeHarness() };
+    delete fake[member];
+    const { environmentErrors } = await checkOf(sources(repositorySource()), { harnesses: { fake } });
+    refused[member] = environmentErrors.map((problem) => `${problem.code}: ${problem.message}`);
+    // At each Vertex of the fixture Flow that runs an Agent
+    const reason = `harness fake: harness is missing ${member}`;
+    expected[member] = ['red', 'green'].map((id) => `harness-preflight-failed: vertex ${id}: ${reason}`);
+  }
+  assert.deepEqual(refused, expected);
 });
 
 // Codex declares network and contextBudget unsupported (Q15 A), so each is the validator's one error at its key, which

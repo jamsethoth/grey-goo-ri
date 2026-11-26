@@ -100,7 +100,7 @@ async function doctorOverCodex(
   return { ...result, launches: cli.launches };
 }
 
-// Codex's doctor lines: Codex has no run until #482, so gg doctor also refuses each Vertex as not implemented.
+// Codex's doctor lines, the harness-doctor-failed errors and warnings naming codex.
 const codexDoctorLines = (text: string, severity: 'error' | 'warning') =>
   text
     .split('\n')
