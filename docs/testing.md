@@ -187,7 +187,7 @@ coverage stage fails when the line or function coverage of `lib/` under `test/un
 when the measured figures have moved well above it; nothing is recorded per change, so open PRs do not conflict on it.
 Coverage can fall between the measured figure and the floor without failing. The
 measured set is what a small test can reach: `lib/`
-without `lib/exec.ts`, `lib/command-shim.ts`, `lib/launch-clock.ts`, `lib/git.ts`, `lib/git-temp-index.ts`, `lib/git-default-branch.ts`, `lib/process-tree.ts`, `lib/containment.ts` and `lib/containment-gate.ts`, whose contract suites cover
+without `lib/exec.ts`, `lib/command-shim.ts`, `lib/launch-clock.ts`, `lib/containment-probe.ts`, `lib/git.ts`, `lib/git-temp-index.ts`, `lib/git-default-branch.ts`, `lib/process-tree.ts`, `lib/containment.ts` and `lib/containment-gate.ts`, whose contract suites cover
 them, and without the `bin/gg.ts` entry point that wires them. Command Cleanup's decisions, which processes a command
 left and what is done with each, are measured: they live in `lib/command-cleanup.ts`, not in `lib/process-tree.ts` or
 `lib/containment.ts`. A module no unit test loads still counts, at zero. The spec reporter prints each file's lines,
