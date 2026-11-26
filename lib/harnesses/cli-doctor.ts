@@ -95,6 +95,16 @@ export function loginCheck(
     : failed('login', `${status.command} is not logged in: log in with ${status.login}`);
 }
 
+// The shell a Harness would start on win32: the first `file` on `path`, and whether it is a packaged app, under
+// \WindowsApps\, which Windows starts outside gg's job (ADR 0030); null when no directory on `path` holds it.
+export interface FoundShell {
+  path: string;
+  packaged: boolean;
+}
+
+// Stub (#484 Red): the PATH walk is Green's.
+export const findShell = (_file: string, _path: string = process.env.PATH ?? ''): FoundShell | null => null;
+
 // A temporary directory for a probe, named from `prefix`, removed after it; on Windows a CLI just ended may hold it for
 // a moment.
 export async function inTemporary<T>(prefix: string, use: (directory: string) => Promise<T>): Promise<T> {

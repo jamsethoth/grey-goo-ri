@@ -376,5 +376,10 @@ export const createCli = (
   let listing: Promise<Listings> | undefined;
   const listOnce = () => (listing ??= list(runner, home));
   const homes = { codexHome: home, skillsHome: skills };
-  return { validate: (agent: unknown) => validateIn(listOnce, homes, agent) };
+  return {
+    validate: (agent: unknown) => validateIn(listOnce, homes, agent),
+    // Stub (#484 Red): the cheap checks and the probes are Green's.
+    doctor: (_options: { probe: boolean }): Promise<runContext.DoctorReport> =>
+      Promise.resolve({ ok: true, checks: [] }),
+  };
 };

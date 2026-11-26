@@ -13,9 +13,10 @@ import * as exec from '../../lib/exec.ts';
 import * as processProbe from './process-probe.ts';
 import * as tempDirectory from './temp-directory.ts';
 
-// What the CLI printed for a command and its exit code, as a recording keeps it.
+// What the CLI printed for a command, on stdout and on stderr, and its exit code, as a recording keeps it.
 export interface Answer {
   stdout: string;
+  stderr?: string;
   exitCode: number;
 }
 
@@ -47,11 +48,11 @@ export function replayLaunch(answer: (args: readonly string[]) => Answer, state:
     if (state.hangs !== undefined && state.hangs === first) return { ...ended, code: null, timedOut: 'wall' };
     if (state.fails !== undefined && state.fails === first) return { ...ended, code: 1 };
     if (state.killed !== undefined && state.killed === first) return { ...ended, code: null, signal: 'SIGKILL' };
-    const { stdout, exitCode } = answer(options.args);
+    const { stdout, stderr = '', exitCode } = answer(options.args);
     const lines = stdout.split('\n');
     if (lines.at(-1) === '') lines.pop();
     for (const line of lines) options.onLine?.(line);
-    return { ...ended, code: exitCode };
+    return { ...ended, code: exitCode, stderrTail: stderr };
   };
   return { launch, launches };
 }
