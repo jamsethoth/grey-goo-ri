@@ -149,20 +149,25 @@ interface PreflightHarness {
 
 // Each registered Harness a Vertex's Agent selects, with the Agents the Flows run on it, as declared: by the name the
 // Vertices use, or, for an inline Agent or one that differs from the Agent already under its name, by
-// `<flow>.<vertex>` of the first Vertex that runs it; an Agent equal to one already given is given once (#484 D1 A).
+// `<flow>.<vertex>` of the first Vertex that runs it, or its next free `#<n>` when that key is taken; an Agent equal to
+// one already given is given once (#484 D1 A, F7, D4 A). A Map, so a configured name stays data (#174, F6).
 function agentsByHarness(flows: model.DeclaredFlowJson[], harnesses: Record<string, unknown>) {
-  const used = new Map<string, Record<string, jsonValue.JsonValue>>();
+  const used = new Map<string, Map<string, jsonValue.JsonValue>>();
   for (const flow of flows)
     for (const [id, { use, agent }] of Object.entries(flow.ticket.vertices)) {
       const harnessName = referencePaths.isRecord(agent) ? agent.harness : undefined;
       if (typeof harnessName !== 'string' || !Object.hasOwn(harnesses, harnessName)) continue;
-      const agents = used.get(harnessName) ?? {};
+      const agents = used.get(harnessName) ?? new Map<string, jsonValue.JsonValue>();
       used.set(harnessName, agents);
-      if (typeof use === 'string' && !Object.hasOwn(agents, use)) agents[use] = agent;
-      else if (!Object.values(agents).some((given) => isDeepStrictEqual(given, agent)))
-        agents[`${flow.name}.${id}`] = agent;
+      if ([...agents.values()].some((given) => isDeepStrictEqual(given, agent))) continue;
+      if (typeof use === 'string' && !agents.has(use)) agents.set(use, agent);
+      else {
+        let key = `${flow.name}.${id}`;
+        for (let suffix = 2; agents.has(key); suffix++) key = `${flow.name}.${id}#${suffix}`;
+        agents.set(key, agent);
+      }
     }
-  return used;
+  return new Map([...used].map(([harnessName, agents]) => [harnessName, Object.fromEntries(agents)]));
 }
 
 // Each Vertex's registered Harness, checked by name before any GitHub access, in the Flow as written: a Flow with an

@@ -284,7 +284,7 @@ Agents use; `gg doctor --probe` passes `probe: true`, which adds the Harness's m
 `probe` it starts no model call. `agents` holds each Agent the admitted Flows' Vertices run on that Harness, once, by
 the name the Vertices use, as declared (`DoctorOptions`, `lib/run-context.ts`; ADR 0032), so a check can judge an
 Agent, as Claude's warns of a listed plugin whose hook can rewrite a shell command. An inline Agent, or one that
-differs from the Agent already under its name, is given by `<flow>.<vertex>` of the first Vertex that runs it. It resolves a `DoctorReport`: `ok` is false when a check whose `severity` is `error` failed, and each
+differs from the Agent already under its name, is given by `<flow>.<vertex>` of the first Vertex that runs it, or by its next free `#<n>` when that key is taken. It resolves a `DoctorReport`: `ok` is false when a check whose `severity` is `error` failed, and each
 check names itself, says whether it passed and what it saw. gg reports each failed check as one
 `harness-doctor-failed` Problem `{ harness, check, reason }`, an error or a warning as its `severity` says. A Harness
 that builds no `doctor` runs no checks.
