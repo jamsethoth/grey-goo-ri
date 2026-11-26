@@ -35,7 +35,14 @@ export function argvOf(
             resolve(cwd, directory.replace(/"/g, ''), command + extension),
           ),
         );
-  const found = candidates.find((file) => stat(file)?.isFile());
+  const found = candidates.find((file) => {
+    // A Store app's execution alias is a link the user may not stat: found, not a shim, so it starts as named (#531)
+    try {
+      return stat(file)?.isFile();
+    } catch {
+      return true;
+    }
+  });
   if (!found || !/\.(?:cmd|bat)$/i.test(found)) return { command, args };
   const text = readFileSync(found, 'utf8');
   const script = NODE_SHIM.test(text) && !SHIM_VARIABLE.test(text) ? NPM_SHIM.exec(text)?.[1] : undefined;

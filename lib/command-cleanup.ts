@@ -155,8 +155,15 @@ export function growTree(
 // Windows parent pid is not cleared when the parent ends and can be reused, so a process joins only if it started no
 // earlier than the parent it names (#297). One whose start cannot be read, gone or closed to gg, is left out, with what
 // it started. startOf gives a process's start as a FILETIME.
-export function linkedPids(
+export const linkedPids = (
   rootPid: number,
+  entries: ProcessEntry[],
+  selfPid: number,
+  startOf: (pid: number) => bigint | null,
+): number[] => linkedFrom([rootPid], entries, selfPid, startOf);
+
+function linkedFrom(
+  seeds: number[],
   entries: ProcessEntry[],
   selfPid: number,
   startOf: (pid: number) => bigint | null,
@@ -172,7 +179,7 @@ export function linkedPids(
   };
   const rows = entries.map(({ pid, parentPid }): ProcessRow => [pid, parentPid, '']);
   const linked: number[] = [];
-  growTree(new Set([rootPid]), rows, selfPid, { onJoin: ([pid]) => linked.push(pid), joins: startedAfterParent });
+  growTree(new Set(seeds), rows, selfPid, { onJoin: ([pid]) => linked.push(pid), joins: startedAfterParent });
   return linked;
 }
 
@@ -187,7 +194,8 @@ export type Linked = Map<number, LinkedProcess>;
 
 // The Windows watcher's update from one snapshot: each process outside the job's members newly linked to a member or a
 // linked process whose handle has not signalled, by #297's rule, never selfPid. startOf gives a process's start, and
-// exited whether a linked process's handle has signalled. Stub (#531).
+// exited whether a linked process's handle has signalled. Only a held handle keeps a pid from naming another process,
+// so a linked process gg could not open, or one whose handle has signalled, is never a seed.
 export function newlyLinked(
   linked: Linked,
   members: number[],
@@ -198,29 +206,44 @@ export function newlyLinked(
     exited,
   }: { selfPid: number; startOf: (pid: number) => bigint | null; exited: (pid: number) => boolean },
 ): number[] {
-  void [linked, members, selfPid, startOf, exited];
-  return entries.map(({ pid }) => pid);
+  const seeds = [...linked.values()].filter(({ pid, held }) => held && !exited(pid)).map(({ pid }) => pid);
+  return linkedFrom([...members, ...seeds], entries, selfPid, startOf);
 }
 
-// What a Windows cleanup ends through its handles: each linked process still running. Stub (#531).
-export function linkedToEnd(linked: Linked, exited: (pid: number) => boolean): number[] {
-  void exited;
-  return [...linked.keys()];
-}
+// What a Windows cleanup ends through its handles: each linked process gg holds that is still running.
+export const linkedToEnd = (linked: Linked, exited: (pid: number) => boolean): number[] =>
+  [...linked.values()].filter(({ pid, held }) => held && !exited(pid)).map(({ pid }) => pid);
 
-// What a Windows cleanup could not confirm gone of what its watcher linked, once it has ended it. Stub (#531).
+// What a Windows cleanup could not confirm gone of what its watcher linked, once it has ended it: one still running,
+// and one gg could not open, which it can neither end nor see end (ADR 0030 decision 3).
 export function linkedSurvivors(linked: Linked, exited: (pid: number) => boolean): Survivor[] {
-  void [linked, exited];
-  return [];
+  return [...linked.values()]
+    .filter(({ pid, held }) => !held || !exited(pid))
+    .map(({ pid, created, commandLine, held }) => ({
+      pid,
+      created,
+      commandLine,
+      error: held
+        ? 'not verified gone: it was still running once cleanup had ended it'
+        : 'gg could not open it, so it is not verified gone',
+    }));
 }
 
-// The watcher's update from one listing: a seen pid no longer listed is forgotten, since its pid may come to name
-// another process, and each new process linked to rootPid or a seen descendant is recorded with its start time, so it
-// is still recognised after its parent exits and it is reparented.
+// The same process: its start counted from the cleanup's own where both listings give one, else its start as listed.
+const sameProcess = (known: ProcessRow, processRow: ProcessRow, since: number) =>
+  known[0] === processRow[0] &&
+  (known[5] === undefined || Number.isNaN(since) ? known[2] === processRow[2] : known[5] === since);
+
+// The watcher's update from one listing: a seen pid no longer listed, or listed with another start, is forgotten and
+// never a seed, since its pid may name another process by now (#531), and each new process linked to rootPid or a seen
+// descendant is recorded with its start time, so it is still recognised after its parent exits and it is reparented.
 export function observe(seen: Seen, rootPid: number, processes: ProcessRow[], selfPid: number) {
-  const listed = new Set(processes.map((processRow) => processRow[0]));
-  for (const pid of seen.keys()) if (!listed.has(pid)) seen.delete(pid);
   const sinceSelf = sinceSelfIn(processes, selfPid);
+  const listed = new Map(processes.map((processRow) => [processRow[0], processRow]));
+  for (const [pid, known] of seen) {
+    const processRow = listed.get(pid);
+    if (!processRow || !sameProcess(known, processRow, sinceSelf(processRow))) seen.delete(pid);
+  }
   growTree(new Set([rootPid, ...seen.keys()]), processes, selfPid, {
     onJoin: (processRow) => {
       const [pid, parentPid, started, pgid, commandLine] = processRow;
@@ -239,11 +262,6 @@ function sinceSelfIn(processes: ProcessRow[], selfPid: number) {
   const selfStart = startOf(processes.find(([pid]) => pid === selfPid));
   return (processRow: ProcessRow) => startOf(processRow) - selfStart;
 }
-
-// The same process: its start counted from the cleanup's own where both listings give one, else its start as listed.
-const sameProcess = (known: ProcessRow, processRow: ProcessRow, since: number) =>
-  known[0] === processRow[0] &&
-  (known[5] === undefined || Number.isNaN(since) ? known[2] === processRow[2] : known[5] === since);
 
 // A cleanup's plan from a listing taken with the group stopped: `seeds`, each seen descendant still listed with its
 // start time, and whatever those have started. Never another process.
