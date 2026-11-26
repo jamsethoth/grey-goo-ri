@@ -152,19 +152,25 @@ interface PreflightHarness {
 // `<flow>.<vertex>` of the first Vertex that runs it, or its next free `#<n>` when that key is taken; an Agent equal to
 // one already given is given once (#484 D1 A, F7, D4 A). A Map, so a configured name stays data (#174, F6).
 function agentsByHarness(flows: model.DeclaredFlowJson[], harnesses: Record<string, unknown>) {
+  const vertices = flows.flatMap((flow) =>
+    Object.entries(flow.ticket.vertices).map(([id, { use, agent }]) => ({ key: `${flow.name}.${id}`, use, agent })),
+  );
   const used = new Map<string, Map<string, jsonValue.JsonValue>>();
-  for (const flow of flows)
-    for (const [id, { use, agent }] of Object.entries(flow.ticket.vertices)) {
+  // Every name a Vertex uses is held before any generated key, so a named Agent keeps its name whatever the Vertex
+  // order (#484 D5 A).
+  for (const namesPass of [true, false])
+    for (const { key, use, agent } of vertices) {
       const harnessName = referencePaths.isRecord(agent) ? agent.harness : undefined;
       if (typeof harnessName !== 'string' || !Object.hasOwn(harnesses, harnessName)) continue;
       const agents = used.get(harnessName) ?? new Map<string, jsonValue.JsonValue>();
       used.set(harnessName, agents);
       if ([...agents.values()].some((given) => isDeepStrictEqual(given, agent))) continue;
-      if (typeof use === 'string' && !agents.has(use)) agents.set(use, agent);
-      else {
-        let key = `${flow.name}.${id}`;
-        for (let suffix = 2; agents.has(key); suffix++) key = `${flow.name}.${id}#${suffix}`;
-        agents.set(key, agent);
+      if (namesPass) {
+        if (typeof use === 'string' && !agents.has(use)) agents.set(use, agent);
+      } else {
+        let name = key;
+        for (let suffix = 2; agents.has(name); suffix++) name = `${key}#${suffix}`;
+        agents.set(name, agent);
       }
     }
   return new Map([...used].map(([harnessName, agents]) => [harnessName, Object.fromEntries(agents)]));
