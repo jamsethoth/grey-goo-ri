@@ -267,13 +267,13 @@ function slowSnapshot(slow: SnapshotCall) {
 }
 
 // The watcher's periodic snapshot must not block gg's thread, where the stall, wall and heartbeat clocks that judge the
-// command run (#531 D1). The timer is sampled from the command's start, once its synchronous spawn has returned (under
-// load that spawn alone takes over 500 ms), until the snapshot thread has answered twice. Periodic snapshots run on
-// that thread, so the slowed calls of the kernel32 the case passes reach only cleanup's last poll, on gg's thread,
-// which the go file the command waits on keeps outside the sample: none is made while it runs.
+// command run (#531 D1). Periodic snapshots run on a thread of their own with its own kernel32, so the slowed calls of
+// the kernel32 the case passes reach only gg's thread. The case counts them once the snapshot thread has answered
+// twice, and the command waits on a go file written after that count, so cleanup's last poll, on gg's thread, comes
+// after it. The case reads no real time (#531 D4 B): a slowed call on gg's thread is what would block its timers.
 for (const site of SITES)
   for (const call of SNAPSHOT_CALLS)
-    test(`${site.name}'s watcher keeps gg's timers on time while ${call} is slow`, WIN_CASE, async () => {
+    test(`${site.name}'s watcher keeps its snapshots off gg's thread while ${call} is slow`, WIN_CASE, async () => {
       const go = join(scratch, `timers-${site.name}-${call}.go`).split(sep).join('/');
       let answered = () => {};
       const answeredTwice = new Promise<void>((resolve) => (answered = resolve));
@@ -282,17 +282,10 @@ for (const site of SITES)
       process.on('worker', onWorker);
       const slowed = slowSnapshot(call);
       const ran = site.finishes(slowed.kernel32, `until [ -e ${go} ]; do sleep 0.1; done`);
-      let mostLate = 0;
-      let last = Date.now();
-      const sampler = setInterval(() => {
-        mostLate = Math.max(mostLate, Date.now() - last - 50);
-        last = Date.now();
-      }, 50);
       await answeredTwice;
-      clearInterval(sampler);
       const madeOnGgThread = slowed.made();
       writeFileSync(go, '');
       await ran;
       process.off('worker', onWorker);
-      assert.deepEqual({ onTime: mostLate < 500, madeOnGgThread }, { onTime: true, madeOnGgThread: 0 });
+      assert.deepEqual({ madeOnGgThread }, { madeOnGgThread: 0 });
     });

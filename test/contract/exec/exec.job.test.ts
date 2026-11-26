@@ -56,6 +56,7 @@ test(
     const result = await exec
       .createExec({ kernel32 })
       .runShell(nodeCommand(t, childScripts.DETACHED_CHILD, 'ignore', pidFile), { timeoutMs: 60_000 });
+    t.after(() => result.cleanup.closeJob?.());
     assert.equal(result.code, 0, result.output);
     const pid = pidIn(pidFile);
     assert.equal(result.cleanup.confirmed, false);
@@ -95,6 +96,7 @@ test(
       { timeout: options.CASE.timeout },
     );
     const result = await running;
+    t.after(() => result.cleanup.closeJob?.());
     assert.equal(result.code, 0, result.output);
     assert.equal(result.timedOut, undefined);
     assert.equal(result.cleanup.confirmed, false);
@@ -719,6 +721,7 @@ test("closing an unconfirmed job's handle ends what it holds, and a second close
   const result = await exec
     .createExec({ kernel32 })
     .runShell(nodeCommand(t, childScripts.DETACHED_CHILD, 'ignore', pidFile), { timeoutMs: 60_000 });
+  t.after(() => result.cleanup.closeJob?.());
   const pid = pidIn(pidFile);
   assert.equal(result.cleanup.confirmed, false);
   assert.equal(alive(pid), true, 'refused, it runs on');
