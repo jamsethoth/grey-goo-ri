@@ -225,11 +225,11 @@ function launch(kernel32: containment.Kernel32 | null, options: LaunchOptions): 
     eachLine(stdoutPipe, (line) => options.onLine?.(line));
     child.stdin?.on('error', () => {}); // exited before reading all input: its exit reports it
     child.stdin?.end(options.input ?? '');
-    void started.spawned.then((failure) => {
+    void started.spawned.then(async (failure) => {
       // A stop that ended the gate before it answered resolves the launch; the containment still held what started.
       if (!failure || stopped) return reportStarted();
       clocks.stop();
-      watcher?.stop();
+      await watcher?.stop();
       reject(failure);
     });
     // 'exit', not 'close': a leftover process can hold the pipes open for as long as it runs
@@ -372,9 +372,9 @@ function shell(
       const note = timeoutNote(timeoutMs as number, taken);
       resolve({ code: null, output: output + note, timedOut: true, ...taken, ...resultOf(taken) });
     });
-    child.on('error', (err) => {
+    child.on('error', async (err) => {
       stopClock();
-      watcher?.stop();
+      await watcher?.stop();
       reject(err);
     });
     // 'exit', not 'close': a leftover process can hold the pipes open for as long as it runs

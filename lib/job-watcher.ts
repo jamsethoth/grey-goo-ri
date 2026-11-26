@@ -8,8 +8,10 @@ import * as containment from './containment.ts';
 // at cleanup the job terminated, and each linked process ended and confirmed gone, or named (ADR 0030 decision 3).
 
 // Each process outside the job linked to its members, held and adopted as it is linked, keyed by pid. Every gapMs, each
-// watcher over its own snapshot (#531's choices), taken on its own thread (snapshotThread). Cleanup polls once more, on
-// gg's thread, before it ends the job, since a process can start outside it after the last poll.
+// watcher over its own snapshot (#531's choices), taken on its own thread (snapshotThread), started at the first after
+// one gap, so a command that ends sooner starts none. Its lifetime is its command's (#531 D1 A): stop answers once the
+// thread has exited, after the snapshot in flight. Cleanup polls once more, on gg's thread, before it ends the job,
+// since a process can start outside it after the last poll.
 export function watch(job: containment.Job, kernel32: containment.Kernel32, gapMs: number) {
   const linked: commandCleanup.Linked = new Map();
   const link = (snapshot: () => commandCleanup.ProcessEntry[]) => {
@@ -37,15 +39,17 @@ export function watch(job: containment.Job, kernel32: containment.Kernel32, gapM
       }
     } catch {} // a snapshot or a job that cannot be read links nothing this time; the job's termination says the rest
   };
-  const snapshots = snapshotThread();
   const cancel = new AbortController();
   const loop = (async () => {
-    while (!cancel.signal.aborted) {
+    let snapshots: ReturnType<typeof snapshotThread> | null = null;
+    for (;;) {
+      await wait(gapMs, undefined, { signal: cancel.signal }).catch(() => {});
+      if (cancel.signal.aborted) break;
+      snapshots ??= snapshotThread();
       const entries = await snapshots.take().catch(() => null);
       if (entries && !cancel.signal.aborted) link(() => entries);
-      await wait(gapMs, undefined, { signal: cancel.signal }).catch(() => {});
     }
-    snapshots.close();
+    await snapshots?.close();
   })();
   return { linked, poll: () => link(() => containment.processes(kernel32)), stop: () => (cancel.abort(), loop) };
 }
@@ -75,15 +79,15 @@ function snapshotThread() {
       worker.postMessage(null);
       return pending.promise;
     },
-    close: () => void worker.terminate(),
+    close: () => worker.terminate(),
   };
 }
 
 export type JobWatcher = ReturnType<typeof watch>;
 
 // The watcher's last poll, the job terminated and waited on until it is empty, then each linked process gg holds ended
-// and confirmed gone, or named. A cleanup not confirmed keeps gg's handles, so kill-on-close takes what is left when gg
-// exits, or when the Run closes them (closeJob).
+// and confirmed gone, or named, and the watcher's thread ended. A cleanup not confirmed keeps gg's handles, so
+// kill-on-close takes what is left when gg exits, or when the Run closes them (closeJob).
 export async function terminate(
   job: containment.Job,
   rootPid: number,
@@ -98,6 +102,7 @@ export async function terminate(
   const linkedSurvivors = commandCleanup.linkedSurvivors(linked, job.exited).filter(({ pid }) => !named.has(pid));
   cleanup.survivors.push(...linkedSurvivors);
   if (!cleanup.survivors.length && !cleanup.cleanupErrors.length) job.close();
+  await watcher?.stop();
   return cleanup;
 }
 
