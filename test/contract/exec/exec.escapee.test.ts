@@ -4,10 +4,11 @@
 // (kernel32Doubles.breakawayJobs), and refuses the adoptions a case names.
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
+import type { Worker } from 'node:worker_threads';
 import type * as commandCleanup from '../../../lib/command-cleanup.ts';
 import type * as containment from '../../../lib/containment.ts';
 import * as exec from '../../../lib/exec.ts';
@@ -236,15 +237,17 @@ type SnapshotCall = (typeof SNAPSHOT_CALLS)[number];
 const SLOW_MS = 1500;
 
 // A kernel32 whose call slow blocks the thread that makes it for SLOW_MS once in each snapshot walk, as a snapshot on a
-// loaded machine does.
+// loaded machine does, and made(), the count of those it has slowed.
 function slowSnapshot(slow: SnapshotCall) {
   const real = kernel32Doubles.realKernel32!;
+  let made = 0;
   let walking = false; // Process32NextW is called per entry, and blocks on the first of each walk only
   const blockIf = (call: SnapshotCall) => {
-    if (call === slow && !(call === 'Process32NextW' && walking))
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, SLOW_MS);
+    if (call !== slow || (call === 'Process32NextW' && walking)) return;
+    made++;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, SLOW_MS);
   };
-  return kernel32Doubles.withKernel32({
+  const kernel32 = kernel32Doubles.withKernel32({
     CreateToolhelp32Snapshot: (...args) => {
       blockIf('CreateToolhelp32Snapshot');
       return real.CreateToolhelp32Snapshot(...args);
@@ -260,24 +263,36 @@ function slowSnapshot(slow: SnapshotCall) {
       return real.Process32NextW(...args);
     },
   });
+  return { kernel32, made: () => made };
 }
 
 // The watcher's periodic snapshot must not block gg's thread, where the stall, wall and heartbeat clocks that judge the
 // command run (#531 D1). The timer is sampled from the command's start, once its synchronous spawn has returned (under
-// load that spawn alone takes over 500 ms), for 4.3 s of the command's 6, so the watcher polls in the sample at least
-// twice, and cleanup's own last poll, made on gg's thread once the command has exited, is outside it.
+// load that spawn alone takes over 500 ms), until the snapshot thread has answered twice. Periodic snapshots run on
+// that thread, so the slowed calls of the kernel32 the case passes reach only cleanup's last poll, on gg's thread,
+// which the go file the command waits on keeps outside the sample: none is made while it runs.
 for (const site of SITES)
   for (const call of SNAPSHOT_CALLS)
     test(`${site.name}'s watcher keeps gg's timers on time while ${call} is slow`, WIN_CASE, async () => {
-      const ran = site.finishes(slowSnapshot(call), 'sleep 6');
+      const go = join(scratch, `timers-${site.name}-${call}.go`).split(sep).join('/');
+      let answered = () => {};
+      const answeredTwice = new Promise<void>((resolve) => (answered = resolve));
+      let answers = 0;
+      const onWorker = (worker: Worker) => worker.on('message', () => ++answers === 2 && answered());
+      process.on('worker', onWorker);
+      const slowed = slowSnapshot(call);
+      const ran = site.finishes(slowed.kernel32, `until [ -e ${go} ]; do sleep 0.1; done`);
       let mostLate = 0;
       let last = Date.now();
       const sampler = setInterval(() => {
         mostLate = Math.max(mostLate, Date.now() - last - 50);
         last = Date.now();
       }, 50);
-      await wait(4300);
+      await answeredTwice;
       clearInterval(sampler);
+      const madeOnGgThread = slowed.made();
+      writeFileSync(go, '');
       await ran;
-      assert.ok(mostLate < 500, `a 50 ms timer fired ${mostLate} ms late while the command ran`);
+      process.off('worker', onWorker);
+      assert.deepEqual({ onTime: mostLate < 500, madeOnGgThread }, { onTime: true, madeOnGgThread: 0 });
     });
