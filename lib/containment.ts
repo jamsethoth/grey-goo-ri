@@ -1,6 +1,7 @@
-// A Windows command and every process it starts, orphans included, held in a job object gg creates through node:ffi
-// (ADR 0021): started inside it, listed, named, terminated and confirmed empty. A Linux cgroup backend (#128) belongs
-// here.
+// A Windows command held in a job object gg creates through node:ffi (ADR 0021): started inside it, listed, named,
+// terminated and confirmed empty. A process the command starts outside the job, as Windows starts a packaged app's, is
+// held open once the watcher links it, and adopted or ended (ADR 0030 decision 3). A Linux cgroup backend (#128)
+// belongs here.
 import { spawn, type ChildProcess } from 'node:child_process';
 import type * as ffi from 'node:ffi';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -15,6 +16,9 @@ const SIGNATURES = {
   AssignProcessToJobObject: { arguments: ['pointer', 'pointer'], return: 'int32' },
   TerminateJobObject: { arguments: ['pointer', 'uint32'], return: 'int32' },
   TerminateProcess: { arguments: ['pointer', 'uint32'], return: 'int32' },
+  IsProcessInJob: { arguments: ['pointer', 'pointer', 'buffer'], return: 'int32' },
+  WaitForSingleObject: { arguments: ['pointer', 'uint32'], return: 'uint32' },
+  GetExitCodeProcess: { arguments: ['pointer', 'buffer'], return: 'int32' },
   OpenProcess: { arguments: ['uint32', 'int32', 'uint32'], return: 'pointer' },
   CloseHandle: { arguments: ['pointer'], return: 'int32' },
   GetLastError: { arguments: [], return: 'uint32' },
@@ -42,7 +46,11 @@ const KILL_ON_JOB_CLOSE = 0x2000;
 const EXTENDED_LIMIT_INFORMATION = 9; // 144 bytes, LimitFlags at byte 16
 const BASIC_PROCESS_ID_LIST = 3; // two counts, then one 8-byte pid per process
 const PROCESS_SET_QUOTA_AND_TERMINATE = 0x0100 | 0x0001; // what AssignProcessToJobObject needs
-const PROCESS_QUERY_LIMITED = 0x1000; // what GetProcessTimes and the command line query need
+const PROCESS_QUERY_LIMITED = 0x1000; // what GetProcessTimes, IsProcessInJob and the command line query need
+const SYNCHRONIZE = 0x10_0000; // what WaitForSingleObject needs
+const PROCESS_HELD = PROCESS_SET_QUOTA_AND_TERMINATE | PROCESS_QUERY_LIMITED | SYNCHRONIZE;
+const WAIT_OBJECT_0 = 0;
+const STILL_ACTIVE = 259; // the exit code of a process not yet ending
 const COMMAND_LINE_INFORMATION = 60; // a UNICODE_STRING of 16 bytes, its characters following it
 const COMMAND_LINE_ROOM = 16 + 65_536;
 const FILETIME_TO_UNIX_MS = 11_644_473_600_000n; // a FILETIME counts 100 ns from 1601
@@ -88,17 +96,19 @@ export function processes(kernel32: Kernel32): commandCleanup.ProcessEntry[] {
 // The pids still linked to rootPid through parent pids, each started no earlier than its parent, for the fallback that
 // has no job to list. Throws when the command's own start cannot be read, since no link to it can then be checked.
 export function linkedDescendants(kernel32: Kernel32, rootPid: number): number[] {
-  const startOf = (pid: number) => {
-    const handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED, 0, pid);
-    if (!handle) return null;
-    try {
-      return creationTime(kernel32, handle);
-    } finally {
-      kernel32.CloseHandle(handle);
-    }
-  };
-  if (startOf(rootPid) === null) throw failure(kernel32, `the start of command pid ${rootPid}`);
-  return commandCleanup.linkedPids(rootPid, processes(kernel32), process.pid, startOf);
+  if (startOf(kernel32, rootPid) === null) throw failure(kernel32, `the start of command pid ${rootPid}`);
+  return commandCleanup.linkedPids(rootPid, processes(kernel32), process.pid, (pid) => startOf(kernel32, pid));
+}
+
+// A process's start as a FILETIME, or null for one gone or closed to gg.
+export function startOf(kernel32: Kernel32, pid: number): bigint | null {
+  const handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED, 0, pid);
+  if (!handle) return null;
+  try {
+    return creationTime(kernel32, handle);
+  } finally {
+    kernel32.CloseHandle(handle);
+  }
 }
 
 // A process's start as a FILETIME.
@@ -143,6 +153,15 @@ export type Job = {
   terminate(): void;
   // resolves once a terminated job is empty, however long a loaded machine takes to finish the exits
   emptied(): Promise<void>;
+  // A process the watcher linked outside the job's members, held by a handle gg keeps open, so its pid names no other
+  // process while it is, and adopted through it: into this job, else a new kill-on-close job, else ended (ADR 0030
+  // decision 3). One gg cannot open is not held, and named as far as the system will say.
+  hold(entry: commandCleanup.ProcessEntry): commandCleanup.LinkedProcess;
+  // whether a held process's handle has signalled; never for one gg does not hold, which it cannot see end
+  exited(pid: number): boolean;
+  // ends each held pid through its adopted job and its handle, and resolves once each whose end was accepted has exited
+  endHeld(pids: number[]): Promise<void>;
+  // closes the job, each job it adopted a process into, whose kill-on-close then fires, and each held handle
   close(): void;
 };
 
@@ -152,13 +171,71 @@ function setLimits(kernel32: Kernel32, handle: bigint, flags: number) {
   return kernel32.SetInformationJobObject(handle, EXTENDED_LIMIT_INFORMATION, limits, limits.length);
 }
 
-// A job holding pid, with kill-on-close: gg holds its only handle, so the job's processes die with gg too. The suite
-// launcher holds one around itself (scripts/run-suite.ts).
-export function createJob(kernel32: Kernel32, pid: number): Job {
+// A new job with kill-on-close: gg holds its only handle, so the job's processes die with gg too.
+function killOnCloseJob(kernel32: Kernel32): bigint {
   const handle = kernel32.CreateJobObjectW(0n, 0n);
   if (!handle) throw failure(kernel32, 'CreateJobObjectW');
+  if (setLimits(kernel32, handle, KILL_ON_JOB_CLOSE)) return handle;
+  const error = failure(kernel32, 'SetInformationJobObject');
+  kernel32.CloseHandle(handle);
+  throw error;
+}
+
+// The processes a watcher linked outside gg's job, each held by its handle, and the jobs gg adopted them into.
+function linkedHoldings(kernel32: Kernel32, ggJob: bigint) {
+  const held = new Map<number, { handle: bigint; job: bigint | null }>();
+  const exited = (pid: number) => {
+    const holding = held.get(pid);
+    return holding !== undefined && kernel32.WaitForSingleObject(holding.handle, 0) === WAIT_OBJECT_0;
+  };
+  // Windows nests a new job in any job the process is already in, so that job's limits still hold. Gives the new job.
+  const adopt = (handle: bigint): bigint | null => {
+    const inJob = Buffer.alloc(4);
+    if (kernel32.IsProcessInJob(handle, ggJob, inJob) && inJob.readInt32LE()) return null;
+    if (kernel32.AssignProcessToJobObject(ggJob, handle)) return null;
+    let job: bigint | null = null;
+    try {
+      job = killOnCloseJob(kernel32);
+      if (kernel32.AssignProcessToJobObject(job, handle)) return job;
+    } catch {} // no new job: it is ended below
+    if (job) kernel32.CloseHandle(job);
+    kernel32.TerminateProcess(handle, 1); // refused, it stays held, and its cleanup names it
+    return null;
+  };
+  const hold = ({ pid, parentPid }: commandCleanup.ProcessEntry): commandCleanup.LinkedProcess => {
+    const handle = kernel32.OpenProcess(PROCESS_HELD, 0, pid);
+    if (!handle) return { ...describe(kernel32, pid), parentPid, started: null, held: false };
+    const named = { pid, created: createdAt(kernel32, handle), commandLine: commandLineOf(kernel32, handle) };
+    const started = creationTime(kernel32, handle);
+    held.set(pid, { handle, job: adopt(handle) });
+    return { ...named, parentPid, started, held: true };
+  };
+  // A process already ending, as a terminated job's are, refuses TerminateProcess, but its handle signals soon after.
+  const endingAlready = (handle: bigint) => {
+    const code = Buffer.alloc(4);
+    return kernel32.GetExitCodeProcess(handle, code) !== 0 && code.readUInt32LE() !== STILL_ACTIVE;
+  };
+  const endHeld = async (pids: number[]) => {
+    const ending = pids.filter((pid) => {
+      const holding = held.get(pid);
+      if (!holding) return false;
+      const jobEnded = holding.job !== null && kernel32.TerminateJobObject(holding.job, 1) !== 0;
+      return kernel32.TerminateProcess(holding.handle, 1) !== 0 || jobEnded || endingAlready(holding.handle);
+    });
+    while (ending.some((pid) => !exited(pid))) await sleep(20);
+  };
+  const close = () => {
+    for (const { job } of held.values()) if (job) kernel32.CloseHandle(job);
+    for (const { handle } of held.values()) kernel32.CloseHandle(handle);
+    held.clear();
+  };
+  return { hold, exited, endHeld, close };
+}
+
+// A job holding pid, with kill-on-close. The suite launcher holds one around itself (scripts/run-suite.ts).
+export function createJob(kernel32: Kernel32, pid: number): Job {
+  const handle = killOnCloseJob(kernel32);
   try {
-    if (!setLimits(kernel32, handle, KILL_ON_JOB_CLOSE)) throw failure(kernel32, 'SetInformationJobObject');
     const processHandle = kernel32.OpenProcess(PROCESS_SET_QUOTA_AND_TERMINATE, 0, pid);
     if (!processHandle) throw failure(kernel32, 'OpenProcess');
     try {
@@ -171,6 +248,7 @@ export function createJob(kernel32: Kernel32, pid: number): Job {
     kernel32.CloseHandle(handle);
     throw err;
   }
+  const holdings = linkedHoldings(kernel32, handle);
   // Closed once: a handle's number can come to name another object, so a second close could close that.
   let open = true;
   const members = () => {
@@ -197,9 +275,13 @@ export function createJob(kernel32: Kernel32, pid: number): Job {
     async emptied() {
       while (members().length) await sleep(20);
     },
+    hold: holdings.hold,
+    exited: holdings.exited,
+    endHeld: holdings.endHeld,
     close() {
       if (open) kernel32.CloseHandle(handle);
       open = false;
+      holdings.close();
     },
   };
 }
@@ -222,7 +304,8 @@ function contain(kernel32: Kernel32 | null, child: ChildProcess): Started {
 }
 
 // Starts commandLine through cmd.exe, which waits on a gate line of stdin, puts cmd.exe in a new job, and then opens
-// the gate, so nothing the command starts is outside the job. The gate swallows any stdin written with it, so the
+// the gate, so the command starts inside the job, as does each process it starts that Windows does not start outside
+// it, as it does a packaged app's (ADR 0030 decision 3). The gate swallows any stdin written with it, so the
 // command reads only EOF. The gate line is not empty, since an empty one leaves the error level at 1, and the gate
 // variable is cleared, so the command starts as in a fresh cmd.exe. With no kernel32, or a job that cannot be set up,
 // the command runs uncontained.
@@ -243,7 +326,8 @@ export function start(kernel32: Kernel32 | null, commandLine: string, cwd: strin
 const GATE = fileURLToPath(new URL('./containment-gate.ts', import.meta.url));
 
 // An argv started with no shell: the node gate (lib/containment-gate.ts) starts first, is put in a new job, and only
-// then is sent the argv, which it starts on its own stdio, so nothing the argv starts is outside the job. spawned
+// then is sent the argv, which it starts on its own stdio, so the argv starts inside the job, as start's command does.
+// spawned
 // settles once the gate has answered: null when the argv started, else the error that stopped it. Uncontained as start
 // is.
 export function startArgv(
