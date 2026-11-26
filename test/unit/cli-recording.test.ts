@@ -176,3 +176,21 @@ test("a one-letter username's many occurrences with no address after them are re
   assert.equal(redacted, `${'<user>'.repeat(28)} end`);
   assert.ok(elapsedMs < 1000, `redaction took ${Math.round(elapsedMs)} ms, so the email pattern backtracks again`);
 });
+
+test("a call's changes are each file it added or changed, with its content, and each it deleted, as null", () => {
+  const before = new Map([
+    ['kept.txt', 'same'],
+    ['edited.txt', 'old'],
+    ['gone.txt', 'x'],
+  ]);
+  const after = new Map([
+    ['kept.txt', 'same'],
+    ['edited.txt', 'new'],
+    ['test/added.test.ts', 'added'],
+  ]);
+  assert.deepEqual(cliRecording.changesOf(before, after), {
+    'edited.txt': 'new',
+    'test/added.test.ts': 'added',
+    'gone.txt': null,
+  });
+});

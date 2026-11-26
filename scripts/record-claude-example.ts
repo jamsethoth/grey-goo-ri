@@ -3,13 +3,12 @@
 // gh, each call's launch passed to the real CLI and saved as it ends, with the files it changed in the worktree. For
 // scripts/record-claude.ts alone, whose `example` name runs it; test/e2e/interpreter.claude.test.ts replays it.
 import { test, type TestContext } from 'node:test';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
 import type * as exec from '../lib/exec.ts';
 import * as shipped from '../lib/harnesses/shipped.ts';
 import type * as runContext from '../lib/run-context.ts';
 import * as exampleOnClaude from '../test/support/example-on-claude.ts';
 import * as goldenRun from '../test/support/golden-run.ts';
+import * as cliRecording from './cli-recording.ts';
 
 export interface ExampleRecorder {
   cliVersion: string;
@@ -18,31 +17,11 @@ export interface ExampleRecorder {
   redactorOf: (base: string) => (text: string) => string;
 }
 
-// Each file in a worktree by its path with forward slashes, git's own files left out.
-function filesOf(worktree: string): Map<string, string> {
-  const paths = (readdirSync(worktree, { recursive: true }) as string[]).filter(
-    (path) => !/^(?:\.git|node_modules)(?:[\\/]|$)/.test(path) && statSync(join(worktree, path)).isFile(),
-  );
-  return new Map(
-    paths.map((path) => [
-      relative(worktree, join(worktree, path)).split(sep).join('/'),
-      readFileSync(join(worktree, path), 'utf8'),
-    ]),
-  );
-}
-
-// What a call changed: each file it added or changed, with its content, and each it deleted, as null.
-function changesOf(before: Map<string, string>, after: Map<string, string>): Record<string, string | null> {
-  const changed = [...after].filter(([path, text]) => before.get(path) !== text);
-  const deleted = [...before.keys()].filter((path) => !after.has(path)).map((path) => [path, null]);
-  return Object.fromEntries([...changed, ...deleted]);
-}
-
 // The launch each Attempt makes, passed to `launch` and saved when it ends under the next name of
 // exampleOnClaude.RECORDINGS, redacted against the fixture's directory.
 function recordingLaunch(recorder: ExampleRecorder, where: { root: string }, made: string[]) {
   return async (options: exec.LaunchOptions) => {
-    const before = filesOf(options.cwd ?? '.');
+    const before = cliRecording.filesOf(options.cwd ?? '.');
     const [lines, timesMs, started] = [[] as string[], [] as number[], Date.now()];
     const onLine = (line: string) => {
       lines.push(line);
@@ -62,7 +41,7 @@ function recordingLaunch(recorder: ExampleRecorder, where: { root: string }, mad
       killed: ended.cancelled ? 'cancelled' : ended.timedOut,
       lineTimesMs: timesMs,
       stderr: ended.stderrTail,
-      changes: changesOf(before, filesOf(options.cwd ?? '.')),
+      changes: cliRecording.changesOf(before, cliRecording.filesOf(options.cwd ?? '.')),
     };
     recorder.save(name, recorder.redactorOf(where.root), lines, meta);
     made.push(name);

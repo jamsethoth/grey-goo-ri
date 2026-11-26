@@ -90,6 +90,8 @@ export async function codexFixture(
   const fixture = await exampleOnClaude.claudeFixture(t, harness, options);
   golden.configure(fixture, (configured) => {
     for (const agent of Object.values(configured.agents)) Object.assign(agent, ON_CODEX);
+    // Codex declares network unsupported, so an Agent on it sets none, as the example's own gg.json sets none.
+    for (const agent of Object.values(configured.agents)) Reflect.deleteProperty(agent, 'network');
   });
   return fixture;
 }
