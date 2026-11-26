@@ -1,9 +1,9 @@
 // What every Harness's doctor does with its Agent CLI (#480): start one of its commands and say what it printed, check
 // its version against a pinned minimum and its login, under the cheap and probe wall limits, and run a probe in a
 // temporary directory. Which commands, and what their output means beyond that, is each Harness's own.
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { lstatSync, mkdtempSync, readlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import type * as exec from '../exec.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
@@ -96,19 +96,97 @@ export function loginCheck(
 }
 
 // The shell a Harness would start on win32: the first `file` on `path`, and whether it is a packaged app, under
-// \WindowsApps\, which Windows starts outside gg's job (ADR 0030); null when no directory on `path` holds it.
+// \WindowsApps\, which Windows starts outside gg's job (ADR 0030); null when no directory on `path` holds it. The
+// Store's pwsh is an app execution alias, a link to a target the user cannot stat, so a link is found by its own entry
+// and judged by where it leads.
 export interface FoundShell {
   path: string;
   packaged: boolean;
 }
 
+const PACKAGED = /[\\/]WindowsApps[\\/]/i;
+
+function targetOf(link: string): string {
+  try {
+    return resolve(dirname(link), readlinkSync(link));
+  } catch {
+    return link;
+  }
+}
+
 export function findShell(file: string, path: string = process.env.PATH ?? ''): FoundShell | null {
-  const found = path
-    .split(delimiter)
-    .filter(Boolean)
-    .map((directory) => join(directory.replace(/"/g, ''), file))
-    .find((candidate) => existsSync(candidate));
-  return found === undefined ? null : { path: found, packaged: /[\\/]WindowsApps[\\/]/i.test(found) };
+  for (const directory of path.split(delimiter).filter(Boolean)) {
+    const candidate = join(directory.replace(/"/g, ''), file);
+    const entry = lstatSync(candidate, { throwIfNoEntry: false });
+    if (!entry) continue;
+    const target = entry.isSymbolicLink() ? targetOf(candidate) : candidate;
+    return { path: candidate, packaged: PACKAGED.test(candidate) || PACKAGED.test(target) };
+  }
+  return null;
+}
+
+// What a packaged shell's failure names to install instead (ADR 0030 decision 2).
+const UNPACKAGED_REMEDY =
+  'install an unpackaged PowerShell 7: the 7.7 ZIP build unpacked to %ProgramFiles%\\PowerShell\\7 with that ' +
+  'folder on PATH ahead of WindowsApps, or the 7.6 LTS MSI (winget install --id Microsoft.PowerShell --source ' +
+  'winget --installer-type wix)';
+
+// The one shell check every Harness's doctor runs on win32 (ADR 0030 decision 2): the first of `files` found on PATH,
+// tried in order, is the shell, and a packaged one fails unless the Harness's commands stay in gg's job in it anyway
+// (`packagedContained`, as a Harness whose sandbox keeps them there declares, #484 Q3 A). Gives the shell for the
+// containment probe beside the check.
+export function shellCheck({
+  files,
+  missing,
+  packagedContained = false,
+}: {
+  files: string[];
+  missing: string;
+  packagedContained?: boolean;
+}): { shell: FoundShell | null; check: Check } {
+  const shell = files.reduce<FoundShell | null>((found, file) => found ?? findShell(file), null);
+  if (shell === null) return { shell, check: failed('shell', missing) };
+  if (shell.packaged && !packagedContained)
+    return {
+      shell,
+      check: failed(
+        'shell',
+        `the Agents' shell ${shell.path} is a packaged app under WindowsApps, which Windows starts outside gg's job, ` +
+          `so their commands would run uncontained: ${UNPACKAGED_REMEDY}`,
+      ),
+    };
+  return { shell, check: passed('shell', `the Agents' shell is ${shell.path}`) };
+}
+
+// The containment probe's command in the shell: a node child that prints its pid and waits while it is asked about.
+const quoted = (text: string) => `'${text.replace(/'/g, "''")}'`;
+const CHILD = 'console.log(process.pid); setTimeout(() => {}, 2000)';
+
+// The one containment probe every Harness's doctor runs under --probe on win32 (ADR 0030 decision 5): a command run in
+// `shell`, through the argv prefix `through` that the Harness runs the Agents' commands with (its sandbox command, or
+// none), started as gg starts a launch, must leave its child in gg's job.
+export async function containmentCheck(
+  runner: Pick<exec.Exec, 'childInJob'>,
+  shell: string,
+  { through = [], env }: { through?: string[]; env?: Record<string, string> } = {},
+): Promise<Check> {
+  const [command = shell, ...args] = [
+    ...through,
+    shell,
+    '-NoProfile',
+    '-Command',
+    `& ${quoted(process.execPath)} -e ${quoted(CHILD)}`,
+  ];
+  const seen = await runner.childInJob({ command, args, env });
+  if (seen.failure !== null)
+    return failed('containment-probe', `a command in ${shell} could not be probed: ${seen.failure}`);
+  return seen.inJob
+    ? passed('containment-probe', `a command in ${shell} left its child ${seen.pid} in gg's job`)
+    : failed(
+        'containment-probe',
+        `a command in ${shell} left its child ${seen.pid} outside gg's job, ` +
+          "so the Agents' commands would run uncontained",
+      );
 }
 
 // A temporary directory for a probe, named from `prefix`, removed after it; on Windows a CLI just ended may hold it for

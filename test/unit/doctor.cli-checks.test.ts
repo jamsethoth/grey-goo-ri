@@ -100,7 +100,8 @@ function onlyOnPath(t: TestContext, ...files: string[]) {
 }
 const GG_FILE = process.platform === 'win32' ? 'gg.cmd' : 'gg';
 
-test('gg doctor reports a Claude CLI older than the minimum', async () => {
+test('gg doctor reports a Claude CLI older than the minimum', async (t) => {
+  onlyOnPath(t, GG_FILE);
   const { text, exitCode } = await doctorOverCli({ version: recordedCli.OLD_VERSION });
   assertOneDoctorError(text, 'version');
   const [line] = doctorLines(text, 'error');
@@ -108,13 +109,15 @@ test('gg doctor reports a Claude CLI older than the minimum', async () => {
   assert.equal(exitCode, 1);
 });
 
-test('gg doctor reports a logged-out Claude CLI', async () => {
+test('gg doctor reports a logged-out Claude CLI', async (t) => {
+  onlyOnPath(t, GG_FILE);
   const { text, exitCode } = await doctorOverCli({ loggedOut: true });
   assertOneDoctorError(text, 'login');
   assert.equal(exitCode, 1);
 });
 
-test('gg doctor reports a missing Claude CLI', async () => {
+test('gg doctor reports a missing Claude CLI', async (t) => {
+  onlyOnPath(t, GG_FILE);
   const { text, exitCode } = await doctorOverCli({ missing: true });
   assertOneDoctorError(text, 'executable');
   assert.equal(exitCode, 1);
@@ -255,6 +258,7 @@ test('the recorded CLI has no answer for an empty argv when no case sets hangs o
 const FAILING_CLI = CLI_STATES.filter(([, state]) => Boolean(state.missing || state.loggedOut || state.version));
 
 test("gg doctor gives the error gg run's preflight refuses each failing Claude CLI with, line for line", async (t) => {
+  onlyOnPath(t, GG_FILE);
   assert.equal(FAILING_CLI.length, 3);
   for (const [fails, state] of FAILING_CLI) {
     const harnesses = { ...shipped.shipped(recordedCli.recordedCli(state)), fake: FAKE_HARNESS };

@@ -123,7 +123,10 @@ test('shipped builds every Harness module from the exec it is given', CASE, asyn
     launched.push(options.command);
     return Promise.reject(new Error('the sentinel launch starts nothing'));
   };
-  const built = shipped.shipped({ launch });
+  const built = shipped.shipped({
+    launch,
+    childInJob: () => Promise.reject(new Error('the sentinel probe starts nothing')),
+  });
   assert.deepEqual(Object.keys(built).sort(), modules.sort(), 'every Harness module is built');
   for (const name of modules) {
     const harness = built[name] as Record<string, unknown>;

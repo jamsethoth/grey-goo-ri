@@ -51,6 +51,9 @@ const transcriptOf: cliReplay.TranscriptOf = ({ launched, recording, home }) => 
 
 // A Claude Harness whose launches start the fake, in a temp directory that holds the Claude configuration directory,
 // the repository the call runs in, the Run directory, and the fake's script and recording, copied there.
+// The suite's doctor runs no --probe, so no containment probe.
+const noProbe = () => Promise.reject(new Error('the fake CLI runs no containment probe'));
+
 export function claudeOverFakeCli(t: TestContext, cli: FakeCli) {
   const { mode = 'replay', ...rest } = cli;
   const commandState = COMMAND_STATES[mode];
@@ -66,7 +69,7 @@ export function claudeOverFakeCli(t: TestContext, cli: FakeCli) {
   const configDirectory = fake.home;
   const harness = {
     ...claude.createClaude({ configDirectory }),
-    ...claude.createCli({ launch: fake.launch }, { configDirectory }),
+    ...claude.createCli({ launch: fake.launch, childInJob: noProbe }, { configDirectory }),
   };
   const { cwd, runDirectory, received, calls, launches, cliPidFile, orphanPidFile } = fake;
   return { harness, configDirectory, cwd, runDirectory, received, calls, launches, cliPidFile, orphanPidFile };

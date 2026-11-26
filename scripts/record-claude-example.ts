@@ -71,10 +71,13 @@ function recordingLaunch(recorder: ExampleRecorder, where: { root: string }, mad
   };
 }
 
+// The recordings make no doctor call, so no containment probe.
+const noProbe = () => Promise.reject(new Error('the recorder runs no containment probe'));
+
 async function recordIn(testContext: TestContext, recorder: ExampleRecorder) {
   const where = { root: '' };
   const made: string[] = [];
-  const harness = shipped.shipped({ launch: recordingLaunch(recorder, where, made) }).claude;
+  const harness = shipped.shipped({ launch: recordingLaunch(recorder, where, made), childInJob: noProbe }).claude;
   const fixture = await exampleOnClaude.claudeFixture(testContext, harness as unknown as runContext.Harness, {
     git: 'real',
   });
