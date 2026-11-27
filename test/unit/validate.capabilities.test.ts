@@ -20,14 +20,14 @@ const ASKING: Record<string, unknown> = {
   network: false,
 };
 
-// What Codex makes of each key, as #479 showed it (Q15 A): a field not shown exact is unsupported, so contextBudget
-// (until #485) and network (no recording shows a network call blocked or allowed) are refused at the key; skills are
-// hinted, and mcp, plugins and both access intents are enforced.
+// What Codex makes of each key, as #479 showed it (Q15 A): a field not shown exact is unsupported, so network (no
+// recording shows a network call blocked or allowed) is refused at the key; skills are hinted, and mcp, plugins, both
+// access intents and contextBudget, by the hand-off hook (#485), are enforced.
 const CODEX_REFUSES: Record<string, string | null> = {
   skills: null,
   mcp: null,
   plugins: null,
-  contextBudget: 'unsupported-agent-field',
+  contextBudget: null,
   access: null,
   network: 'unenforceable-permission-intent',
 };

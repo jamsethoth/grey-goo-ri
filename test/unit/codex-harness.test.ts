@@ -204,7 +204,7 @@ test('the launch profile is codex-exec at version 1', () => {
 // A field not shown exact is unsupported, and hint only where something real reaches the call (Q15 A): skills reach
 // Codex as text only (D10 A); config MCP servers run under their approval key (D17 A); plugins are switched by the
 // plugins table (D11 A); both access intents hold under MXC; no recording shows network blocked or allowed; the
-// context budget waits for #485.
+// context budget is enforced by the hand-off hook, its firing recorded (`hooks-on`), its hand-off a stand-in (#485).
 test('Codex declares every Capability field, each intent as #479 showed it', () => {
   const declared = codex.capabilities as Record<string, unknown>;
   assert.deepEqual(
@@ -226,7 +226,7 @@ test('Codex declares every Capability field, each intent as #479 showed it', () 
       plugins: 'exact',
       access: 'exact',
       network: 'unsupported',
-      contextBudget: 'unsupported',
+      contextBudget: 'exact',
     },
   );
 });

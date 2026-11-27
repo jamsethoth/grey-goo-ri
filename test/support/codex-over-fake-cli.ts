@@ -35,6 +35,9 @@ export interface FakeCodex {
   mode?: string;
   // A change to each replayed stream's text, a stand-in where no recording shows the stream a case needs.
   stream?: (recorded: string) => string;
+  // A change to the final message the model call at `call` (counted from 0) writes to its -o file, a stand-in where no
+  // recording shows the answer a case needs.
+  lastMessage?: (recorded: string, call: number) => string;
   // Whether the call's rollout is written; false leaves the sessions tree without it.
   rollout?: boolean;
   // Whether the listings answer; false leaves them to the model call's replay, which prints no listing.
@@ -85,15 +88,21 @@ const rolloutOf =
 
 // The launch that writes the replayed recording's final message to the call's -o file once the fake has exited, as
 // Codex writes it at the turn's end; a stopped call, and a recording with none, write nothing.
-function withLastMessage(fake: cliReplay.FakeCli, scenarios: string[], mode: string) {
+function withLastMessage(
+  fake: cliReplay.FakeCli,
+  scenarios: string[],
+  cli: { mode: string; lastMessage: FakeCodex['lastMessage'] },
+) {
   let modelCalls = 0;
   return async (options: exec.LaunchOptions) => {
     const ended = await fake.launch(options);
     if (options.args[0] !== 'exec') return ended;
-    const scenario = scenarios[Math.min(modelCalls++, scenarios.length - 1)]!;
+    const call = modelCalls++;
+    const scenario = scenarios[Math.min(call, scenarios.length - 1)]!;
     const { lastMessage } = recordedCall(join(RECORDINGS, `${scenario}.json`));
     const output = options.args[options.args.indexOf('-o') + 1];
-    if (['replay', 'garbage'].includes(mode) && lastMessage && output) writeFileSync(output, lastMessage);
+    const edited = lastMessage && cli.lastMessage ? cli.lastMessage(lastMessage, call) : lastMessage;
+    if (['replay', 'garbage'].includes(cli.mode) && edited && output) writeFileSync(output, edited);
     return ended;
   };
 }
@@ -104,7 +113,7 @@ const noProbe = () => Promise.reject(new Error('the fake CLI runs no containment
 // A Codex Harness whose launches start the fake, in a temp directory that holds gg's Codex home, the user's skills
 // folder, the repository the call runs in, the Run directory, and the fake's script and recording, copied there.
 export function codexOverFakeCli(t: TestContext, cli: FakeCodex) {
-  const { mode = 'replay', stream, rollout = true, listings = true, ...rest } = cli;
+  const { mode = 'replay', stream, lastMessage, rollout = true, listings = true, ...rest } = cli;
   const scenarios = [cli.scenario].flat();
   const fake = cliReplay.fakeCli(t, {
     ...rest,
@@ -118,7 +127,7 @@ export function codexOverFakeCli(t: TestContext, cli: FakeCodex) {
   const codexHome = fake.home;
   const skillsHome = join(fake.directory, 'skills');
   mkdirSync(skillsHome);
-  const launch = withLastMessage(fake, scenarios, mode);
+  const launch = withLastMessage(fake, scenarios, { mode, lastMessage });
   const homes = { codexHome, skillsHome };
   const harness = { ...codex.createCodex(homes), ...codex.createCli({ launch, childInJob: noProbe }, homes) };
   const { cwd, runDirectory, received, calls, launches } = fake;

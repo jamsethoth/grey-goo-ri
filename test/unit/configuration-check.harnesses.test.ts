@@ -304,19 +304,16 @@ test('preflight refuses a Harness lacking any contract member with the contract 
   assert.deepEqual(refused, expected);
 });
 
-// Codex declares network and contextBudget unsupported (Q15 A), so each is the validator's one error at its key, which
-// no Vertex's Harness preflight repeats (ADR 0026, #481 DoD 1).
-test('a Codex Agent setting network or contextBudget is one error at its key, not repeated', async () => {
+// Codex declares network unsupported (Q15 A), so it is the validator's one error at its key, which no Vertex's Harness
+// preflight repeats (ADR 0026, #481 DoD 1); contextBudget, which the hand-off hook enforces (#485), is no error.
+test('a Codex Agent setting network is one error at its key, not repeated, and its contextBudget none', async () => {
   const repository = repositorySource();
   Object.assign(repository.agents.implementer!, { harness: 'codex', network: false, contextBudget: 100000 });
   const { codex } = shipped.shipped(launchless([]));
   const checked = await checkOf(sources(repository), { harnesses: { codex } });
   assert.deepEqual(
     checked.configurationErrors.map((problem) => `${problem.at} ${problem.code}`),
-    [
-      'agents.implementer.contextBudget unsupported-agent-field',
-      'agents.implementer.network unenforceable-permission-intent',
-    ],
+    ['agents.implementer.network unenforceable-permission-intent'],
   );
   const repeated = checked.environmentErrors.filter((problem) => /\bnetwork\b|contextBudget/.test(problem.message));
   assert.deepEqual(repeated, []);

@@ -1,7 +1,8 @@
 // The Codex Harness's run over the fake codex CLI, which replays the calls recorded from codex-cli 0.171.0
 // (test/fixtures/codex/, #479): the contract's result from the stream, the -o file and the rollout, Usage by the token
 // rules, the failure classes, the resume checks, the stops, and the prompt a call sends (#482).
-import { test } from 'node:test';
+import { spawnSync } from 'node:child_process';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -9,6 +10,7 @@ import * as briefs from '../../../lib/briefs.ts';
 import * as codex from '../../../lib/harnesses/codex.ts';
 import * as codexDoctor from '../../../lib/harnesses/codex-doctor.ts';
 import * as contract from '../../../lib/harnesses/contract.ts';
+import * as codexHookHandlers from '../../support/codex-hook-handlers.ts';
 import * as codexOverFakeCli from '../../support/codex-over-fake-cli.ts';
 
 const { codexCall, hooksOf } = codexOverFakeCli;
@@ -583,4 +585,90 @@ test('interactiveArgs and metrics throw not implemented until their slices', (t)
   const { harness } = fakeCli(t, { scenario: 'start' });
   assert.throws(() => harness.interactiveArgs({}, 'opening'), { message: 'not implemented' });
   assert.throws(() => harness.metrics(START_THREAD), { message: 'not implemented' });
+});
+
+// --- The hand-off hook (#485)
+
+// A budget below the 13,227 tokens hooks-on's latest request sent (Clarify probe P1), so its hook asks.
+const SMALL_BUDGET = 1000;
+
+// A call of an Agent with a contextBudget over the fake replaying hooks-on, the recorded call whose hooks fired under
+// exec: what it reported, and the PostToolUse hooks its launch installs.
+async function budgetedCall(t: TestContext) {
+  const fake = fakeCli(t, { scenario: 'hooks-on' });
+  const sent = codexCall(fake);
+  const agent = { ...(sent.agent as Record<string, unknown>), contextBudget: SMALL_BUDGET };
+  const { result } = await fake.harness.run(
+    codexCall(fake, { agent, tools: fake.harness.resolveTools(agent) }),
+    hooksOf(),
+  );
+  const [launched] = fake.calls();
+  const postToolUse = codexHookHandlers
+    .hookHandlers(launched?.argv ?? [])
+    .filter(({ event }) => event === 'PostToolUse');
+  return { fake, result, argv: launched?.argv ?? [], postToolUse };
+}
+
+// The hook input a PostToolUse sends, with the keys hooks-on's hook log shows, for the thread and rollout the call
+// reported.
+const postToolUseInput = (result: { sessionId: unknown; transcriptPath: unknown }, cwd: string) =>
+  JSON.stringify({
+    session_id: result.sessionId,
+    turn_id: 'turn-1',
+    transcript_path: result.transcriptPath,
+    cwd,
+    hook_event_name: 'PostToolUse',
+    model: 'gpt-6-luna',
+    permission_mode: 'bypassPermissions',
+    tool_name: 'shell',
+    tool_input: { command: 'node --version' },
+    tool_response: 'v26.13.0',
+    tool_use_id: 'call-1',
+  });
+
+// A hook's command run as Codex starts one, through a shell, since the command is a shell command line: sh -c on POSIX,
+// and on win32 ComSpec's /c, the shell Codex's binary names. unverified: which shell Codex 0.171 starts commandWindows
+// in on win32; the owner's gg doctor --probe run before merge checks the hook under the real CLI (Q2 A).
+function runHook(command: string, input: string, cwd: string) {
+  const win32 = process.platform === 'win32';
+  return spawnSync(
+    win32 ? (process.env.ComSpec ?? 'cmd.exe') : '/bin/sh',
+    win32 ? ['/d', '/s', '/c', `"${command}"`] : ['-c', command],
+    { cwd, input, encoding: 'utf8', timeout: 30_000, windowsVerbatimArguments: win32 },
+  );
+}
+
+// What the hook printed for Codex to add to the agent's context.
+function addedContext(ran: ReturnType<typeof spawnSync>) {
+  assert.equal(ran.status, 0, `the hook exits 0: ${String(ran.stderr)}`);
+  const said = JSON.parse(String(ran.stdout)) as {
+    hookSpecificOutput?: { hookEventName?: string; additionalContext?: string };
+  };
+  assert.equal(said.hookSpecificOutput?.hookEventName, 'PostToolUse', String(ran.stdout));
+  return said.hookSpecificOutput.additionalContext ?? '';
+}
+
+// Past the budget the hook the launch installs, run on this platform's command over the rollout the call wrote, asks
+// the agent to end handed off with its note (#485 DoD 2; Q2 A: the hook's firing is recorded, its answer constructed).
+test("past its context budget a Codex Agent's hook asks for a hand-off", CASE, async (t) => {
+  const { fake, result, argv, postToolUse } = await budgetedCall(t);
+  assert.ok(codexHookHandlers.overrides(argv).includes('features.hooks=true'), JSON.stringify(argv));
+  assert.ok(argv.includes('--dangerously-bypass-hook-trust'), JSON.stringify(argv));
+  assert.equal(postToolUse.length, 1, JSON.stringify(argv));
+  const command = postToolUse[0]!.keys[process.platform === 'win32' ? 'commandWindows' : 'command'] ?? '';
+  const text = addedContext(runHook(command, postToolUseInput(result, fake.cwd), fake.cwd));
+  assert.ok(text.includes('"handed-off"'), `it names the Claim token: ${text}`);
+  assert.ok(text.includes(`"${briefs.HANDOFF_NOTE}"`), `it names the note field: ${text}`);
+  assert.ok(text.includes('13k'), `it gives the latest request's context: ${text}`);
+});
+
+// Request 3.2: commandWindows is required for any hook on win32, and it runs there from a worktree whose path holds a
+// space, as every path the fake gives does.
+test("the hook's win32 command runs", { ...CASE, skip: process.platform !== 'win32' && 'win32 only' }, async (t) => {
+  const { fake, result, postToolUse } = await budgetedCall(t);
+  const commandWindows = postToolUse[0]?.keys.commandWindows;
+  assert.ok(commandWindows, `the hook has a commandWindows: ${JSON.stringify(postToolUse)}`);
+  assert.ok(fake.cwd.includes(' '));
+  const text = addedContext(runHook(commandWindows, postToolUseInput(result, fake.cwd), fake.cwd));
+  assert.ok(text.includes('"handed-off"'), text);
 });
