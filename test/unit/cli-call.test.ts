@@ -95,6 +95,46 @@ test("the stall clock's idle check answers the Harness's last activity from the 
   assert.deepEqual(asked, [1]);
 });
 
+// Every Harness on this call passes a launch's second started report on (#532, ADR 0030 decision 4): none, once the
+// watcher sees an escapee, after job.
+test("a launch's none report after job reaches the Harness's started hook", async () => {
+  const reported: string[] = [];
+  const runner: Runner = {
+    launch: (options) => {
+      options.onStarted?.({ kind: 'job' });
+      options.onStarted?.({ kind: 'none' });
+      return Promise.resolve(EXITED);
+    },
+  };
+  const hooks = { started: ({ kind }: { kind: string }) => void reported.push(kind), signal: hooksOf().signal };
+  await cliCall.run(runner, hooks, { launch: LAUNCH, read: readStandIn });
+  assert.deepEqual(reported, ['job', 'none']);
+});
+
+// A started hook that throws, as a failed none save does, throws into the launch, which ends the call (#532 Q2 A).
+test("a started hook's throw reaches the launch", async () => {
+  const thrown: unknown[] = [];
+  const runner: Runner = {
+    launch: (options) => {
+      try {
+        options.onStarted?.({ kind: 'none' });
+      } catch (err) {
+        thrown.push(err);
+      }
+      return Promise.resolve(EXITED);
+    },
+  };
+  const saveFailed = new Error('the none save failed');
+  const hooks = {
+    started: () => {
+      throw saveFailed;
+    },
+    signal: hooksOf().signal,
+  };
+  await cliCall.run(runner, hooks, { launch: LAUNCH, read: readStandIn });
+  assert.deepEqual(thrown, [saveFailed]);
+});
+
 test('a launch that cannot start is an unknown failure, never a throw', async () => {
   const runner: Runner = { launch: () => Promise.reject(new Error('spawn stand-in ENOENT')) };
   const ended = await cliCall.run(runner, hooksOf(), { launch: LAUNCH, read: readStandIn });
