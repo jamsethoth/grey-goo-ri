@@ -1,7 +1,8 @@
 // What an argv starts as with no shell, which exec's run and launch share: on Windows an npm .cmd shim for a node bin
 // is read for the script it names (#423).
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
+import * as pathEntry from './path-entry.ts';
 
 // A shim's end, as npm's cmd-shim writes it: the program, then the script beside the shim, then the arguments.
 const NPM_SHIM = /"%_prog%"\s+"%dp0%\\([^"]+)"\s+%\*/;
@@ -14,15 +15,10 @@ const SHIM_VARIABLE = /^@SET /m;
 // it has one, as the shim does. Any other .cmd, a shim for a bin that is not node or that sets a variable among them,
 // is refused, since running it takes a shell. A relative path or PATH entry is read from cwd, as spawn reads it. An
 // .exe or .com found first starts as named.
-// A test passes stat to model a candidate it may not read.
 export function argvOf(
   command: string,
   args: string[],
-  {
-    path = process.env.PATH ?? '',
-    cwd = process.cwd(),
-    stat = (file) => statSync(file, { throwIfNoEntry: false }),
-  }: { path?: string; cwd?: string; stat?: (file: string) => { isFile(): boolean } | undefined } = {},
+  { path = process.env.PATH ?? '', cwd = process.cwd() }: { path?: string; cwd?: string } = {},
 ) {
   if (process.platform !== 'win32') return { command, args };
   const candidates = /[\\/]/.test(command)
@@ -35,13 +31,11 @@ export function argvOf(
             resolve(cwd, directory.replace(/"/g, ''), command + extension),
           ),
         );
+  // A Store app's execution alias is a link the user may not stat: found by its own entry, not a shim, so it starts
+  // as named (#531). An entry gg cannot read is skipped (#548).
   const found = candidates.find((file) => {
-    // A Store app's execution alias is a link the user may not stat: found, not a shim, so it starts as named (#531)
-    try {
-      return stat(file)?.isFile();
-    } catch {
-      return true;
-    }
+    const entry = pathEntry.pathEntry(file);
+    return entry?.isFile() === true || entry?.isSymbolicLink() === true;
   });
   if (!found || !/\.(?:cmd|bat)$/i.test(found)) return { command, args };
   const text = readFileSync(found, 'utf8');

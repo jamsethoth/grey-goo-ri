@@ -182,6 +182,7 @@ leverage and a change lands in one place (locality).
 | `lib/git.ts` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
 | `lib/git-default-branch.ts` | the branch a repository's Tickets start from by default, which `gg init` writes as `baseBranch`: origin's HEAD, else the checked-out branch |
 | `lib/git-temp-index.ts` | what `lib/git.ts` reads through a copy of the index: a worktree's fingerprint and a rescue's tree |
+| `lib/path-entry.ts` | the one PATH-entry lookup, which `argvOf` and the Harness doctors' shell check share: a candidate's own entry, a link not followed, or none when it is missing or cannot be read, so the search goes on to the next |
 | `lib/paths.ts` | canonical local paths, the path key every path comparison uses, and the State Database's file in a common dir |
 | `lib/github.ts` | gh verbs, and the label writes and the read of the repository's `owner/name` that never throw; a failed gh process is a `GhError` carrying its HTTP status and rate limit (ported) |
 | `lib/gh-answer.ts` | gh's JSON answers read field by field into the types `lib/github.ts` declares: a field of the wrong type fails the verb, naming its path (#354) |
