@@ -5,7 +5,6 @@ import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type * as exec from '../../lib/exec.ts';
 import * as codexRun from '../../lib/harnesses/codex-run.ts';
 import * as cliReplay from '../support/cli-replay.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
@@ -113,10 +112,14 @@ test('a launch that cannot be prepared is an unknown failure that started no com
   );
 });
 
+// A launch's options and result, as the replay types them (a unit test imports no lib/exec.ts).
+type Launch = ReturnType<typeof cliReplay.replayLaunch>['launch'];
+type LaunchResult = Awaited<ReturnType<Launch>>;
+
 // A launch that prints `stdout` and ends as `ending` says, writing the -o file's final message as the recorded call
 // does.
-function endingLaunch(lastMessage: string, stdout: string, ending: Partial<exec.LaunchResult>) {
-  return (options: exec.LaunchOptions): Promise<exec.LaunchResult> => {
+function endingLaunch(lastMessage: string, stdout: string, ending: Partial<LaunchResult>) {
+  return (options: Parameters<Launch>[0]): Promise<LaunchResult> => {
     writeFileSync(lastMessage, '{"answer":"heliotrope"}');
     options.onStarted?.({ kind: 'none' });
     for (const line of stdout.split('\n').filter(Boolean)) options.onLine?.(line);
@@ -135,7 +138,7 @@ function endingLaunch(lastMessage: string, stdout: string, ending: Partial<exec.
 
 // Each way a call ends: the stream it printed and what its launch gave.
 const failedLine = (message: string) => JSON.stringify({ type: 'turn.failed', error: { message } });
-const endings: Record<string, { stdout: string; ending: Partial<exec.LaunchResult> }> = {
+const endings: Record<string, { stdout: string; ending: Partial<LaunchResult> }> = {
   completed: { stdout: recorded('start.jsonl'), ending: {} },
   'timed out on the wall clock': { stdout: '', ending: { code: null, timedOut: 'wall' } },
   'timed out on the stall clock': { stdout: '', ending: { code: null, timedOut: 'stall' } },
