@@ -111,8 +111,8 @@ export async function guardedCall(
   // Neither side keeps an object the other may change: the Harness gets a copy of the call, and gg keeps a copy of the
   // answer, taken before anything reads or keeps it, since every save writes the whole record again.
   const saves = callSaves(runContext);
-  // A save that failed, the heartbeat's or a started report's, is the Run's stop, which the Harness answered by ending
-  // the call (Q2 A), so it outranks whatever the call gave.
+  // A save that failed, the heartbeat's or a started report's, is the Run's stop, so it outranks what the call gave.
+  // Only a failed started report also has the Harness end the call (Q2 A, D2 A); after a failed heartbeat it runs on.
   const answered = await withHeartbeat(runContext, saves, async () => {
     try {
       return await harness.run(structuredClone(call), {
