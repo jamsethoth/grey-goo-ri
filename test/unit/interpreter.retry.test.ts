@@ -563,11 +563,17 @@ async function noneSaveFails(t: TestContext, rejects: boolean) {
 // of the record is tried again, an escapee found after it is ended, and the Run stops on that first error.
 test('after a save during a call fails, no save of the record is tried again', async (t) => {
   const cases = [
-    ["the job report's save fails, then the take-down finds an escapee", 'job', ['none']],
-    ["the job report's save fails, then a heartbeat", 'job', ['beat']],
-    ["a heartbeat's save fails, then an escapee", 'beat', ['none']],
+    ["the job report's save fails, then the take-down finds an escapee", 'job', ['none'], ['ended']],
+    ["the job report's save fails, then a heartbeat", 'job', ['beat'], []],
+    ["a heartbeat's save fails, then an escapee", 'beat', ['beat', 'none'], ['ended']],
+    [
+      "an escapee, then a heartbeat's save fails, then a second escapee",
+      'beat',
+      ['none', 'beat', 'none'],
+      ['adopted', 'ended'],
+    ],
   ] as const;
-  for (const [name, failing, next] of cases)
+  for (const [name, failing, next, fates] of cases)
     await t.test(name, async (t) => {
       const fixture = await escapingFixture(t);
       const seen: string[] = [];
@@ -585,14 +591,12 @@ test('after a save during a call fails, no save of the record is tried again', a
         const answer = run(call, hooks);
         if (call.vertex !== 'red' || call.attempt !== 1) return answer;
         answer.catch(() => {});
-        if (failing === 'beat') {
-          beating = true;
-          fixture.clock.beat();
-          beating = false;
-        }
         for (const step of next) {
-          if (step === 'beat') fixture.clock.beat();
-          else
+          if (step === 'beat') {
+            beating = true;
+            fixture.clock.beat();
+            beating = false;
+          } else
             try {
               hooks!.started({ kind: 'none' });
               seen.push('adopted');
@@ -608,7 +612,7 @@ test('after a save during a call fails, no save of the record is tried again', a
         (err) => err instanceof record.RecordSaveError && err.cause === first,
       );
       assert.equal(triedAfter, 0, 'no save is tried after the failed one');
-      if (next[0] === 'none') assert.deepEqual(seen, ['ended'], 'the escapee is ended, never adopted');
+      assert.deepEqual(seen, fates, 'an escapee after the failed save is ended, never adopted');
     });
 });
 
