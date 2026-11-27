@@ -7,11 +7,13 @@ here outside the Reserved section needs a new ADR under `docs/adr/` and a versio
 - Code source: `ExecutionRecord` and `EpicRecord` (`lib/record.ts`), saved as `ExecutionRecordJson` and `EpicRecordJson`
   (`lib/record-json.ts`), and read back field by field by `lib/record-read.ts`, which refuses any other shape. The
   types are the one declaration: tsc holds each reader to its type both ways (#402).
-- Version: `RECORD_SCHEMA_VERSION = 3`, saved as each row's `schemaVersion`. A row of version 2, the one before, still
-  reads: each field version 3 added is optional, so a row without it reads (ADR 0024). Every save writes the current
+- Version: `RECORD_SCHEMA_VERSION = 4`, saved as each row's `schemaVersion`. A row of version 3, the one before, still
+  reads: each field a version added is optional, so a row without it reads (ADR 0024). Every save writes the current
   version, whichever version the row was read at. A row of any other version is a corrupt row, never read as this one.
 - Version 3 added the hand-off (#430, ADR 0029): the retry kind `handoff` in `retries.*` and `retryKind`, the fixed
   rows `handed-off` and `handoff-exhausted`, and each Session an Action handed off, in `sessions.*.handedOff`.
+- Version 4 changed no shape: it changed what a saved containment of `job` proves (#532, ADR 0030 decision 4; Cleanup
+  and containment below). A row of version 3 gets no rule of its own for its `job`: gg had no records in use.
 - Version 2 added the Harness Result's `repositoryDigest`, `agentCliVersion`, `effectiveModel` and `effectiveEffort`
   (#422).
 - The State Database version: `stateDatabase.SCHEMA_VERSION = 1`, its `user_version` (below).
@@ -851,8 +853,14 @@ containment is `{ kind: 'job' }` (a Windows job object), `{ kind: 'group', pgid 
 report waits in `visitState.unconfirmedCleanup` with the suspended Action's recorded result, and a later Run confirms
 cleanup under the recorded containment before it continues. On Windows the record keeps only the kind `job`: gg holds
 the job's only handle (`lib/containment.ts`, #245), and the job's kill-on-close ends every process in it when that gg
-process ends or closes the handle as it ends the Ticket, which is what makes "the writers are confirmed gone" true on
-Windows.
+process ends or closes the handle as it ends the Ticket. A call's containment is `job` only while nothing it started
+has left gg's job (#532, ADR 0030 decision 4): the first process the watcher sees outside it makes gg save the call's
+containment as `none` before it adopts or ends that process, and it stays `none` whatever is reported after. The jobs
+gg adopts such a process into end with gg's handles too, and a Pending cleanup hold's `closeJob` closes them. So a saved
+`job` means every process the call started ends with gg's handles, which is what makes "the writers are confirmed gone"
+true on Windows, but for ADR 0030 decision 8's residual risk: an escapee no poll saw, or one whose `none` save had not
+committed when gg died, or that gg failed to end after that save failed. A cleanup after an escapee that it cannot
+confirm reports `none`.
 
 ## What the integrity snapshot sees
 

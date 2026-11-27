@@ -108,12 +108,22 @@ export async function guardedCall(
   runContext.database.intent(executionRecord, call.marker as string, 'call', { baseline });
   // Neither side keeps an object the other may change: the Harness gets a copy of the call, and gg keeps a copy of the
   // answer, taken before anything reads or keeps it, since every save writes the whole record again.
-  const answered = await withHeartbeat(runContext, () =>
-    harness.run(structuredClone(call), {
-      started: savedContainment(runContext, call.marker as string),
-      signal: runContext.runState.signal,
-    }),
-  );
+  const containment = savedContainment(runContext, call.marker as string);
+  const answered = await withHeartbeat(runContext, async () => {
+    // A started report that threw is the Run's stop, which the Harness answered by ending the call (Q2 A), so it
+    // outranks whatever the call gave.
+    let answer: Awaited<ReturnType<Harness['run']>>;
+    try {
+      answer = await harness.run(structuredClone(call), {
+        started: containment.started,
+        signal: runContext.runState.signal,
+      });
+    } catch (err) {
+      throw containment.failed ?? err;
+    }
+    if (containment.failed) throw containment.failed;
+    return answer;
+  });
   // The job handle is no data, and a copy throws on a function it can see, so it comes off the report by name, however
   // the Harness attached it, and is carried over to close the call's processes.
   const reported = answered.result.cleanup as commandCleanup.CleanupReport | undefined;
@@ -134,12 +144,26 @@ export async function guardedCall(
 
 // The Harness's started report, saved into the call's intent by a second write: the intent is saved before launch, and
 // the containment is known only once the call has started (N1). Unsaved, the Interrupted Attempt is held, never reset.
+// A `none`, an escapee seen outside gg's job, stays whatever is reported after it, so `job` proves no process ever left
+// the job (ADR 0030 decision 4). The report's error, thrown back to the Harness, is kept for guardedCall to rethrow.
 function savedContainment(runContext: RunContext, actionMarker: string) {
-  return ({ kind }: HarnessStarted) => {
-    const intended = writeAhead.findEntry(runContext.record, actionMarker, 'intent')!;
-    intended.payload = { ...writeAhead.payloadOf(intended, writeAhead.readCallPayload), containment: { kind } };
-    runContext.database.save(runContext.record);
+  const containment: { started: (report: HarnessStarted) => void; failed: unknown } = {
+    failed: null,
+    started: ({ kind }) => {
+      const intended = writeAhead.findEntry(runContext.record, actionMarker, 'intent')!;
+      const payload = writeAhead.payloadOf(intended, writeAhead.readCallPayload);
+      if (payload.containment?.kind === 'none') return;
+      intended.payload = { ...payload, containment: { kind } };
+      try {
+        runContext.database.save(runContext.record);
+        if (kind === 'none') effectErrors.crashPoint(runContext, actionMarker, 'after-none-saved');
+      } catch (err) {
+        containment.failed ??= err;
+        throw err;
+      }
+    },
   };
+  return containment;
 }
 
 const othersOf = async ({ others: listed }: RunContext) =>

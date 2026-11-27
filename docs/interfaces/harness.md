@@ -20,7 +20,7 @@ code.
 | `launchProfile` | `{ name, version }`, the launch profile the Harness starts its CLI with, or `null` when it declares none (ADR 0027) |
 | `validate(agent)` | checks what the matrix cannot say about an Agent, whose matrix rules the validator owns (ADR 0026); returns a typed result, never throws |
 | `resolveTools(agent, { commands, platform })` | the tools the Harness will pass for this Agent, hint fields marked, as JSON returned at once, never a Promise; `commands` are the Declared Commands the Agent may run (the repository's at preflight, the Visit's pinned ones at a call) and `platform` is gg's `process.platform` (`ToolsContext`, `lib/run-context.ts`) |
-| `run(call, hooks)` | runs one Attempt; reports it has started through `hooks.started`; ends the Attempt when `hooks.signal` aborts; resolves `{ response, result, failure }` |
+| `run(call, hooks)` | runs one Attempt; reports it has started through `hooks.started`, and ends the Attempt when that throws (#532) or `hooks.signal` aborts; resolves `{ response, result, failure }` |
 | `interactiveArgs(agent, opening, opts)` | argv for an interactive session opened with `opening` |
 | `metrics(session)` | cumulative Usage of a Session |
 | `doctor({ probe, agents })` | the Harness's checks of its CLI and of the Agents it runs, resolving a `DoctorReport`: cheap checks with no model call, run by `gg doctor` and `gg run` preflight once per used Harness, and with `probe` the model probes `gg doctor --probe` adds (ADR 0028, ADR 0032) |
@@ -165,7 +165,11 @@ env: JsonValue
 started, and before `run` resolves, the Harness calls `started` with what contains them (#68, N1): `kind` is `job` when a
 Windows job ends them all with gg (ADR 0021), else `none`, an open string. gg saves it into the call's intent by a second
 write, so at resume an Interrupted Attempt is reset and retried only under a `job`; a Harness that never calls it is
-uncontained.
+uncontained. A `job` holds only while nothing the call started has left gg's job (#532, ADR 0030 decision 4): when the
+watcher first sees one of its processes outside the job, the Harness calls `started` a second time with `none` before
+it adopts or ends that process. gg saves that `none`, and keeps it whatever `started` reports after it, saving nothing
+more. When `started` throws (its save failed, and the Run stops), the Harness ends that process unadopted and ends the
+call; gg rethrows the error once `run` settles, and saves no result of the call.
 
 `signal` is the Run's one `AbortSignal`, always given, beside the call rather than inside it, since the Harness gets a
 copy of the call and a copy of a signal is `{}` (ADR 0024). When it aborts, the Harness ends the Attempt's processes and
@@ -326,7 +330,7 @@ is refused (`events.Usage`, `events.md`).
 ## The fake harness
 
 `test/support/fake-harness.ts` stands in for a Harness in every test: it never spawns anything, and a test scripts it.
-Its scripting version is `FAKE_HARNESS_VERSION = 7`, and every scripting key below is frozen with it. Its
+Its scripting version is `FAKE_HARNESS_VERSION = 8`, and every scripting key below is frozen with it. Its
 `launchProfile` is `null`, which a test replaces on the object it builds. Its result holds null for `repositoryDigest`,
 `agentCliVersion`, `effectiveModel` and `effectiveEffort` unless a script gives one.
 
