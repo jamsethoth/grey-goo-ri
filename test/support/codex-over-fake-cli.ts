@@ -98,6 +98,9 @@ function withLastMessage(fake: cliReplay.FakeCli, scenarios: string[], mode: str
   };
 }
 
+// The suite's doctor runs no --probe, so no containment probe.
+const noProbe = () => Promise.reject(new Error('the fake CLI runs no containment probe'));
+
 // A Codex Harness whose launches start the fake, in a temp directory that holds gg's Codex home, the user's skills
 // folder, the repository the call runs in, the Run directory, and the fake's script and recording, copied there.
 export function codexOverFakeCli(t: TestContext, cli: FakeCodex) {
@@ -117,7 +120,7 @@ export function codexOverFakeCli(t: TestContext, cli: FakeCodex) {
   mkdirSync(skillsHome);
   const launch = withLastMessage(fake, scenarios, mode);
   const homes = { codexHome, skillsHome };
-  const harness = { ...codex.createCodex(homes), ...codex.createCli({ launch }, homes) };
+  const harness = { ...codex.createCodex(homes), ...codex.createCli({ launch, childInJob: noProbe }, homes) };
   const { cwd, runDirectory, received, calls, launches } = fake;
   return { harness, codexHome, skillsHome, cwd, runDirectory, received, calls, launches };
 }
