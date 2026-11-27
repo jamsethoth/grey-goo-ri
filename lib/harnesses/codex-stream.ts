@@ -96,7 +96,7 @@ function totalsOf(usage: Line): Totals {
   const cached = numberOf(usage.cached_input_tokens);
   const written = numberOf(usage.cache_write_input_tokens);
   return {
-    inputTokens: input === null || cached === null ? null : input - cached - (written ?? 0),
+    inputTokens: input === null || cached === null || written === null ? null : input - cached - written,
     cacheReadTokens: cached,
     cacheWriteTokens: written,
     outputTokens: numberOf(usage.output_tokens),

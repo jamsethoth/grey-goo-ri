@@ -123,8 +123,9 @@ function rolloutOf(codexHome: string, sessionId: string | null): codexStream.Rol
 }
 
 // A call that ended: its thread is the one thread.started names, else the resumed one (ported, lib/adapters.mjs:73),
-// and its rollout says what it ran with; a rollout that cannot be read fails the call, never a throw (request section
-// 4). No repository content reaches a call (Q18 A), so there is no repository configuration to digest.
+// and its rollout says what it ran with; a rollout that cannot be read fails a completed call, never a throw (request
+// section 4), and any other ending keeps its own status and failure (Q2 A). No repository content reaches a call
+// (Q18 A), so there is no repository configuration to digest.
 function endedResult(
   { status, stream, failure, ended }: cliCall.CliCallEnded<codexStream.CodexStream> & { ended: exec.LaunchResult },
   call: RunCall,
@@ -135,7 +136,7 @@ function endedResult(
   const read = rolloutOf(runs.codexHome, sessionId);
   const rollout = read instanceof Error ? null : read;
   const unread = read instanceof Error ? unknownFailure(`the rollout could not be read: ${read.message}`) : null;
-  const discarded = unread ?? (status === 'completed' ? resumeFailure(call, rollout) : null);
+  const discarded = status === 'completed' ? (unread ?? resumeFailure(call, rollout)) : null;
   const result = {
     status: discarded ? ('failed' as const) : status,
     sessionId,
