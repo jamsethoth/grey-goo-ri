@@ -39,6 +39,10 @@ export interface FakeCodex {
   rollout?: boolean;
   // Whether the listings answer; false leaves them to the model call's replay, which prints no listing.
   listings?: boolean;
+  // Whether the fake leaves a descendant running the way MXC runs an agent's command, #479's recording shows: under
+  // the sandbox helper, a re-run of codex that stays while the command it started runs (cli-replay.ts's helper); the
+  // call's stall and wall clocks count from the command's pid.
+  orphan?: boolean;
   // What the fake writes to its stderr.
   stderr?: string;
   // The executable launched in place of codex, node unless a case names one that does not exist.
@@ -98,6 +102,9 @@ function withLastMessage(fake: cliReplay.FakeCli, scenarios: string[], mode: str
   };
 }
 
+// The arguments MXC's sandbox helper runs codex with (docs/research/codex-cli.md, Job containment (F7)).
+const MXC_HELPER = ['--__codex-windows-mxc'];
+
 // The suite's doctor runs no --probe, so no containment probe.
 const noProbe = () => Promise.reject(new Error('the fake CLI runs no containment probe'));
 
@@ -108,6 +115,7 @@ export function codexOverFakeCli(t: TestContext, cli: FakeCodex) {
   const scenarios = [cli.scenario].flat();
   const fake = cliReplay.fakeCli(t, {
     ...rest,
+    ...(cli.orphan && { helper: MXC_HELPER }),
     recordings: recordingsFor(t, scenarios, stream),
     mode,
     commands: listings ? LISTINGS : [],
@@ -121,8 +129,9 @@ export function codexOverFakeCli(t: TestContext, cli: FakeCodex) {
   const launch = withLastMessage(fake, scenarios, mode);
   const homes = { codexHome, skillsHome };
   const harness = { ...codex.createCodex(homes), ...codex.createCli({ launch, childInJob: noProbe }, homes) };
-  const { cwd, runDirectory, received, calls, launches } = fake;
-  return { harness, codexHome, skillsHome, cwd, runDirectory, received, calls, launches };
+  const { cwd, runDirectory, received, calls, launches, cliPidFile, helperPidFile, orphanPidFile } = fake;
+  const pidFiles = { cliPidFile, helperPidFile, orphanPidFile };
+  return { harness, codexHome, skillsHome, cwd, runDirectory, received, calls, launches, ...pidFiles };
 }
 
 export type CodexOverFakeCli = ReturnType<typeof codexOverFakeCli>;
