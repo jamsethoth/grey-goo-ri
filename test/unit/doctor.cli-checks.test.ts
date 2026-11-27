@@ -3,14 +3,15 @@
 // gives.
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { delimiter, join } from 'node:path';
 import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
 import * as claude from '../../lib/harnesses/claude.ts';
 import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as run from '../../lib/run.ts';
+import type * as runContext from '../../lib/run-context.ts';
 import * as caseEnv from '../support/case-env.ts';
 import * as claudeRecordings from '../support/claude-recordings.ts';
 import * as exampleSource from '../support/example-source.ts';
@@ -18,6 +19,7 @@ import * as fakeGh from '../support/fake-gh.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
 import * as recordedCli from '../support/recorded-cli.ts';
 import * as runFixture from '../support/run-fixture.ts';
+import * as storeAlias from '../support/store-alias.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
 const FAKE_HARNESS = fakeHarness.fakeHarness();
@@ -98,7 +100,8 @@ function onlyOnPath(t: TestContext, ...files: string[]) {
 }
 const GG_FILE = process.platform === 'win32' ? 'gg.cmd' : 'gg';
 
-test('gg doctor reports a Claude CLI older than the minimum', async () => {
+test('gg doctor reports a Claude CLI older than the minimum', async (t) => {
+  onlyOnPath(t, GG_FILE);
   const { text, exitCode } = await doctorOverCli({ version: recordedCli.OLD_VERSION });
   assertOneDoctorError(text, 'version');
   const [line] = doctorLines(text, 'error');
@@ -106,13 +109,15 @@ test('gg doctor reports a Claude CLI older than the minimum', async () => {
   assert.equal(exitCode, 1);
 });
 
-test('gg doctor reports a logged-out Claude CLI', async () => {
+test('gg doctor reports a logged-out Claude CLI', async (t) => {
+  onlyOnPath(t, GG_FILE);
   const { text, exitCode } = await doctorOverCli({ loggedOut: true });
   assertOneDoctorError(text, 'login');
   assert.equal(exitCode, 1);
 });
 
-test('gg doctor reports a missing Claude CLI', async () => {
+test('gg doctor reports a missing Claude CLI', async (t) => {
+  onlyOnPath(t, GG_FILE);
   const { text, exitCode } = await doctorOverCli({ missing: true });
   assertOneDoctorError(text, 'executable');
   assert.equal(exitCode, 1);
@@ -253,6 +258,7 @@ test('the recorded CLI has no answer for an empty argv when no case sets hangs o
 const FAILING_CLI = CLI_STATES.filter(([, state]) => Boolean(state.missing || state.loggedOut || state.version));
 
 test("gg doctor gives the error gg run's preflight refuses each failing Claude CLI with, line for line", async (t) => {
+  onlyOnPath(t, GG_FILE);
   assert.equal(FAILING_CLI.length, 3);
   for (const [fails, state] of FAILING_CLI) {
     const harnesses = { ...shipped.shipped(recordedCli.recordedCli(state)), fake: FAKE_HARNESS };
@@ -283,7 +289,7 @@ async function probeChecks(state: recordedCli.CliState) {
     settings.push(path === undefined ? undefined : (JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>));
     return cli.launch(options);
   };
-  const { checks } = await claude.createCli({ launch }).doctor({ probe: true, agents: {} });
+  const { checks } = await claude.createCli({ ...cli, launch }).doctor({ probe: true, agents: {} });
   const named = (name: string) => checks.find((check) => check.name === name);
   const checked = {
     bare: named('bare-probe'),
@@ -676,3 +682,110 @@ test('gg doctor --probe prints a passed line naming each probe that passed', asy
   for (const probe of ['profile-probe', 'handoff-probe', 'fork-probe'])
     assert.equal(passed.filter((line) => line.startsWith(`passed: harness claude: ${probe}: `)).length, 1, text);
 });
+
+// The Agents' shell is Windows' (ADR 0025), so the shell check runs on win32 alone.
+const ON_WINDOWS = { skip: process.platform !== 'win32' && 'Windows only: the shell check runs on win32' };
+
+// A folder of the case holding empty `files`, named by `parts` under it.
+function folderOf(t: TestContext, parts: string[], files: string[]) {
+  const folder = join(tempDirectory.tempDirectory(t, 'gg-doctor-shell-'), ...parts);
+  mkdirSync(folder, { recursive: true });
+  for (const name of files) writeFileSync(join(folder, name), '');
+  return folder;
+}
+
+// ADR 0030 decision 2: a Store pwsh first on PATH starts the Agents' commands outside gg's job, so it fails gg doctor
+// and preflight alike, naming an unpackaged PowerShell 7 to install, though Windows PowerShell is on PATH after it.
+test(
+  'a first pwsh on PATH that is an alias to an app under WindowsApps fails the shell check',
+  ON_WINDOWS,
+  async (t) => {
+    const later = folderOf(t, ['System32'], ['powershell.exe', GG_FILE]);
+    caseEnv.caseEnv(t, { PATH: [storeAlias.storeAlias(t), later].join(delimiter) });
+    const { text, exitCode } = await doctorOverCli();
+    assertOneDoctorError(text, 'shell');
+    const [line] = doctorLines(text, 'error');
+    for (const remedy of [
+      '%ProgramFiles%\\PowerShell\\7',
+      'winget install --id Microsoft.PowerShell --source winget --installer-type wix',
+    ])
+      assert.ok(line!.includes(remedy), `the shell check names ${remedy}: ${line}`);
+    assert.equal(exitCode, 1);
+    const harnesses = { ...shipped.shipped(recordedCli.recordedCli()), fake: FAKE_HARNESS };
+    const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-doctor-shell-preflight-');
+    const configuration = sources(runFixture.testConfig('', { harness: 'claude' }));
+    let refused: string[] = [];
+    await run.admitConfiguration({ commonDir, config: configuration, harnesses }).catch((err: Error) => {
+      refused = err.message.split('\n').filter((line) => line.startsWith('error: '));
+    });
+    const preflight = await doctor.doctor({ config: configuration, ...DEPS, harnesses, commonDir });
+    assert.deepEqual(
+      refused,
+      linesOf(preflight.text, 'error'),
+      'gg run refuses the Store pwsh as gg doctor reports it',
+    );
+    assertOneDoctorError(refused.join('\n'), 'shell');
+  },
+);
+
+// ADR 0030 decision 2: the remedy, an unpackaged PowerShell 7 ahead of the alias on PATH, passes.
+test(
+  'an unpackaged PowerShell 7 first on PATH, ahead of a Store alias, passes the shell check',
+  ON_WINDOWS,
+  async (t) => {
+    const unpackaged = folderOf(t, ['PowerShell', '7'], ['pwsh.exe']);
+    caseEnv.caseEnv(t, { PATH: [unpackaged, storeAlias.storeAlias(t)].join(delimiter) });
+    const { checks } = await claude.createCli(recordedCli.recordedCli()).doctor({ probe: false, agents: {} });
+    const shell = checks.find(({ name }) => name === 'shell');
+    assert.equal(shell?.ok, true, shell?.message ?? 'no shell check');
+  },
+);
+
+// ADR 0030 decision 2, #533 DoD 3: every shipped Harness's doctor calls the one shell check, which follows a Store
+// alias first on PATH to the app it starts, so each one's shell check names the alias it found; none walks PATH for its
+// shell itself, where existsSync misses the alias. Its CLI not starting leaves the shell check standing.
+test("every shipped Harness's doctor finds a first pwsh on PATH that is an alias to an app", ON_WINDOWS, async (t) => {
+  const bin = storeAlias.storeAlias(t);
+  caseEnv.caseEnv(t, { PATH: bin, GG_HOME: tempDirectory.tempDirectory(t, 'gg-doctor-shell-home-') });
+  const failing = () => Promise.reject(new Error('no CLI starts in this case'));
+  const cannotStart = { launch: failing, childInJob: failing };
+  const harnesses = Object.entries(shipped.shipped(cannotStart));
+  assert.deepEqual(
+    harnesses.map(([name]) => name),
+    Object.keys(shipped.HARNESSES),
+  );
+  const missed: string[] = [];
+  for (const [name, harness] of harnesses) {
+    const harnessDoctor = harness.doctor as (options: runContext.DoctorOptions) => Promise<runContext.DoctorReport>;
+    const { checks } = await harnessDoctor({ probe: false, agents: {} });
+    const shell = checks.find((check) => check.name === 'shell');
+    if (!shell?.message.includes(join(bin, 'pwsh.exe'))) missed.push(`${name}: ${shell?.message ?? 'no shell check'}`);
+  }
+  assert.deepEqual(missed, []);
+});
+
+// ADR 0030 decision 5: under --probe, a command run in the first pwsh on PATH, started as gg starts a launch, must
+// leave a child in gg's job; a child outside it, as a Store pwsh's is, fails gg doctor --probe, the one error.
+test(
+  "under --probe, a shell whose command's child is outside gg's job fails the containment probe",
+  ON_WINDOWS,
+  async (t) => {
+    caseEnv.caseEnv(t, { PATH: folderOf(t, ['PowerShell', '7'], ['pwsh.exe', GG_FILE]) });
+    const { text, exitCode } = await doctorOverCli({ escapes: true }, { probe: true });
+    assertOneDoctorError(text, 'containment-probe');
+    assert.equal(exitCode, 1);
+  },
+);
+
+// ADR 0030 decision 5 and #494: a child in gg's job passes the probe, which prints its passed line.
+test(
+  "under --probe, a shell whose command's child is in gg's job passes the containment probe",
+  ON_WINDOWS,
+  async (t) => {
+    caseEnv.caseEnv(t, { PATH: folderOf(t, ['PowerShell', '7'], ['pwsh.exe', GG_FILE]) });
+    const { text } = await doctorOverCli({}, { probe: true });
+    const passed = text.split('\n').filter((line) => line.startsWith('passed: harness claude: containment-probe: '));
+    assert.equal(passed.length, 1, text);
+    assert.deepEqual(linesOf(text, 'error'), [], text);
+  },
+);

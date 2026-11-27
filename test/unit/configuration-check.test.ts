@@ -16,6 +16,7 @@ import type * as golden from '../support/golden.ts';
 import * as recordedCli from '../support/recorded-cli.ts';
 import * as runFixture from '../support/run-fixture.ts';
 import * as seededRecords from '../support/seeded-records.ts';
+import * as storeAlias from '../support/store-alias.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
 const REPOSITORY_FILE = '/repo/.agents/gg/gg.json';
@@ -129,7 +130,8 @@ test('preflight names a Harness that fails in a Flow --flow does not name', asyn
 
 // The preflight stop for Claude is gone (#425, G7): the Claude Harness shipped builds passes preflight over a CLI
 // logged in at the minimum version, whose cheap checks preflight runs (#427).
-test('preflight admits the Claude Harness shipped builds over a logged-in CLI', async () => {
+test('preflight admits the Claude Harness shipped builds over a logged-in CLI', async (t) => {
+  storeAlias.unpackagedShellFirst(t);
   const repository = repositorySource();
   Object.assign(repository.agents.implementer!, { harness: 'claude' });
   const { claude } = shipped.shipped(recordedCli.recordedCli());
@@ -137,7 +139,8 @@ test('preflight admits the Claude Harness shipped builds over a logged-in CLI', 
 });
 
 // Q1 A: a failed check is one error for the Harness, at no configuration path, naming the check.
-test('preflight fails a Flow whose Claude CLI is logged out', async () => {
+test('preflight fails a Flow whose Claude CLI is logged out', async (t) => {
+  storeAlias.unpackagedShellFirst(t);
   const repository = repositorySource();
   Object.assign(repository.agents.implementer!, { harness: 'claude' });
   const { claude } = shipped.shipped(recordedCli.recordedCli({ loggedOut: true }));
@@ -340,14 +343,14 @@ test('a Claude Agent listing mcp is one unsupported-agent-field error, which no 
   assert.deepEqual(repeated, []);
 });
 
-// An exec whose launch records its call and starts nothing.
-const launchless = (launched: unknown[]) =>
-  ({
-    launch: (...args: unknown[]) => {
-      launched.push(args);
-      throw new Error('no CLI starts at this preflight');
-    },
-  }) as unknown as Parameters<typeof shipped.shipped>[0];
+// An exec whose launch records its call and starts nothing, and which runs no containment probe.
+const launchless = (launched: unknown[]): Parameters<typeof shipped.shipped>[0] => ({
+  launch: (...args) => {
+    launched.push(args);
+    throw new Error('no CLI starts at this preflight');
+  },
+  childInJob: () => Promise.reject(new Error('no containment probe runs at this preflight')),
+});
 
 // A Codex Agent with nothing to list starts no listing at preflight, where only the doctor's cheap commands start
 // (#484), and with its run built Codex passes preflight: its stop is gone (#482 decision 8).

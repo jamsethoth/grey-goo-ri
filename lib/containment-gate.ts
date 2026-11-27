@@ -1,6 +1,7 @@
 // The gate an argv waits behind on Windows (lib/containment.ts's startArgv). gg starts this process and puts it in a
-// job before it sends the argv, so the argv and everything it starts begin inside the job. The argv runs with no shell
-// on this process's stdio. This process answers once the argv has started, or with the spawn error, and exits with the
+// job before it sends the argv, so the argv begins inside the job, as does each process it starts that Windows does
+// not start outside it, as it does a packaged app's (ADR 0030 decision 3). The argv runs with no shell on this
+// process's stdio. This process answers once the argv has started, or with the spawn error, and exits with the
 // argv's exit code. It stays until the argv exits, because node's own job for its children would kill them when it
 // goes. Imported, as the layout test imports every module, it does nothing.
 import { spawn } from 'node:child_process';

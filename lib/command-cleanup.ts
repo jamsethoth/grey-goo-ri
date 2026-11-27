@@ -155,34 +155,99 @@ export function growTree(
 // Windows parent pid is not cleared when the parent ends and can be reused, so a process joins only if it started no
 // earlier than the parent it names (#297). One whose start cannot be read, gone or closed to gg, is left out, with what
 // it started. startOf gives a process's start as a FILETIME.
-export function linkedPids(
-  rootPid: number,
-  entries: ProcessEntry[],
-  selfPid: number,
-  startOf: (pid: number) => bigint | null,
-): number[] {
-  const starts = new Map<number, bigint | null>();
+export const linkedPids = (rootPid: number, entries: ProcessEntry[], selfPid: number, startOf: StartOf): number[] =>
+  linkedFrom([rootPid], entries, selfPid, startOf);
+
+// A process's start as a FILETIME; 'closed' for one running that gg may not open, null for one gone.
+export type StartOf = (pid: number) => bigint | 'closed' | null;
+
+function linkedFrom(seeds: number[], entries: ProcessEntry[], selfPid: number, startOf: StartOf): number[] {
+  const starts = new Map<number, bigint | 'closed' | null>();
   const started = (pid: number) => {
     if (!starts.has(pid)) starts.set(pid, startOf(pid));
-    return starts.get(pid) as bigint | null;
+    return starts.get(pid);
   };
   const startedAfterParent = ([pid, parentPid]: ProcessRow) => {
     const [child, parent] = [started(pid), started(parentPid)];
-    return child !== null && parent !== null && child >= parent;
+    return typeof child === 'bigint' && typeof parent === 'bigint' && child >= parent;
   };
   const rows = entries.map(({ pid, parentPid }): ProcessRow => [pid, parentPid, '']);
   const linked: number[] = [];
-  growTree(new Set([rootPid]), rows, selfPid, { onJoin: ([pid]) => linked.push(pid), joins: startedAfterParent });
+  growTree(new Set(seeds), rows, selfPid, { onJoin: ([pid]) => linked.push(pid), joins: startedAfterParent });
   return linked;
 }
 
-// The watcher's update from one listing: a seen pid no longer listed is forgotten, since its pid may come to name
-// another process, and each new process linked to rootPid or a seen descendant is recorded with its start time, so it
-// is still recognised after its parent exits and it is reparented.
+// A process the Windows watcher linked: its parent pid and its start as a FILETIME when it was linked, and whether gg
+// holds a handle to it, which keeps its pid from reuse while it is open (ADR 0030 decision 3).
+export interface LinkedProcess extends NamedProcess {
+  parentPid: number;
+  started: bigint | null;
+  held: boolean;
+}
+export type Linked = Map<number, LinkedProcess>;
+
+// The Windows watcher's update from one snapshot: each process outside the job's members newly linked to a member or a
+// linked process whose handle has not signalled, by #297's rule, never selfPid. startOf gives a process's start, and
+// exited whether a linked process's handle has signalled. Only a held handle keeps a pid from naming another process,
+// so a linked process gg could not open, or one whose handle has signalled, is never a seed. A held seed's start is the
+// one it was linked at, which a process closed to gg would not give again.
+export function newlyLinked(linked: Linked, members: number[], entries: ProcessEntry[], watch: WatchReads): number[] {
+  const heldStarts = new Map(heldSeeds(linked, watch.exited).map(({ pid, started }) => [pid, started]));
+  const startOf = (pid: number) => heldStarts.get(pid) ?? watch.startOf(pid);
+  return linkedFrom([...members, ...heldStarts.keys()], entries, watch.selfPid, startOf);
+}
+
+// What the Windows watcher reads of a snapshot's processes: selfPid, each process's start, and whether a linked
+// process's handle has signalled.
+type WatchReads = { selfPid: number; startOf: StartOf; exited: (pid: number) => boolean };
+
+const heldSeeds = (linked: Linked, exited: (pid: number) => boolean) =>
+  [...linked.values()].filter(({ pid, held }) => held && !exited(pid));
+
+// Each process not yet linked whose start is closed to gg, started by a member or a held seed: gg can neither check its
+// start against its parent's nor hold it, so the watcher names it a survivor and never a seed (#531 decision 1).
+export function closedLinked(linked: Linked, members: number[], entries: ProcessEntry[], watch: WatchReads): number[] {
+  const seeds = new Set([...members, ...heldSeeds(linked, watch.exited).map(({ pid }) => pid)]);
+  return entries
+    .filter(({ pid, parentPid }) => seeds.has(parentPid) && !seeds.has(pid) && !linked.has(pid))
+    .filter(({ pid }) => pid !== watch.selfPid && watch.startOf(pid) === 'closed')
+    .map(({ pid }) => pid);
+}
+
+// What a Windows cleanup ends through its handles: each linked process gg holds that is still running.
+export const linkedToEnd = (linked: Linked, exited: (pid: number) => boolean): number[] =>
+  [...linked.values()].filter(({ pid, held }) => held && !exited(pid)).map(({ pid }) => pid);
+
+// What a Windows cleanup could not confirm gone of what its watcher linked, once it has ended it: one still running,
+// and one gg could not open, which it can neither end nor see end (ADR 0030 decision 3).
+export function linkedSurvivors(linked: Linked, exited: (pid: number) => boolean): Survivor[] {
+  return [...linked.values()]
+    .filter(({ pid, held }) => !held || !exited(pid))
+    .map(({ pid, created, commandLine, held }) => ({
+      pid,
+      created,
+      commandLine,
+      error: held
+        ? 'not verified gone: it was still running once cleanup had ended it'
+        : 'gg could not open it, so it is not verified gone',
+    }));
+}
+
+// The same process: its start counted from the cleanup's own where both listings give one, else its start as listed.
+const sameProcess = (known: ProcessRow, processRow: ProcessRow, since: number) =>
+  known[0] === processRow[0] &&
+  (known[5] === undefined || Number.isNaN(since) ? known[2] === processRow[2] : known[5] === since);
+
+// The watcher's update from one listing: a seen pid no longer listed, or listed with another start, is forgotten and
+// never a seed, since its pid may name another process by now (#531), and each new process linked to rootPid or a seen
+// descendant is recorded with its start time, so it is still recognised after its parent exits and it is reparented.
 export function observe(seen: Seen, rootPid: number, processes: ProcessRow[], selfPid: number) {
-  const listed = new Set(processes.map((processRow) => processRow[0]));
-  for (const pid of seen.keys()) if (!listed.has(pid)) seen.delete(pid);
   const sinceSelf = sinceSelfIn(processes, selfPid);
+  const listed = new Map(processes.map((processRow) => [processRow[0], processRow]));
+  for (const [pid, known] of seen) {
+    const processRow = listed.get(pid);
+    if (!processRow || !sameProcess(known, processRow, sinceSelf(processRow))) seen.delete(pid);
+  }
   growTree(new Set([rootPid, ...seen.keys()]), processes, selfPid, {
     onJoin: (processRow) => {
       const [pid, parentPid, started, pgid, commandLine] = processRow;
@@ -201,11 +266,6 @@ function sinceSelfIn(processes: ProcessRow[], selfPid: number) {
   const selfStart = startOf(processes.find(([pid]) => pid === selfPid));
   return (processRow: ProcessRow) => startOf(processRow) - selfStart;
 }
-
-// The same process: its start counted from the cleanup's own where both listings give one, else its start as listed.
-const sameProcess = (known: ProcessRow, processRow: ProcessRow, since: number) =>
-  known[0] === processRow[0] &&
-  (known[5] === undefined || Number.isNaN(since) ? known[2] === processRow[2] : known[5] === since);
 
 // A cleanup's plan from a listing taken with the group stopped: `seeds`, each seen descendant still listed with its
 // start time, and whatever those have started. Never another process.

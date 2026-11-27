@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type * as containmentProbe from '../../lib/containment-probe.ts';
 import * as exec from '../../lib/exec.ts';
 import * as processProbe from './process-probe.ts';
 import * as tempDirectory from './temp-directory.ts';
@@ -27,16 +28,40 @@ export interface RecordedCommand extends Answer {
 
 // How a case changes the launch beside the answer: an executable that cannot start, and the first argument of a
 // command that times out printing nothing, that exits 1 printing nothing, or that a signal ends printing nothing
-// (code null, as on POSIX).
+// (code null, as on POSIX); and whether the containment probe's command leaves its child outside gg's job, as a Store
+// pwsh's does (#533).
 export interface LaunchState {
   missing?: boolean;
   hangs?: string;
   fails?: string;
   killed?: string;
+  escapes?: boolean;
 }
 
-// A launch that answers each argv in-process with `answer`, and every launch it was asked for.
-export function replayLaunch(answer: (args: readonly string[]) => Answer, state: LaunchState = {}) {
+// The pid the containment probe's command prints in a case: its child's, in gg's job unless the case `escapes`.
+export const PROBED_CHILD_PID = 4242;
+const probedChild =
+  ({ escapes = false }: LaunchState) =>
+  (): containmentProbe.ChildInJob => ({
+    lines: [String(PROBED_CHILD_PID)],
+    pid: PROBED_CHILD_PID,
+    inJob: !escapes,
+    failure: null,
+  });
+
+// A launch that answers each argv in-process with `answer`, and every launch it was asked for; and the containment
+// probe (exec's childInJob), answered by `probed`, and every probe it was asked for.
+export function replayLaunch(
+  answer: (args: readonly string[]) => Answer,
+  state: LaunchState = {},
+  probed: (options: containmentProbe.ChildInJobOptions) => containmentProbe.ChildInJob = probedChild(state),
+) {
+  const probes: containmentProbe.ChildInJobOptions[] = [];
+  const childInJob = async (options: containmentProbe.ChildInJobOptions): Promise<containmentProbe.ChildInJob> => {
+    probes.push(options);
+    await Promise.resolve();
+    return probed(options);
+  };
   const launches: exec.LaunchOptions[] = [];
   const launch = async (options: exec.LaunchOptions): Promise<exec.LaunchResult> => {
     launches.push(options);
@@ -54,7 +79,7 @@ export function replayLaunch(answer: (args: readonly string[]) => Answer, state:
     for (const line of lines) options.onLine?.(line);
     return { ...ended, code: exitCode, stderrTail: stderr };
   };
-  return { launch, launches };
+  return { launch, launches, childInJob, probes };
 }
 
 // Where a model call's transcript goes and the file copied there, from the launch, the recording it replays (its path

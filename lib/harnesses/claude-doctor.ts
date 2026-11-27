@@ -97,7 +97,7 @@ const forkCall = (runDirectory: string, sessionId: string): claude.ClaudeCall =>
 // The launch profile's argv, environment and files for a probe's call (claude.ts builds it).
 export type ProfileLaunch = (call: claude.ClaudeCall) => claude.Launch;
 
-type Runner = Pick<exec.Exec, 'launch'>;
+type Runner = Pick<exec.Exec, 'launch' | 'childInJob'>;
 type Check = runContext.DoctorCheck;
 
 // A model call is named by -p, a cheap command by its whole argv.
@@ -137,17 +137,11 @@ function helpCheck(ran: cliDoctor.Said): Check {
 }
 
 // On win32 the Agents' shell is PowerShell (ADR 0025), which Claude starts as pwsh, else Windows PowerShell.
-function shellCheck(path = process.env.PATH ?? ''): Check {
-  const found = path
-    .split(';')
-    .filter(Boolean)
-    .some((directory) =>
-      ['pwsh.exe', 'powershell.exe'].some((file) => existsSync(join(directory.replace(/"/g, ''), file))),
-    );
-  return found
-    ? cliDoctor.passed('shell', 'PowerShell is on PATH')
-    : cliDoctor.failed('shell', 'neither pwsh nor powershell is on PATH, and the Agents run commands in PowerShell');
-}
+const shellCheck = () =>
+  cliDoctor.shellCheck({
+    files: ['pwsh.exe', 'powershell.exe'],
+    missing: 'neither pwsh nor powershell is on PATH, and the Agents run commands in PowerShell',
+  });
 
 // gg ask-session is how an agent past a hand-off asks the Session it left (#430 Q1 A), so gg must be on PATH for
 // the agent's shell to start it. An agent without it still has the note, so its absence warns.
@@ -359,11 +353,8 @@ export async function doctor(
   { probe, agents }: runContext.DoctorOptions,
   { profile, rewrites }: { profile: ProfileLaunch; rewrites: PluginRewrites },
 ) {
-  const checks = [
-    ...(process.platform === 'win32' ? [shellCheck()] : []),
-    ggCheck(),
-    ...pluginChecks(agents, rewrites),
-  ];
+  const shell = process.platform === 'win32' ? shellCheck() : null;
+  const checks = [...(shell ? [shell.check] : []), ggCheck(), ...pluginChecks(agents, rewrites)];
   const version = await said(runner, ['--version']);
   if (!version.started) checks.push(cliDoctor.failed('executable', `claude cannot start: ${version.failure}`));
   else {
@@ -375,6 +366,8 @@ export async function doctor(
       helpCheck(help),
     );
     if (probe) checks.push(...(await profileProbe(runner, profile)), await bareProbe(runner));
+    // Claude runs the Agents' commands in its shell itself, so the probe runs there with nothing before it.
+    if (probe && shell?.shell) checks.push(await cliDoctor.containmentCheck(runner, shell.shell.path));
   }
   const report: runContext.DoctorReport = {
     ok: checks.every(({ ok, severity }) => ok || severity === 'warning'),

@@ -33,19 +33,22 @@ const LCOV = 'coverage/lcov.info';
 export const COVERAGE_FLOOR = { lines: 99, functions: 98.5 };
 // test/unit/ may not reach the process boundaries (test/unit/layout.test.ts), so their lines are not unit-testable;
 // lib/process-tree.ts, lib/containment.ts and its gate are reached only through lib/exec.ts and this launcher's census,
-// lib/command-shim.ts and lib/launch-clock.ts only through lib/exec.ts, and
-// lib/git-temp-index.ts and lib/git-default-branch.ts only through lib/git.ts. Their contract suites cover them; the
-// decisions are in lib/command-cleanup.ts, which is measured.
+// lib/command-shim.ts, lib/launch-clock.ts, lib/job-watcher.ts and lib/containment-probe.ts only through lib/exec.ts,
+// and lib/git-temp-index.ts and lib/git-default-branch.ts only through lib/git.ts. Their contract suites cover them;
+// the decisions are in lib/command-cleanup.ts, which is measured.
 const NOT_UNIT = [
   'lib/exec.ts',
   'lib/git.ts',
   'lib/git-temp-index.ts',
   'lib/git-default-branch.ts',
   'lib/process-tree.ts',
+  'lib/job-watcher.ts',
+  'lib/snapshot-worker.ts',
   'lib/containment.ts',
   'lib/containment-gate.ts',
   'lib/command-shim.ts',
   'lib/launch-clock.ts',
+  'lib/containment-probe.ts',
 ];
 // A test's git reads no global or system config, so the developer's own cannot change what it does: a global
 // commit.gpgsign=true failed each commit a test made, and core.fsmonitor=true starts a daemon in each repository

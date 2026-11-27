@@ -12,7 +12,7 @@ import * as claude from './claude.ts';
 
 export interface AskSessionOptions {
   // What starts the CLI, which bin/gg.ts builds (ADR 0019).
-  runner: Pick<exec.Exec, 'launch'>;
+  runner: Pick<exec.Exec, 'launch' | 'childInJob'>;
   // The repository's git common directory, which holds the State Database.
   commonDir: string;
   sessionId: string;

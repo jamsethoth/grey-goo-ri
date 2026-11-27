@@ -1,0 +1,156 @@
+{
+  "name": "sandbox-mxc-store-pwsh",
+  "argv": [
+    "codex",
+    "sandbox",
+    "-c",
+    "windows.sandbox=\"mxc\"",
+    "--",
+    "<home>\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe",
+    "-NoProfile",
+    "-Command",
+    "Write-Output ('GG-533-SHELL ' + $PSVersionTable.PSEdition + ' ' + $PSVersionTable.PSVersion + ' ' + $PID); node -e 'console.log(process.pid); setTimeout(() => {}, 3000)'"
+  ],
+  "cwd": "<recording>\\repo",
+  "env": {
+    "CODEX_HOME": "<home>\\.agents\\gg\\codex",
+    "note": "the parent environment less CLAUDE*/ANTHROPIC*/CODEX*/OPENAI*"
+  },
+  "spawnError": null,
+  "wallMs": 4202,
+  "lines": [
+    "GG-533-SHELL Core 7.7.0 116180",
+    "12008"
+  ],
+  "timesMs": [
+    1022,
+    1095
+  ],
+  "stderr": "",
+  "exitCode": 0,
+  "signal": null,
+  "contained": true,
+  "childPid": 12008,
+  "childInJobAtLine": true,
+  "atChildLine": {
+    "jobMembers": [
+      {
+        "pid": 110120,
+        "exe": "node.exe",
+        "commandLine": "\"C:\\Program Files\\nodejs\\node.exe\" <gg>\\lib\\containment-gate.ts"
+      },
+      {
+        "pid": 104500,
+        "exe": "conhost.exe",
+        "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+      },
+      {
+        "pid": 91704,
+        "exe": "codex.exe",
+        "commandLine": "codex sandbox -c \"windows.sandbox=\\\"mxc\\\"\" -- <home>\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe -NoProfile -Command \"Write-Output ('GG-533-SHELL ' + $PSVersionTable.PSEdition + ' ' + $PSVersionTable.PSVersion + ' ' + $PID); node -e 'console.log(process.pid); setTimeout(() => {}, 3000)'\""
+      },
+      {
+        "pid": 23296,
+        "exe": "codex.exe",
+        "commandLine": "\"<home>\\.codex\\packages\\standalone\\current\\bin\\codex.exe\" --__codex-windows-mxc <home>\\.agents\\gg\\codex"
+      },
+      {
+        "pid": 116180,
+        "exe": "pwsh.exe",
+        "commandLine": "<home>\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe -NoProfile -Command \"Write-Output ('GG-533-SHELL ' + $PSVersionTable.PSEdition + ' ' + $PSVersionTable.PSVersion + ' ' + $PID); node -e 'console.log(process.pid); setTimeout(() => {}, 3000)'\""
+      },
+      {
+        "pid": 105484,
+        "exe": "conhost.exe",
+        "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+      },
+      {
+        "pid": 12008,
+        "exe": "node.exe",
+        "commandLine": "\"C:\\Program Files\\nodejs\\node.exe\" -e \"console.log(process.pid); setTimeout(() => {}, 3000)\""
+      }
+    ],
+    "markerProcesses": [
+      {
+        "pid": 91704,
+        "exe": "codex.exe",
+        "inJob": true,
+        "commandLine": "codex sandbox -c \"windows.sandbox=\\\"mxc\\\"\" -- <home>\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe -NoProfile -Command \"Write-Output ('GG-533-SHELL ' + $PSVersionTable.PSEdition + ' ' + $PSVersionTable.PSVersion + ' ' + $PID); node -e 'console.log(process.pid); setTimeout(() => {}, 3000)'\""
+      },
+      {
+        "pid": 116180,
+        "exe": "pwsh.exe",
+        "inJob": true,
+        "commandLine": "<home>\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe -NoProfile -Command \"Write-Output ('GG-533-SHELL ' + $PSVersionTable.PSEdition + ' ' + $PSVersionTable.PSVersion + ' ' + $PID); node -e 'console.log(process.pid); setTimeout(() => {}, 3000)'\""
+      },
+      {
+        "pid": 12008,
+        "exe": "node.exe",
+        "inJob": true,
+        "commandLine": "\"C:\\Program Files\\nodejs\\node.exe\" -e \"console.log(process.pid); setTimeout(() => {}, 3000)\""
+      }
+    ]
+  },
+  "oneSecondLater": {
+    "jobMembers": [
+      {
+        "pid": 110120,
+        "exe": "node.exe",
+        "commandLine": "\"C:\\Program Files\\nodejs\\node.exe\" <gg>\\lib\\containment-gate.ts"
+      },
+      {
+        "pid": 104500,
+        "exe": "conhost.exe",
+        "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+      },
+      {
+        "pid": 91704,
+        "exe": "codex.exe",
+        "commandLine": "codex sandbox -c \"windows.sandbox=\\\"mxc\\\"\" -- <home>\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe -NoProfile -Command \"Write-Output ('GG-533-SHELL ' + $PSVersionTable.PSEdition + ' ' + $PSVersionTable.PSVersion + ' ' + $PID); node -e 'console.log(process.pid); setTimeout(() => {}, 3000)'\""
+      },
+      {
+        "pid": 23296,
+        "exe": "codex.exe",
+        "commandLine": "\"<home>\\.codex\\packages\\standalone\\current\\bin\\codex.exe\" --__codex-windows-mxc <home>\\.agents\\gg\\codex"
+      },
+      {
+        "pid": 116180,
+        "exe": "pwsh.exe",
+        "commandLine": "<home>\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe -NoProfile -Command \"Write-Output ('GG-533-SHELL ' + $PSVersionTable.PSEdition + ' ' + $PSVersionTable.PSVersion + ' ' + $PID); node -e 'console.log(process.pid); setTimeout(() => {}, 3000)'\""
+      },
+      {
+        "pid": 105484,
+        "exe": "conhost.exe",
+        "commandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+      },
+      {
+        "pid": 12008,
+        "exe": "node.exe",
+        "commandLine": "\"C:\\Program Files\\nodejs\\node.exe\" -e \"console.log(process.pid); setTimeout(() => {}, 3000)\""
+      }
+    ],
+    "markerProcesses": [
+      {
+        "pid": 91704,
+        "exe": "codex.exe",
+        "inJob": true,
+        "commandLine": "codex sandbox -c \"windows.sandbox=\\\"mxc\\\"\" -- <home>\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe -NoProfile -Command \"Write-Output ('GG-533-SHELL ' + $PSVersionTable.PSEdition + ' ' + $PSVersionTable.PSVersion + ' ' + $PID); node -e 'console.log(process.pid); setTimeout(() => {}, 3000)'\""
+      },
+      {
+        "pid": 116180,
+        "exe": "pwsh.exe",
+        "inJob": true,
+        "commandLine": "<home>\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe -NoProfile -Command \"Write-Output ('GG-533-SHELL ' + $PSVersionTable.PSEdition + ' ' + $PSVersionTable.PSVersion + ' ' + $PID); node -e 'console.log(process.pid); setTimeout(() => {}, 3000)'\""
+      },
+      {
+        "pid": 12008,
+        "exe": "node.exe",
+        "inJob": true,
+        "commandLine": "\"C:\\Program Files\\nodejs\\node.exe\" -e \"console.log(process.pid); setTimeout(() => {}, 3000)\""
+      }
+    ]
+  },
+  "leftAfterExit": [],
+  "configChange": null,
+  "logTail": null
+}
