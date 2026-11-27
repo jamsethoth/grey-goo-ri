@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as codexRun from '../../lib/harnesses/codex-run.ts';
+import * as codexStream from '../../lib/harnesses/codex-stream.ts';
 import * as cliReplay from '../support/cli-replay.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
@@ -74,7 +75,7 @@ test("a completed call writes the launch's files, leads with persona and skills,
   const path = writeRollout(codex.home);
   const { response, result, failure } = await codexRun.run(codex.runner, codex.runs, call(), hooks);
   assert.equal(readFileSync(codex.profile, 'utf8'), 'profile');
-  assert.equal(codex.launches[0]?.input, 'PERSONA\nSKILLS\nBRIEF');
+  assert.equal(codex.launches[0]?.input, 'PERSONA\n\nSKILLS\n\nBRIEF');
   assert.deepEqual(response, { answer: 'heliotrope' });
   assert.equal(failure, null);
   assert.equal(result.status, 'completed');
@@ -155,16 +156,16 @@ const endings: Record<string, { stdout: string; ending: Partial<LaunchResult> }>
 // read leaves the launch's exit and cleanup in the result. It fails a completed call alone; a timeout, a cancel or a
 // classed failure keeps its own status and failure (DoD 2, Q2 A).
 test('a rollout that cannot be read is an unknown failure that keeps the launch, never a rejection', async (t) => {
-  const faults: Record<string, (home: string) => void> = {
+  const faults: Record<string, (home: string, thread: string) => void> = {
     'a sessions path that is a file': (home) => writeFileSync(join(home, 'sessions'), 'not a folder'),
-    'a rollout path that is a folder': (home) =>
-      mkdirSync(join(home, 'sessions', '2026', `rollout-2026-11-22T17-24-53-${THREAD}.jsonl`), { recursive: true }),
+    'a rollout path that is a folder': (home, thread) =>
+      mkdirSync(join(home, 'sessions', '2026', `rollout-2026-11-22T17-24-53-${thread}.jsonl`), { recursive: true }),
   };
   const ended: Record<string, unknown> = {};
   for (const [faultName, fault] of Object.entries(faults)) {
     for (const [endingName, { stdout, ending }] of Object.entries(endings)) {
       const codex = codexHome(t);
-      fault(codex.home);
+      fault(codex.home, codexStream.read(stdout.split('\n')).threadId ?? THREAD);
       const runner = { launch: endingLaunch(join(codex.home, 'last-message.json'), stdout, ending) };
       const name = `${faultName}, ${endingName}`;
       try {
@@ -201,4 +202,22 @@ test('a rollout that cannot be read is an unknown failure that keeps the launch,
       ),
     ),
   );
+});
+
+test("a call launches codex under the launch profile's Codex home and, with no limits of its own, the default ones", async (t) => {
+  const codex = codexHome(t);
+  await codexRun.run(codex.runner, codex.runs, call(), hooks);
+  const launch = codex.launches[0];
+  assert.deepEqual(
+    { command: launch?.command, home: launch?.env?.CODEX_HOME, stallMs: launch?.stallMs, wallMs: launch?.wallMs },
+    { command: 'codex', home: codex.home, stallMs: 900_000, wallMs: 7_200_000 },
+  );
+});
+
+test("a completed call whose CLI wrote no final message never returns an earlier try's", async (t) => {
+  const codex = codexHome(t);
+  writeFileSync(join(codex.home, 'last-message.json'), '{"answer":"stale"}');
+  const replay = cliReplay.replayLaunch(() => ({ stdout: recorded('start.jsonl'), exitCode: 0 }));
+  const { response, result } = await codexRun.run(replay, codex.runs, call(), hooks);
+  assert.deepEqual({ response, status: result.status }, { response: null, status: 'completed' });
 });

@@ -102,7 +102,7 @@ async function prepared(runs: Runs, call: RunCall) {
 // Codex has no system-prompt flag, so the persona, then gg's skills list, lead a Session's first prompt; a resumed
 // thread already holds both (ported, feature-flow 89e1d67 lib/adapters.mjs:70-71; Q4 A).
 const promptOf = (call: RunCall, launched: codex.Launch) =>
-  call.resume === null ? [call.persona.bytes, launched.skills, call.brief].filter(Boolean).join('\n') : call.brief;
+  call.resume === null ? [call.persona.bytes, launched.skills, call.brief].filter(Boolean).join('\n\n') : call.brief;
 
 // What the rollout tells of the call: where it is, and the CLI version, model and effort its last turn ran with.
 const rolloutFacts = (rollout: codexStream.Rollout | null) => ({
