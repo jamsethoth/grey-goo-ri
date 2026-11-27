@@ -221,6 +221,7 @@ export function fakeCli(t: TestContext, options: FakeCliOptions) {
         FAKE_CLI_SENT: sentFile,
         ...(transcript && { FAKE_CLI_TRANSCRIPT: transcript.path, FAKE_CLI_TRANSCRIPT_FROM: transcript.from }),
         ...(orphan && { FAKE_CLI_ORPHAN: orphanPidFile }),
+        ...(options.helper && { FAKE_CLI_HELPER: JSON.stringify(options.helper), FAKE_CLI_HELPER_PID: helperPidFile }),
         ...(stderr !== undefined && { FAKE_CLI_STDERR: stderr }),
       },
     };

@@ -12,8 +12,11 @@
 // first. FAKE_CLI_ORPHAN starts a descendant before the replay, through a middle process that exits once the
 // descendant has written its pid to that file, so the descendant is an orphan the CLI left: detached on Windows, which
 // keeps it out of the job libuv gives node's children; elsewhere in the CLI's process group, as a CLI's own children
-// are. Its tests copy it alone to a directory whose path holds spaces, so it imports nothing. The test runner also
-// loads this file with no FAKE_CLI_RECORDING, where it does nothing.
+// are. With FAKE_CLI_HELPER (a JSON argv) the descendant starts instead under a helper, a re-run of this script with
+// those arguments that writes its pid to FAKE_CLI_HELPER_PID and stays, as a CLI's sandbox helper stays while the
+// command it started runs (#483 Q1 A); the CLI waits for the descendant's pid before its replay. Its tests copy it
+// alone to a directory whose path holds spaces, so it imports nothing. The test runner also loads this file with no
+// FAKE_CLI_RECORDING, where it does nothing.
 import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -24,10 +27,15 @@ const LIVES_MS = 600_000;
 
 const role = process.env.FAKE_CLI_ROLE;
 const orphanFile = process.env.FAKE_CLI_ORPHAN;
+const { FAKE_CLI_HELPER: helperArgs, FAKE_CLI_HELPER_PID: helperFile } = process.env;
 const recording = process.env.FAKE_CLI_RECORDING;
 const answered = commandAnswer(process.env.FAKE_CLI_COMMANDS);
 if (role === 'orphan' && orphanFile) {
   writeFileSync(orphanFile, String(process.pid));
+  setTimeout(() => {}, LIVES_MS);
+} else if (role === 'helper' && orphanFile && helperFile) {
+  writeFileSync(helperFile, String(process.pid));
+  startOrphan(orphanFile);
   setTimeout(() => {}, LIVES_MS);
 } else if (role === 'middle' && orphanFile) startOrphan(orphanFile);
 else if (answered) {
@@ -47,15 +55,29 @@ function commandAnswer(commandsPath: string | undefined) {
   return answers.find(({ argv }) => JSON.stringify(argv) === asked);
 }
 
-function startOrphan(pidFile: string) {
-  spawn(process.execPath, [fileURLToPath(import.meta.url)], {
+function pidWritten(pidFile: string) {
+  return existsSync(pidFile) && Number(readFileSync(pidFile, 'utf8')) > 0;
+}
+
+// This script re-run in `role` with `args`, detached on Windows so it outlives the process that started it.
+function startDetached(role: string, args: string[] = []) {
+  spawn(process.execPath, [fileURLToPath(import.meta.url), ...args], {
     detached: process.platform === 'win32',
     stdio: 'ignore',
-    env: { ...process.env, FAKE_CLI_ROLE: 'orphan' },
+    env: { ...process.env, FAKE_CLI_ROLE: role },
   }).unref();
+}
+
+function startOrphan(pidFile: string) {
+  startDetached('orphan');
   const written = setInterval(() => {
-    if (existsSync(pidFile) && Number(readFileSync(pidFile, 'utf8')) > 0) clearInterval(written);
+    if (pidWritten(pidFile)) clearInterval(written);
   }, 20);
+}
+
+async function startUnderHelper(pidFile: string, args: string[]) {
+  startDetached('helper', args);
+  while (!pidWritten(pidFile)) await new Promise((resolve) => setTimeout(resolve, 20));
 }
 
 // Each file the recorded call changed, written into the working directory as the call left it.
@@ -76,7 +98,8 @@ async function replay(recordingPath: string, mode: string) {
   if (received) writeFileSync(received, JSON.stringify({ argv: process.argv.slice(2), stdin }));
   if (process.env.FAKE_CLI_PID) writeFileSync(process.env.FAKE_CLI_PID, String(process.pid));
   if (process.env.FAKE_CLI_STDERR) process.stderr.write(`${process.env.FAKE_CLI_STDERR}\n`);
-  if (orphanFile) {
+  if (orphanFile && helperArgs) await startUnderHelper(orphanFile, JSON.parse(helperArgs) as string[]);
+  else if (orphanFile) {
     spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
       stdio: 'ignore',
       env: { ...process.env, FAKE_CLI_ROLE: 'middle' },
