@@ -72,6 +72,8 @@ export interface CodexCall {
   schema: object;
   cwd: string;
   resume: string | null;
+  // gg ask-session's read-only copy of the resumed thread (#485), which leaves the thread itself unchanged.
+  fork?: boolean;
   runDirectory: string;
   access: string;
 }
@@ -267,8 +269,9 @@ function launchArgsIn(homes: Homes, call: CodexCall, tools: CodexTools, listings
   const argv = [
     'exec',
     ...['-s', access, '-C', call.cwd],
-    // Resume takes exec's -s and -C only before it, and a resumed turn runs under them (ADR 0031 point 3).
-    ...(call.resume === null ? [] : ['resume', call.resume]),
+    // Resume and fork take exec's -s and -C only before them, and their turn runs under them (ADR 0031 point 3, #479
+    // D18 A).
+    ...(call.resume === null ? [] : [call.fork === true ? 'fork' : 'resume', call.resume]),
     ...overrides.flatMap((override) => ['-c', override]),
     // Without it no hook fires, silently (#479 `hooks-untrusted`); the project stays untrusted, so its hooks stay out.
     ...(budget === null ? [] : ['--dangerously-bypass-hook-trust']),

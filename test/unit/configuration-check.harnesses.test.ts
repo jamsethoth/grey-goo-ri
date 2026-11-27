@@ -8,6 +8,7 @@ import * as contract from '../../lib/harnesses/contract.ts';
 import * as shipped from '../../lib/harnesses/shipped.ts';
 import type * as runContext from '../../lib/run-context.ts';
 import * as report from '../../lib/validate/report.ts';
+import * as caseEnv from '../support/case-env.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
 import type * as golden from '../support/golden.ts';
 import * as recordedCli from '../support/recorded-cli.ts';
@@ -306,7 +307,9 @@ test('preflight refuses a Harness lacking any contract member with the contract 
 
 // Codex declares network unsupported (Q15 A), so it is the validator's one error at its key, which no Vertex's Harness
 // preflight repeats (ADR 0026, #481 DoD 1); contextBudget, which the hand-off hook enforces (#485), is no error.
-test('a Codex Agent setting network is one error at its key, not repeated, and its contextBudget none', async () => {
+test('a Codex Agent setting network is one error at its key, not repeated, and its contextBudget none', async (t) => {
+  // The hook-file check reads gg's Codex home, which the case keeps away from the user's.
+  caseEnv.caseEnv(t, { GG_HOME: tempDirectory.tempDirectory(t, 'gg-home-') });
   const repository = repositorySource();
   Object.assign(repository.agents.implementer!, { harness: 'codex', network: false, contextBudget: 100000 });
   const { codex } = shipped.shipped(launchless([]));

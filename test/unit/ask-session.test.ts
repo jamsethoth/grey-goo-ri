@@ -2,7 +2,6 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { appendFileSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type * as exec from '../../lib/exec.ts';
 import * as askSession from '../../lib/harnesses/ask-session.ts';
 import * as claude from '../../lib/harnesses/claude.ts';
 import * as codex from '../../lib/harnesses/codex.ts';
@@ -141,7 +140,7 @@ function codexHandedOffRecord(t: TestContext) {
 // its own beside it, leaving its parent's unchanged (`fork.json` evidence.forkedRollout).
 function codexAnswering() {
   const cli = recordedCodexCli.recordedCodexCli();
-  const launch = async (options: exec.LaunchOptions) => {
+  const launch = async (options: Parameters<typeof cli.launch>[0]) => {
     const ended = await cli.launch(options);
     const { args } = options;
     if (args[0] !== 'exec') return ended;

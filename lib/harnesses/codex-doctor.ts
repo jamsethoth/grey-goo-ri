@@ -1,10 +1,13 @@
 // gg doctor's checks of the Codex CLI (#484, ADR 0028), for lib/harnesses/codex.ts alone: the cheap checks gg doctor
 // and gg run preflight run, which start no model call, in gg's CODEX_HOME, and the model probes only gg doctor --probe
-// adds: the launch profile on a cheap call, and codex exec resume with --output-schema.
+// adds: the launch profile on a cheap call with its hand-off hook, codex exec resume with --output-schema, and the
+// read-only fork gg ask-session asks (#485).
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as briefs from '../briefs.ts';
 import type * as exec from '../exec.ts';
 import type * as model from '../model.ts';
+import * as outcome from '../outcome.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
 import * as cliDoctor from './cli-doctor.ts';
@@ -27,22 +30,35 @@ export const SANDBOX_ARGS = [
   `Write-Output ${MXC_MARKER}`,
 ];
 
-const PROBE_BRIEF = 'Without any tool, answer with the word ok.';
+// The profile probe's brief makes one tool call, after which its hand-off hook, at a budget any call passes, asks it to
+// hand off (#485 Q2 A).
+const PROBE_BRIEF = 'Read README.md, then answer with the word ok.';
 const RESUME_BRIEF = 'Without any tool, answer with the word you answered before.';
-// No model is named, so the call runs on the one gg's CODEX_HOME defaults to.
-const PROBE_AGENT: model.Agent = {
+// The fork probe's question to the profile probe's handed-off thread, asked as gg ask-session asks one.
+const FORK_BRIEF = 'Without any tool, answer with the name of the file you read.';
+// No model is named, so the call runs on the one gg's CODEX_HOME defaults to. The fork probe's Agent has no budget, as
+// gg ask-session's has none.
+const FORK_AGENT: model.Agent = {
   harness: 'codex',
   persona: 'probe.md',
   model: null,
   effort: 'low',
   access: 'read-only',
 };
-const PROBE_SCHEMA = {
+const PROBE_AGENT: model.Agent = { ...FORK_AGENT, contextBudget: 1 };
+const FORK_SCHEMA = {
   type: 'object',
   properties: { answer: { type: 'string' } },
   required: ['answer'],
   additionalProperties: false,
 };
+// The schema an Agent with a contextBudget is sent, over a one-word answer.
+const PROBE_SCHEMA = briefs.handoffSchema({
+  type: 'object',
+  properties: { answer: { type: 'string' }, claim: { type: 'string', enum: ['ok'] } },
+  required: ['answer', 'claim'],
+  additionalProperties: false,
+});
 
 // The launch profile's argv, environment and files for a probe's call (codex.ts builds it).
 export type ProfileLaunch = (call: codex.CodexCall) => Promise<codex.Launch>;
@@ -124,11 +140,13 @@ function streamOf(lines: string[]) {
   } catch {
     response = undefined;
   }
+  const fields = referencePaths.isRecord(response) ? response : {};
   return {
     threadId: typeof threadId === 'string' ? threadId : null,
     completed: sent.some((line) => line.type === 'turn.completed'),
     failure: referencePaths.isRecord(failedTurn) ? failedTurn.message : lastError,
-    answer: referencePaths.isRecord(response) ? response.answer : undefined,
+    answer: fields.answer,
+    fields,
   };
 }
 
@@ -141,12 +159,51 @@ function probeCheck(name: string, what: string, ran: cliDoctor.Said, passed: str
   return cliDoctor.passed(name, passed);
 }
 
+// The hand-off hook's check on the profile probe's call (#485 Q2 A): the call ended handed off with a note, which only
+// the hook's ask makes it do.
+function handoffCheck(ran: cliDoctor.Said): Check {
+  const { fields } = streamOf(ran.lines);
+  const note = fields[briefs.HANDOFF_NOTE];
+  if (fields.claim !== outcome.HANDED_OFF || typeof note !== 'string' || !note.trim())
+    return cliDoctor.failed('handoff-probe', "the launch profile's call did not hand off with a note past its budget");
+  return cliDoctor.passed('handoff-probe', 'the hand-off hook asked and the call handed off with a note');
+}
+
+// The resume probe's call continued the profile probe's thread.
+function resumeCheck(resumed: cliDoctor.Said, threadId: string): Check {
+  const checked = probeCheck(
+    'resume-probe',
+    'codex exec resume',
+    resumed,
+    `codex exec resume continued thread ${threadId} in its output schema`,
+  );
+  const resumedThread = streamOf(resumed.lines).threadId;
+  if (!checked.ok || resumedThread === threadId) return checked;
+  const ranInstead = resumedThread === null ? 'named no thread' : `ran thread ${resumedThread} instead`;
+  return cliDoctor.failed('resume-probe', `codex exec resume ${threadId} ${ranInstead}`);
+}
+
+// The fork probe's call (#485, as #430 D6 A asks Claude's): a read-only fork of the handed-off thread, under a thread
+// of its own, answered.
+function forkCheck(forked: cliDoctor.Said, threadId: string): Check {
+  const checked = probeCheck(
+    'fork-probe',
+    'codex exec fork',
+    forked,
+    'a read-only fork of the handed-off thread answered, as gg ask-session asks one',
+  );
+  const forkThread = streamOf(forked.lines).threadId;
+  if (!checked.ok || (forkThread !== null && forkThread !== threadId)) return checked;
+  return cliDoctor.failed('fork-probe', `codex exec fork ${threadId} started no thread of its own`);
+}
+
 const probes = (runner: Runner, home: string, profile: ProfileLaunch) =>
   cliDoctor.inTemporary('gg-codex-probe-', async (directory) => {
     const cwd = join(directory, 'repo');
     // shortcut: exec starts only inside a git repository, which Codex finds by a .git above the cwd, so an empty one
     // stands in for git init; run git init should Codex read the repository.
     mkdirSync(join(cwd, '.git'), { recursive: true });
+    writeFileSync(join(cwd, 'README.md'), 'A repository for gg doctor --probe.\n');
     const launch = async (call: codex.CodexCall, input: string) => {
       const launched = await profile(call);
       for (const [path, text] of Object.entries(launched.files)) writeFileSync(path, text);
@@ -170,26 +227,23 @@ const probes = (runner: Runner, home: string, profile: ProfileLaunch) =>
     );
     const { threadId } = streamOf(ran.lines);
     if (!profileChecked.ok) return [profileChecked];
+    const checks = [profileChecked, handoffCheck(ran)];
     if (threadId === null)
       return [
-        profileChecked,
+        ...checks,
         cliDoctor.failed('resume-probe', "the launch profile's call named no thread, so there is none to resume"),
       ];
     const resumed = await launch({ ...call, marker: 'resume-probe', resume: threadId }, RESUME_BRIEF);
-    const resumedThread = streamOf(resumed.lines).threadId;
-    const checked = probeCheck(
-      'resume-probe',
-      'codex exec resume',
-      resumed,
-      `codex exec resume continued thread ${threadId} in its output schema`,
-    );
-    const ranInstead = resumedThread === null ? 'named no thread' : `ran thread ${resumedThread} instead`;
-    return [
-      profileChecked,
-      !checked.ok || resumedThread === threadId
-        ? checked
-        : cliDoctor.failed('resume-probe', `codex exec resume ${threadId} ${ranInstead}`),
-    ];
+    const fork = {
+      ...call,
+      agent: FORK_AGENT,
+      schema: FORK_SCHEMA,
+      marker: 'fork-probe',
+      resume: threadId,
+      fork: true,
+    };
+    const forked = await launch(fork, FORK_BRIEF);
+    return [...checks, resumeCheck(resumed, threadId), forkCheck(forked, threadId)];
   });
 
 // The cheap checks, then under probe the model probes. A CLI that cannot start is the one failure: the checks that
