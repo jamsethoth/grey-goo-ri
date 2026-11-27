@@ -4,6 +4,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import type * as containmentProbe from '../../lib/containment-probe.ts';
 import * as cliReplay from './cli-replay.ts';
+import * as codexHookHandlers from './codex-hook-handlers.ts';
 
 const FIXTURES = new URL('../fixtures/codex/', import.meta.url);
 
@@ -44,27 +45,49 @@ export const OLD_VERSION = '0.170.0';
 // How a case changes the CLI that answers, beside the launch's own changes: the version --version prints, the
 // logged-out recording for login status, the sandbox command failing as an unknown sandbox value did or exiting 0 with
 // no marker line as the cmd recording did, the exec recording a model call replays: the profile probe's, and the
-// resume probe's, and the one of them whose stream lost its thread.started line, and the one whose answer is prose; and
-// the MCP servers the server listing
-// names in place of the recorded none.
+// resume probe's and the fork probe's, and the one of them whose stream lost its thread.started line, and the one whose
+// answer is prose; the MCP servers the server listing names in place of the recorded none; and whether a call carrying
+// the hand-off hook keeps its recorded answer, as when the hook stays silent, instead of the hand-off stand-in's.
 export interface CodexState extends cliReplay.LaunchState {
   version?: string;
   loggedOut?: boolean;
   sandbox?: 'unavailable' | 'no-marker';
   profile?: string;
   resume?: string;
-  unthreaded?: 'profile' | 'resume';
-  prose?: 'profile' | 'resume';
+  fork?: string;
+  unthreaded?: ModelCall;
+  prose?: ModelCall;
   servers?: string[];
+  hookSilent?: boolean;
 }
+
+type ModelCall = 'profile' | 'resume' | 'fork';
+
+// The hand-off stand-in's answer (#485 Q2 A): no recording shows a Codex call that handed off, so a call carrying the
+// hand-off hook answers as an Agent past its budget does, in the hand-off schema (briefs.handoffSchema).
+export const HANDOFF_ANSWER = { answer: 'ok', claim: 'handed-off', handoff: 'README.md is read; nothing remains.' };
+
+// Whether a launch carries the hand-off hook: a PostToolUse command hook in its hooks override, with hooks on.
+const carriesHandoffHook = (args: readonly string[]) =>
+  args.includes('features.hooks=true') &&
+  codexHookHandlers.hookHandlers(args).some(({ event }) => event === 'PostToolUse');
+
+const RECORDED_ANSWER = /"type":"agent_message","text":"(?:[^"\\]|\\.)*"(?=\}\}\s*\n\{"type":"turn\.completed")/;
+const answered = (stream: string, answer: unknown) =>
+  stream.replace(RECORDED_ANSWER, () => `"type":"agent_message","text":${JSON.stringify(JSON.stringify(answer))}`);
 
 const sameArgv = (left: readonly string[], right: readonly string[]) =>
   left.length === right.length && left.every((arg, index) => arg === right[index]);
 
 // An exec recording's stream and exit code.
 function modelCall(args: readonly string[], state: CodexState): cliReplay.Answer {
-  const call = args.includes('resume') ? 'resume' : 'profile';
-  const name = call === 'resume' ? (state.resume ?? 'resume-flags-before') : (state.profile ?? 'start');
+  const call = (['resume', 'fork'] as const).find((kind) => args.includes(kind)) ?? 'profile';
+  const names = {
+    profile: state.profile ?? 'start',
+    resume: state.resume ?? 'resume-flags-before',
+    fork: state.fork ?? 'fork-kept-read-only',
+  };
+  const name = names[call];
   const recorded = readFileSync(new URL(`${name}.jsonl`, FIXTURES), 'utf8');
   const threaded =
     state.unthreaded === call
@@ -77,11 +100,12 @@ function modelCall(args: readonly string[], state: CodexState): cliReplay.Answer
     state.prose === call
       ? threaded.replace(/"type":"agent_message","text":"(?:[^"\\]|\\.)*"/g, '"type":"agent_message","text":"Done."')
       : threaded;
+  const handedOff = carriesHandoffHook(args) && !state.hookSilent ? answered(stdout, HANDOFF_ANSWER) : stdout;
   const { exitCode, stderr } = JSON.parse(readFileSync(new URL(`${name}.json`, FIXTURES), 'utf8')) as {
     exitCode: number;
     stderr: string;
   };
-  return { stdout, stderr, exitCode };
+  return { stdout: handedOff, stderr, exitCode };
 }
 
 function sandboxAnswer(state: CodexState): cliReplay.Answer {
