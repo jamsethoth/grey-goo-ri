@@ -112,9 +112,19 @@ const rolloutFacts = (rollout: codexStream.Rollout | null) => ({
   effectiveEffort: rollout?.effort ?? null,
 });
 
+// The rollout of the call's thread, or the error a sessions tree that cannot be read throws.
+function rolloutOf(codexHome: string, sessionId: string | null): codexStream.Rollout | null | Error {
+  if (sessionId === null) return null;
+  try {
+    return codexStream.rollout(codexHome, sessionId);
+  } catch (err) {
+    return err instanceof Error ? err : new Error(String(err));
+  }
+}
+
 // A call that ended: its thread is the one thread.started names, else the resumed one (ported, lib/adapters.mjs:73),
-// and its rollout says what it ran with. No repository content reaches a call (Q18 A), so there is no repository
-// configuration to digest.
+// and its rollout says what it ran with; a rollout that cannot be read fails the call, never a throw (request section
+// 4). No repository content reaches a call (Q18 A), so there is no repository configuration to digest.
 function endedResult(
   { status, stream, failure, ended }: cliCall.CliCallEnded<codexStream.CodexStream> & { ended: exec.LaunchResult },
   call: RunCall,
@@ -122,8 +132,10 @@ function endedResult(
   lastMessage: string,
 ): RunResult {
   const sessionId = stream.threadId ?? call.resume;
-  const rollout = sessionId === null ? null : codexStream.rollout(runs.codexHome, sessionId);
-  const discarded = status === 'completed' ? resumeFailure(call, rollout) : null;
+  const read = rolloutOf(runs.codexHome, sessionId);
+  const rollout = read instanceof Error ? null : read;
+  const unread = read instanceof Error ? unknownFailure(`the rollout could not be read: ${read.message}`) : null;
+  const discarded = unread ?? (status === 'completed' ? resumeFailure(call, rollout) : null);
   const result = {
     status: discarded ? ('failed' as const) : status,
     sessionId,
