@@ -348,6 +348,18 @@ for (const [name, args, acted] of REPO_COMMANDS) {
     assert.equal(result.status, 1, result.stderr);
     assert.equal(result.stderr, `gg ${name}: --repo ${resolve(file)}: not a directory\n`);
   });
+
+  // A path gg cannot read (an unreachable share) makes stat throw, not report it missing, so gg names it too (#548). A
+  // link to itself stands in: stat throws ELOOP on either platform, where a name too long for stat is too long for argv
+  // on Windows.
+  test(`gg ${name} --repo at a path that cannot be read names it`, (t) => {
+    const { repo, ggOutside } = tempRepo(t, MACHINE_SETTINGS);
+    const loop = join(repo, 'loop');
+    symlinkSync(loop, loop, 'file');
+    const result = ggOutside(...args, '--repo', loop);
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(result.stderr, `gg ${name}: --repo ${resolve(loop)}: not a directory\n`);
+  });
 }
 
 test('gg init writes the example at the repository root, and a second gg init keeps it', (t) => {

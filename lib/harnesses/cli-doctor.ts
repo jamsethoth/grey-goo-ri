@@ -1,10 +1,11 @@
 // What every Harness's doctor does with its Agent CLI (#480): start one of its commands and say what it printed, check
 // its version against a pinned minimum and its login, under the cheap and probe wall limits, and run a probe in a
 // temporary directory. Which commands, and what their output means beyond that, is each Harness's own.
-import { lstatSync, mkdtempSync, readlinkSync, rmSync } from 'node:fs';
+import { mkdtempSync, readlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import type * as exec from '../exec.ts';
+import * as pathEntry from '../path-entry.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
 
@@ -117,13 +118,7 @@ function targetOf(link: string): string {
 export function findShell(file: string, path: string = process.env.PATH ?? ''): FoundShell | null {
   for (const directory of path.split(delimiter).filter(Boolean)) {
     const candidate = join(directory.replace(/"/g, ''), file);
-    let entry;
-    try {
-      entry = lstatSync(candidate, { throwIfNoEntry: false });
-    } catch {
-      // An entry it cannot read (an unreachable share, a name too long) is skipped, as existsSync skipped it.
-      continue;
-    }
+    const entry = pathEntry.pathEntry(candidate);
     if (!entry) continue;
     const target = entry.isSymbolicLink() ? targetOf(candidate) : candidate;
     return { path: candidate, packaged: PACKAGED.test(candidate) || PACKAGED.test(target) };
