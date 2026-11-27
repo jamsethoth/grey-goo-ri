@@ -100,7 +100,8 @@ function modelCall(args: readonly string[], state: CodexState): cliReplay.Answer
     state.prose === call
       ? threaded.replace(/"type":"agent_message","text":"(?:[^"\\]|\\.)*"/g, '"type":"agent_message","text":"Done."')
       : threaded;
-  const handedOff = carriesHandoffHook(args) && !state.hookSilent ? answered(stdout, HANDOFF_ANSWER) : stdout;
+  const handedOff =
+    carriesHandoffHook(args) && !state.hookSilent && state.prose !== call ? answered(stdout, HANDOFF_ANSWER) : stdout;
   const { exitCode, stderr } = JSON.parse(readFileSync(new URL(`${name}.json`, FIXTURES), 'utf8')) as {
     exitCode: number;
     stderr: string;
