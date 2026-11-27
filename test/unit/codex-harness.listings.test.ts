@@ -32,8 +32,8 @@ test("each listing runs under the call's cancel signal", async () => {
   const { signal } = new AbortController();
   await codex.list(cli, 'codex-home', signal);
   assert.deepEqual(
-    cli.launches.map((launch) => launch.signal),
-    [signal, signal],
+    cli.launches.map((launch) => launch.signal === signal),
+    [true, true],
   );
 });
 
@@ -67,6 +67,10 @@ test("a call's run lists both before it starts codex exec, and the later slices'
   assert.deepEqual(
     cli.launches.map(({ args }) => args[0]),
     ['plugin', 'mcp', 'exec'],
+  );
+  assert.deepEqual(
+    cli.launches.slice(0, 2).map((launch) => launch.signal === hooks.signal),
+    [true, true],
   );
   assert.throws(() => harness.interactiveArgs({}, 'opening'), { message: 'not implemented' });
   assert.throws(() => harness.metrics('thread-0'), { message: 'not implemented' });
