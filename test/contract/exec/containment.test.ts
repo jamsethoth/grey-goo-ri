@@ -104,6 +104,36 @@ test('a job holds a process only at the start it was linked at', options.WIN_CAS
   assert.ok(job.members().includes(entry.pid), 'adopted into the job');
 });
 
+// Each fate of a job's hold takes its own step on the held process and no other's, by the kernel32 calls it makes: the
+// process's state after it cannot tell them apart, since an ended process is no job member either (#532 F7).
+const HOLD_STEPS = {
+  adopt: ['AssignProcessToJobObject'],
+  end: ['TerminateProcess'],
+} satisfies Record<NonNullable<Parameters<containment.Job['hold']>[2]>, string[]>;
+for (const [fate, steps] of Object.entries(HOLD_STEPS) as [keyof typeof HOLD_STEPS, string[]][])
+  test(`a job's hold to ${fate} a process takes only its own step`, options.WIN_CASE, async (t) => {
+    const real = kernel32Doubles.realKernel32 as containment.Kernel32;
+    const calls: string[] = [];
+    const kernel32 = kernel32Doubles.withKernel32({
+      AssignProcessToJobObject: (job, handle) => (
+        calls.push('AssignProcessToJobObject'),
+        real.AssignProcessToJobObject(job, handle)
+      ),
+      TerminateProcess: (handle, code) => (calls.push('TerminateProcess'), real.TerminateProcess(handle, code)),
+    });
+    const { job } = await shellWithSleeper(t, kernel32);
+    const directory = mkdtempSync(join(tmpdir(), 'gg-hold-'));
+    const pidFile = join(directory, 'outside.pid');
+    spawn(process.execPath, [childScripts.LONG_LIVED, pidFile], { stdio: 'ignore' }).unref();
+    t.after(() => processProbe.endProcessIn(pidFile));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    await processProbe.waitFor(() => pidIn(pidFile) > 0, t.signal);
+    const entry = { pid: pidIn(pidFile), parentPid: process.pid, exe: 'node.exe' };
+    calls.length = 0;
+    assert.equal(job.hold(entry, containment.startOf(kernel32, entry.pid) as bigint, fate)?.held, true);
+    assert.deepEqual(calls, steps);
+  });
+
 // After a failed none save the watcher holds an escapee to end it, never to adopt it (#532 Q2 A).
 test("a job's hold to end a process ends it, unadopted", options.WIN_CASE, async (t) => {
   const kernel32 = containment.openKernel32() as containment.Kernel32;
