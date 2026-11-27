@@ -11,9 +11,22 @@ import * as containment from './containment.ts';
 // watcher over its own snapshot (#531's choices), taken on its own thread (snapshotThread), started at the first after
 // one gap, so a command that ends sooner starts none. Its lifetime is its command's (#531 D1 A): stop answers once the
 // thread has exited, after the snapshot in flight. Cleanup polls once more, on gg's thread, before it ends the job,
-// since a process can start outside it after the last poll.
-export function watch(job: containment.Job, kernel32: containment.Kernel32, gapMs: number) {
+// since a process can start outside it after the last poll. onEscapee runs once, at the first process linked outside
+// the job, before any is held (#532, ADR 0030 decisions 1 and 4); when it throws, each linked process is ended through
+// its handle, never adopted (Q2 A).
+export function watch(job: containment.Job, kernel32: containment.Kernel32, gapMs: number, onEscapee = () => {}) {
   const linked: commandCleanup.Linked = new Map();
+  let sighted = false;
+  let fate: 'adopt' | 'end' = 'adopt';
+  const sight = (pids: number[]) => {
+    if (sighted || !pids.some((pid) => !linked.has(pid))) return;
+    sighted = true;
+    try {
+      onEscapee();
+    } catch {
+      fate = 'end';
+    }
+  };
   const link = (snapshot: () => commandCleanup.ProcessEntry[]) => {
     const starts = new Map<number, bigint | 'closed' | null>();
     const startOf = (pid: number) => {
@@ -26,6 +39,7 @@ export function watch(job: containment.Job, kernel32: containment.Kernel32, gapM
       const watchReads = { selfPid: process.pid, startOf, exited: job.exited };
       const toLink = commandCleanup.newlyLinked(linked, members, entries, watchReads);
       const closed = commandCleanup.closedLinked(linked, members, entries, watchReads);
+      sight([...toLink, ...closed]);
       for (const entry of entries) {
         const { pid, parentPid } = entry;
         // a linked pid gg could not open, or whose handle has signalled, is never held twice
@@ -34,7 +48,7 @@ export function watch(job: containment.Job, kernel32: containment.Kernel32, gapM
         if (closed.includes(pid))
           linked.set(pid, { ...containment.describe(kernel32, pid), parentPid, started: null, held: false });
         // held only if it is still the process linked at this start
-        const held = toLink.includes(pid) ? job.hold(entry, starts.get(pid) as bigint) : null;
+        const held = toLink.includes(pid) ? job.hold(entry, starts.get(pid) as bigint, fate) : null;
         if (held) linked.set(pid, held);
       }
     } catch {} // a snapshot or a job that cannot be read links nothing this time; the job's termination says the rest
