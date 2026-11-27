@@ -14,23 +14,32 @@ export function cleanupContainmentOf({ child, job }: containment.Started): comma
 
 // A launch's started reports: its containment once, before the result, since a gate a stop left running may never
 // answer; and none, after it, at its watcher's first sight of an escapee (#532, ADR 0030 decision 4). A report that
-// throws there, a failed none save, calls takeDown once the watcher has ended the escapee (Q2 A): launch's, which takes
-// the call down as the cancel does unless it has exited.
+// throws, a failed save, calls takeDown, after the watcher has ended any escapee (Q2 A): launch's, which takes the call
+// down as the cancel does unless it has exited. Only the watcher's report throws on; launch has no caller to throw to,
+// and the Harness's caller keeps the error to rethrow (agent-call).
 export function startedReports(
   onStarted: exec.LaunchOptions['onStarted'],
   cleanupContainment: commandCleanup.CleanupContainment,
   takeDown: () => unknown,
 ) {
   let reported = false;
-  const started = () => !reported && ((reported = true), onStarted?.(cleanupContainment));
-  const escapee = () => {
+  const report = (containment: commandCleanup.CleanupContainment) => {
     try {
-      started();
-      onStarted?.({ kind: 'none' });
+      onStarted?.(containment);
     } catch (err) {
       queueMicrotask(() => void takeDown());
       throw err;
     }
+  };
+  const first = () => !reported && ((reported = true), report(cleanupContainment));
+  const started = () => {
+    try {
+      first();
+    } catch {}
+  };
+  const escapee = () => {
+    first();
+    report({ kind: 'none' });
   };
   return { started, escapee };
 }
