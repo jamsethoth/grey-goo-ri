@@ -367,8 +367,9 @@ const notImplemented = (): never => {
 };
 
 // The members built from the exec shipped.ts is given: run (#482, lib/harnesses/codex-run.ts), validate, which lists
-// what Codex has installed once per preflight, a listing each call's launch reuses, and doctor (#484); interactiveArgs
-// and metrics throw "not implemented" until their slices.
+// what Codex has installed once per preflight, and doctor (#484); interactiveArgs and metrics throw "not implemented"
+// until their slices. Each call's launch lists afresh, so a plugin gone since preflight fails that call before it
+// spawns, and a failed listing fails only its own call (ADR 0031 point 7, #481 Q2 A).
 export const createCli = (
   runner: Runner,
   { codexHome: home = codexHome(), skillsHome: skills = skillsHome() }: Partial<Homes> = {},
@@ -376,7 +377,7 @@ export const createCli = (
   let listing: Promise<Listings> | undefined;
   const listOnce = () => (listing ??= list(runner, home));
   const homes = { codexHome: home, skillsHome: skills };
-  const launch = async (call: codexRun.RunCall) => launchArgsIn(homes, call, call.tools, await listOnce());
+  const launch = async (call: codexRun.RunCall) => launchArgsIn(homes, call, call.tools, await list(runner, home));
   return {
     run: (call: Record<string, unknown>, hooks: runContext.HarnessHooks) =>
       codexRun.run(runner, { codexHome: home, launch }, call as unknown as codexRun.RunCall, hooks),

@@ -235,6 +235,19 @@ test('the skills list reaches the first prompt only, as the persona does', CASE,
   );
 });
 
+// ADR 0031 point 7, #481 Q2 A: each call lists what Codex has installed afresh before it spawns, never the listing an
+// earlier call took.
+test('each call lists the plugins and MCP servers afresh before it spawns', CASE, async (t) => {
+  const fake = fakeCli(t, { scenario: 'start' });
+  await fake.harness.run(codexCall(fake), hooksOf());
+  await fake.harness.run(codexCall(fake), hooksOf());
+  const started = (command: string) => fake.launches.filter(({ args }) => args[0] === command).length;
+  assert.deepEqual(
+    { plugin: started('plugin'), mcp: started('mcp'), exec: started('exec') },
+    { plugin: 2, mcp: 2, exec: 2 },
+  );
+});
+
 // Decision 6 (ported, lib/adapters.mjs:73): the thread id from thread.started, else the resume id.
 test('a resume with no thread.started keeps the resume id', CASE, async (t) => {
   const fake = fakeCli(t, {
