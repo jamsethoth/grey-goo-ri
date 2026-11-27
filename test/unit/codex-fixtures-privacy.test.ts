@@ -1,21 +1,36 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import * as redaction from '../../scripts/record-codex-redaction.ts';
 
+// The scan's redactor. It reads the name only standing whole: Ubuntu CI runs as `runner`, a word inside Codex's own
+// executable names in cli-doctor.json (CI run 45056354195), which the recorder itself would redact. Under CI it reads
+// no name at all (owner D1 A): the fixtures were recorded on another machine, and the example's own text says
+// "runner"; the machine that records them still checks its name.
+const scanRedactor = (env: NodeJS.ProcessEnv, username = userInfo().username) =>
+  redaction.redactorOf('Z:/no-such-recording-base', { username: env.CI ? null : username, wholeName: true });
+
 // DoD 4 (#479): the recorder's own redaction finds nothing left in a committed Codex fixture: no checkout path, home,
-// user name, token or email. The check reads the name only standing whole: Ubuntu CI runs as `runner`, a word inside
-// Codex's own executable names in cli-doctor.json (CI run 45056354195), which the recorder itself would redact.
+// user name, token or email.
 test('no Codex recording holds what the recorder redacts', () => {
   const recordings = new URL('../fixtures/codex/', import.meta.url);
-  const redact = redaction.redactorOf('Z:/no-such-recording-base', { wholeName: true });
+  const redact = scanRedactor(process.env);
   const leaking = readdirSync(recordings).filter((file) => {
     const text = readFileSync(new URL(file, recordings), 'utf8');
     return redact(text) !== text;
   });
   assert.deepEqual(leaking, []);
+});
+
+test('the scan checks the user name where recordings are made, and under CI checks only the rest', () => {
+  const text = 'as the test runner prints them; D:/runner/x; mail a@example.com';
+  assert.equal(scanRedactor({}, 'runner')(text), 'as the test <user> prints them; D:/<user>/x; mail <email>');
+  assert.equal(
+    scanRedactor({ CI: 'true' }, 'runner')(text),
+    'as the test runner prints them; D:/runner/x; mail <email>',
+  );
 });
 
 // The recorder redacts the name wherever it appears, as scripts/record-claude.ts does (owner Q4 A, D6 A).
