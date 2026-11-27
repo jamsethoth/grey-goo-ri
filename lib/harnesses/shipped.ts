@@ -10,7 +10,7 @@ export const HARNESSES = { claude, codex };
 // Each shipped Harness: the contract's members of its declaration joined with the members it builds from exec to start
 // its CLI (Q1 A). A module's other exports, such as its builders and test seams, stay its own. bin/gg.ts calls it once
 // with the exec it passes down (ADR 0019).
-export function shipped(runner: Pick<exec.Exec, 'launch'>): Record<string, Record<string, unknown>> {
+export function shipped(runner: Pick<exec.Exec, 'launch' | 'childInJob'>): Record<string, Record<string, unknown>> {
   return Object.fromEntries(
     Object.entries(HARNESSES).map(([name, { createCli, ...declaration }]) => [
       name,

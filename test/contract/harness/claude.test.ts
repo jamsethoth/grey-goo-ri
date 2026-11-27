@@ -1,12 +1,13 @@
 // The Claude Harness's run over the fake claude CLI, which replays the calls recorded from Claude Code 2.1.328
 // (test/fixtures/claude/, #425): the contract's result from the stream, Usage by the token rules, the failure classes,
 // the stops, and the files a call writes.
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import * as contract from '../../../lib/harnesses/contract.ts';
 import * as claudeOverFakeCli from '../../support/claude-over-fake-cli.ts';
+import * as storeAlias from '../../support/store-alias.ts';
 
 const { claudeCall, hooksOf } = claudeOverFakeCli;
 const fakeCli = claudeOverFakeCli.claudeOverFakeCli;
@@ -388,13 +389,16 @@ test('interactiveArgs and metrics throw not implemented until their slices', (t)
 const CHEAP_CHECKS = ['executable', 'version', 'login', 'bare-help'];
 
 // Each check doctor ran that failed, by name, but gg's own place on PATH, which reads the machine, not the CLI
-// (test/unit/doctor.cli-checks.test.ts holds it).
-const failedChecks = async (fake: claudeOverFakeCli.ClaudeOverFakeCli) =>
-  (await fake.harness.doctor({ probe: false, agents: {} })).checks
+// (test/unit/doctor.cli-checks.test.ts holds it), with an unpackaged pwsh first on PATH, so the shell check passes.
+const failedChecks = async (t: TestContext, fake: claudeOverFakeCli.ClaudeOverFakeCli) => {
+  storeAlias.unpackagedShellFirst(t);
+  return (await fake.harness.doctor({ probe: false, agents: {} })).checks
     .filter(({ ok, name }) => !ok && name !== 'gg-on-path')
     .map(({ name, severity }) => ({ name, severity }));
+};
 
 test('doctor passes every cheap check of the recorded CLI', CASE, async (t) => {
+  storeAlias.unpackagedShellFirst(t);
   const { checks, ok } = await fakeCli(t, { scenario: 'success' }).harness.doctor({ probe: false, agents: {} });
   assert.deepEqual(
     CHEAP_CHECKS.filter((name) => !checks.some((check) => check.name === name && check.ok)),
@@ -406,17 +410,17 @@ test('doctor passes every cheap check of the recorded CLI', CASE, async (t) => {
 
 test('doctor fails the executable check when the CLI cannot start', CASE, async (t) => {
   const fake = fakeCli(t, { scenario: 'success', command: 'gg-no-such-claude' });
-  assert.deepEqual(await failedChecks(fake), [{ name: 'executable', severity: 'error' }]);
+  assert.deepEqual(await failedChecks(t, fake), [{ name: 'executable', severity: 'error' }]);
 });
 
 test('doctor fails the version check on a CLI older than the minimum', CASE, async (t) => {
   const fake = fakeCli(t, { scenario: 'success', mode: 'old-version' });
-  assert.deepEqual(await failedChecks(fake), [{ name: 'version', severity: 'error' }]);
+  assert.deepEqual(await failedChecks(t, fake), [{ name: 'version', severity: 'error' }]);
 });
 
 test('doctor fails the login check on a logged-out CLI', CASE, async (t) => {
   const fake = fakeCli(t, { scenario: 'success', mode: 'logged-out' });
-  assert.deepEqual(await failedChecks(fake), [{ name: 'login', severity: 'error' }]);
+  assert.deepEqual(await failedChecks(t, fake), [{ name: 'login', severity: 'error' }]);
 });
 
 // Every way a call can fail resolves a typed result: a Harness never throws or rejects for an expected failure

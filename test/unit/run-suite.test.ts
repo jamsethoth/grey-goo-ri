@@ -159,6 +159,7 @@ test('the coverage stage runs test/unit in one process over lib/ outside its bou
       '--test-coverage-exclude=lib/containment-gate.ts',
       '--test-coverage-exclude=lib/command-shim.ts',
       '--test-coverage-exclude=lib/launch-clock.ts',
+      '--test-coverage-exclude=lib/containment-probe.ts',
       '--test-reporter=spec',
       '--test-reporter-destination=stdout',
       '--test-reporter=lcov',

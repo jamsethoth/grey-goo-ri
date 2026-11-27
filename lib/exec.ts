@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import * as commandShim from './command-shim.ts';
 import * as containment from './containment.ts';
+import * as containmentProbe from './containment-probe.ts';
 import * as commandCleanup from './command-cleanup.ts';
 import * as launchClock from './launch-clock.ts';
 import * as processTree from './process-tree.ts';
@@ -246,13 +247,14 @@ function launch(kernel32: containment.Kernel32 | null, options: LaunchOptions): 
   });
 }
 
-// run, runShell and launch over kernel32, the FFI bin/gg.ts opens and passes down (ADR 0019); null runs Windows
-// commands uncontained. Given nothing, it opens the real one.
+// run, runShell, launch and the containment probe over kernel32, the FFI bin/gg.ts opens and passes down (ADR 0019);
+// null runs Windows commands uncontained. Given nothing, it opens the real one.
 export function createExec({ kernel32 = containment.openKernel32() }: { kernel32?: containment.Kernel32 | null } = {}) {
   return {
     run,
     runShell: (commandLine: string, options?: ShellOptions) => shell(kernel32, commandLine, options),
     launch: (options: LaunchOptions) => launch(kernel32, options),
+    childInJob: containmentProbe.childInJob(kernel32),
     cleanupConfirmed,
   };
 }

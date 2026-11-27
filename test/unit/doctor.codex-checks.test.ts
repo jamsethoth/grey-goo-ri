@@ -84,7 +84,7 @@ async function codexDoctor(
   const cli = recordedCodexCli.recordedCodexCli(state);
   const report = await codex.createCli(cli).doctor({ probe, agents: {} });
   const named = (name: string) => report.checks.find((check) => check.name === name);
-  return { ...report, named, launches: cli.launches };
+  return { ...report, named, launches: cli.launches, probes: cli.probes };
 }
 
 // gg doctor over the Harnesses shipped builds, the Codex CLI answering as recorded, and every launch it asked for.
@@ -361,3 +361,35 @@ test('a resume probe whose stream names no thread fails', async (t) => {
   assert.equal(resume?.ok, false, resume?.message ?? 'no resume-probe check');
   assert.equal(resume.severity, 'error');
 });
+
+// Q1 B of #533: Codex's containment probe runs as Codex runs the Agents' commands, through codex sandbox under MXC in
+// gg's CODEX_HOME, in the first pwsh on PATH. #533's one real call shows a Store pwsh there leaving its child in gg's
+// job, so a Store pwsh passes it (#484 Q3 A), replayed from that recording.
+test(
+  'under --probe, Codex runs the containment probe under MXC in the first pwsh on PATH, which a Store pwsh passes',
+  ON_WINDOWS,
+  async (t) => {
+    const { named, probes } = await codexDoctor(t, {}, { probe: true, folder: 'Microsoft/WindowsApps' });
+    const shell = cliDoctor.findShell('pwsh.exe');
+    assert.equal(shell?.packaged, true, 'the case puts the Store pwsh first on PATH');
+    const containment = named('containment-probe');
+    assert.equal(containment?.ok, true, containment?.message ?? 'no containment-probe check');
+    assert.equal(probes.length, 1, JSON.stringify(probes));
+    const [probed] = probes as [(typeof probes)[number]];
+    assert.equal(probed.command, 'codex');
+    assert.deepEqual(probed.args.slice(0, 5), ['sandbox', '-c', 'windows.sandbox="mxc"', '--', shell.path]);
+    assert.equal(probed.env?.CODEX_HOME, codex.codexHome());
+  },
+);
+
+// ADR 0030 decision 6: a later Codex whose sandboxed command leaves its child outside gg's job fails the probe.
+test(
+  "under --probe, a Codex sandbox whose command's child is outside gg's job fails the containment probe",
+  ON_WINDOWS,
+  async (t) => {
+    const { text } = await doctorOverCodex(t, { escapes: true }, { probe: true });
+    const errors = codexDoctorLines(text, 'error');
+    assert.equal(errors.length, 1, text);
+    assert.ok(errors[0]!.startsWith('error: harness codex: containment-probe: '), errors[0]);
+  },
+);

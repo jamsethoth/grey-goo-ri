@@ -30,14 +30,15 @@ type Harnesses = Record<string, Record<string, unknown>>;
 
 // What a Run reaches outside itself, built once here and passed down as one `deps`; a test passes fakes in their place
 // (ADR 0019).
-const realDeps = (gh: github.Gh): interpreter.Deps => ({
-  gh,
-  git: git.createGit(),
-  exec: exec.createExec({ kernel32: containment.openKernel32() }),
-  locks: locks.createLocks(),
-  database: stateDatabase.createStateDatabase(),
-  clock: clock.WALL_CLOCK,
-});
+const realDeps = (gh: github.Gh) =>
+  ({
+    gh,
+    git: git.createGit(),
+    exec: exec.createExec({ kernel32: containment.openKernel32() }),
+    locks: locks.createLocks(),
+    database: stateDatabase.createStateDatabase(),
+    clock: clock.WALL_CLOCK,
+  }) satisfies interpreter.Deps;
 
 // The repository a command acts on: the one --repo names, else the one holding the current directory. Node reports a
 // working directory that is missing or a file as `spawn git ENOENT`, as if git were missing, so gg names it first.

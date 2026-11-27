@@ -103,7 +103,7 @@ export interface Validated {
   hinted: string[];
 }
 
-type Runner = Pick<exec.Exec, 'launch'>;
+type Runner = Pick<exec.Exec, 'launch' | 'childInJob'>;
 
 // What a listing printed, parsed; a failure or no JSON is an error naming the command, never an empty list, which
 // would leave every plugin and server on (ported, feature-flow 89e1d67 lib/toolkit.mjs:79-96).

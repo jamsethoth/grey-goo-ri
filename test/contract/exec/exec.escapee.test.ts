@@ -85,6 +85,9 @@ const SITES: Site[] = [
 const EXCLUDED: Record<string, string> = {
   'scripts/run-suite.ts: createJob': "the suite launcher's own job, around the stage it runs",
   'scripts/record-codex-run.ts: containment.startArgv': 'the Codex recorder, run by hand and never by gg',
+  // A watcher would adopt the escaped child the probe exists to find (#533).
+  'lib/containment-probe.ts: containment.startArgv':
+    "gg doctor's containment probe, which asks whether a child escaped",
 };
 
 // Each call in files that holds a Windows command in a job, as `path: call`: lib/containment.ts's start, startArgv and

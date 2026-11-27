@@ -47,11 +47,12 @@ const PROBE_SCHEMA = {
 // The launch profile's argv, environment and files for a probe's call (codex.ts builds it).
 export type ProfileLaunch = (call: codex.CodexCall) => Promise<codex.Launch>;
 
-type Runner = Pick<exec.Exec, 'launch'>;
+type Runner = Pick<exec.Exec, 'launch' | 'childInJob'>;
 type Check = runContext.DoctorCheck;
 
 // Codex prints its login state and a configuration error on stderr, which said reads after stdout's lines.
 const withStderr = (runner: Runner): Runner => ({
+  ...runner,
   launch: async (options) => {
     const ended = await runner.launch(options);
     for (const line of ended.stderrTail.split(/\r?\n/).filter(Boolean)) options.onLine?.(line);
@@ -99,12 +100,12 @@ function sandboxCheck(ran: cliDoctor.Said): Check {
 }
 
 // Codex starts the Agents' commands in PowerShell 7; a Store one passes, as Codex's commands stay in gg's job (Q3 A).
-function shellCheck(): Check {
-  const shell = cliDoctor.findShell('pwsh.exe');
-  return shell
-    ? cliDoctor.passed('shell', `pwsh is on PATH at ${shell.path}`)
-    : cliDoctor.failed('shell', "pwsh (PowerShell 7) is not on PATH, and Codex runs the Agents' commands in it");
-}
+const shellCheck = () =>
+  cliDoctor.shellCheck({
+    files: ['pwsh.exe'],
+    missing: "pwsh (PowerShell 7) is not on PATH, and Codex runs the Agents' commands in it",
+    packagedContained: true,
+  });
 
 // What a model call's --json stream says: its thread, whether its turn completed, why it failed, and its last message.
 function streamOf(lines: string[]) {
@@ -199,7 +200,8 @@ export async function doctor(
   { home, profile }: { home: string; profile: ProfileLaunch },
 ): Promise<runContext.DoctorReport> {
   const onWindows = process.platform === 'win32';
-  const checks = onWindows ? [shellCheck()] : [];
+  const shell = onWindows ? shellCheck() : null;
+  const checks = shell ? [shell.check] : [];
   const version = await said(runner, home, ['--version']);
   if (!version.started) checks.push(cliDoctor.failed('executable', `codex cannot start: ${version.failure}`));
   else {
@@ -210,6 +212,14 @@ export async function doctor(
     checks.push(cliDoctor.passed('executable', 'codex starts'), versionCheck(version), loginCheck(login, home));
     if (sandbox) checks.push(sandboxCheck(sandbox));
     if (probe) checks.push(...(await probes(runner, home, profile)));
+    // Codex runs the Agents' commands through its sandbox under MXC, so the probe runs there (#533 Q1 B).
+    if (probe && shell?.shell)
+      checks.push(
+        await cliDoctor.containmentCheck(runner, shell.shell.path, {
+          through: ['codex', ...SANDBOX_ARGS.slice(0, 4)],
+          env: { CODEX_HOME: home },
+        }),
+      );
   }
   return { ok: checks.every(({ ok, severity }) => ok || severity === 'warning'), checks };
 }

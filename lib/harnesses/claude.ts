@@ -349,7 +349,7 @@ const probeLaunch =
 // The members that start the CLI, over the runner's launch, where configDirectory holds the CLI's transcripts.
 // interactiveArgs and metrics come with slice 7 and gg stats (owner, #425 Q4 A).
 export const createCli = (
-  runner: Pick<exec.Exec, 'launch'>,
+  runner: Pick<exec.Exec, 'launch' | 'childInJob'>,
   { configDirectory = CONFIG_DIRECTORY }: { configDirectory?: string } = {},
 ): ClaudeCli => ({
   run: (call, hooks) => runIn(runner, configDirectory, call as unknown as RunCall, hooks),
