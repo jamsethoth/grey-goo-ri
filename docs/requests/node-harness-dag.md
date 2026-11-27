@@ -170,8 +170,9 @@ Codex specifics: every harness-owned key as a `-c` override, since CLI overrides
 `--sandbox` and `-C` before `resume`; sandbox policy re-checked from the rollout on resume; strict output schemas;
 `features.hooks` explicit; `commandWindows` required for any hook on win32; no fallback to unelevated, which #479
 found isolates nothing usable, so an mxc error ends the call as a typed failure (ADR 0031); usage delta from the
-cumulative `turn.completed`; rollout lookup by session id across the sessions tree; tail `$CODEX_HOME/logs` on non-zero
-exit; verify expected filesystem changes and checks rather than command counts. Installed: codex-cli 0.171.0 (#479),
+cumulative `turn.completed`; rollout lookup by session id across the sessions tree; on a non-zero exit the failure
+carries the stream's error and the CLI's stderr, since codex-cli 0.171 keeps no call log under `$CODEX_HOME/logs`
+(#482 Q3 A); verify expected filesystem changes and checks rather than command counts. Installed: codex-cli 0.171.0 (#479),
 which accepts `exec resume --output-schema`.
 
 Claude `protectedPaths`: `.claude/`, `.mcp.json`, `CLAUDE.md`. Codex `protectedPaths`: `.codex/`, `AGENTS.md`.
@@ -639,7 +640,8 @@ the harness reports it, else absent. `peakContextTokens` is the maximum over the
 cacheReadTokens + cacheWriteTokens` for that request. Cost is the delta of the harness's cumulative figure per session, or computed from `apiPrices` where the
 harness reports none, or null, and carries its basis (`reported`, `priced` or null); an Attempt also records the
 subscription quota and credit snapshots its harness saw, or null (decision J13; reports in grey-goo-ri issue #135).
-Fixtures cover a resumed Claude session and a resumed Codex thread.
+Codex reports no cost, so its cost is null with no basis; `apiPrices` and the priced basis come with the quota windows
+in #135 (F11, #482 decision 3). Fixtures cover a resumed Claude session and a resumed Codex thread.
 
 Stats: every action event carries the vertex id, visit, action id and recovery; lifecycle events carry only the run or execution they describe; aggregation defaults to procedure and action, with vertex,
 harness and model as further dimensions, so two reviewers on the same procedure stay distinguishable and renaming
@@ -734,9 +736,10 @@ Ported as they are:
 - Worktree add serialised, ownership validated, branch reused on title change; push without `-u`.
 - Ticket dependency ordering at publish (unknown and cyclic dependencies rejected, blockers resolved to issue
   numbers) and blocker readiness at run, standalone tickets included.
-- Codex: sandbox and `-C` before resume, sandbox re-check from the rollout, thread id fallback, usage delta, MXC
-  fallback, node_repl lock warning, persona on first prompt only, strict schemas, allowlists as inline tables, listing
-  failures throw, cost from `apiPrices` or null.
+- Codex: sandbox and `-C` before resume, sandbox re-check from the rollout, thread id fallback, usage delta, no MXC
+  fallback (an mxc error is a typed failure, ADR 0031), node_repl lock warning, persona on first prompt only, strict
+  schemas, allowlists as inline tables, listing failures throw, cost null with no basis, since Codex reports none
+  (`apiPrices` and the priced basis go to #135 with the quota windows, F11; #482 decision 3).
 - Claude: all plugins off then the agent's back by directory, allow and deny lists with prefixed twins, missing plugin
   fails before spawn. (ff's throw on `is_error` or missing structured output is superseded; see the deliberate
   changes below.)

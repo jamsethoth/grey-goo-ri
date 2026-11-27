@@ -100,7 +100,7 @@ async function doctorOverCodex(
   return { ...result, launches: cli.launches };
 }
 
-// Codex's doctor lines: Codex has no run until #482, so gg doctor also refuses each Vertex as not implemented.
+// Codex's doctor lines, the harness-doctor-failed errors and warnings naming codex.
 const codexDoctorLines = (text: string, severity: 'error' | 'warning') =>
   text
     .split('\n')
@@ -309,8 +309,8 @@ test('a failed profile probe is an error and runs no resume probe', async (t) =>
   );
 });
 
-// D17 A of #481: only the Agent's listing turns a configured server on, so the probes launch over the listing a Run's
-// call gets, which switches off each server the probe Agent does not list, and the plugins with it.
+// D17 A of #481: only the Agent's listing turns a configured server on, so the probes launch over a listing like the
+// one each Run's call takes, which switches off each server the probe Agent does not list, and the plugins with it.
 test('under --probe both probe calls switch off each configured MCP server and the plugins', async (t) => {
   const { launches } = await codexDoctor(t, { servers: ['playwright'] }, { probe: true });
   const calls = launches.filter(({ args }) => isModelCall(args));

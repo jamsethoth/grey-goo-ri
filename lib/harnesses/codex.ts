@@ -8,6 +8,7 @@ import type * as runContext from '../run-context.ts';
 import * as cliDoctor from './cli-doctor.ts';
 import * as codexDoctor from './codex-doctor.ts';
 import * as codexPlugins from './codex-plugins.ts';
+import * as codexRun from './codex-run.ts';
 import * as codexSkills from './codex-skills.ts';
 
 // The doctor's sandbox command, for scripts/record-codex.ts to record as the doctor runs it (#484 D2 A).
@@ -107,7 +108,7 @@ type Runner = Pick<exec.Exec, 'launch' | 'childInJob'>;
 
 // What a listing printed, parsed; a failure or no JSON is an error naming the command, never an empty list, which
 // would leave every plugin and server on (ported, feature-flow 89e1d67 lib/toolkit.mjs:79-96).
-async function listed(runner: Runner, home: string, args: string[]): Promise<{ command: string; data: unknown }> {
+async function listed(runner: Runner, home: string, args: string[], signal?: AbortSignal) {
   const command = ['codex', ...args].join(' ');
   // The plugin listing reads OpenAI's catalog and once took 87 s, past the cheap limit (#481 F16).
   const ran = await cliDoctor.said(runner, {
@@ -115,6 +116,7 @@ async function listed(runner: Runner, home: string, args: string[]): Promise<{ c
     args,
     env: { CODEX_HOME: home },
     wallMs: cliDoctor.PROBE_WALL_MS,
+    signal,
   });
   const reason = cliDoctor.reasonOf(ran);
   if (reason !== null) throw new Error(`${command} failed: ${reason}`);
@@ -132,10 +134,10 @@ const PLUGIN_KEYS = ['pluginId', 'name', 'marketplaceName', 'version'];
 
 // The installed plugins and MCP servers, listed afresh, both at once. The server listing leaves out a plugin's servers,
 // which Q3 C refuses and whose launch entry failed Codex's configuration load in feature-flow (#481 D9 B).
-export async function list(runner: Runner, home: string): Promise<Listings> {
+export async function list(runner: Runner, home: string, signal?: AbortSignal): Promise<Listings> {
   const [plugins, servers] = await Promise.all([
-    listed(runner, home, ['plugin', 'list', '--json']),
-    listed(runner, home, ['mcp', 'list', '--json', '-c', 'features.plugins=false']),
+    listed(runner, home, ['plugin', 'list', '--json'], signal),
+    listed(runner, home, ['mcp', 'list', '--json', '-c', 'features.plugins=false'], signal),
   ]);
   const installed = referencePaths.isRecord(plugins.data) ? plugins.data.installed : undefined;
   if (!Array.isArray(installed) || !installed.every((entry) => filled(entry, PLUGIN_KEYS)))
@@ -232,16 +234,6 @@ function matched(home: string, tools: CodexTools, listings: Listings) {
   return { errors, plugins, appsOff };
 }
 
-// The skills an Agent declares, each a folder of the user's skills folder, and every one not found there (D2 A).
-function declaredSkills(skillsFolder: string, declared: unknown) {
-  const names = isStrings(declared) ? declared : [];
-  const lookedUp = names.map((name) => [name, codexSkills.skillAt(join(skillsFolder, name))] as const);
-  return {
-    skills: lookedUp.flatMap(([, skill]) => skill ?? []),
-    errors: lookedUp.flatMap(([name, skill]) => (skill ? [] : [`skill ${name} is not in ${skillsFolder}`])),
-  };
-}
-
 // The skills a call may use: Codex's bundled ones, the Agent's declared ones and each listed plugin's, named as Codex
 // names a plugin's skill (D2 A).
 // shortcut: a plugin's skills are read from its skills/ folder, the path each of gg's installed plugins' manifests
@@ -281,7 +273,7 @@ const profileKeys = (cwd: string) => [
 function launchArgsIn(homes: Homes, call: CodexCall, tools: CodexTools, listings: Listings): Launch {
   const home = homes.codexHome;
   const { errors, plugins, appsOff } = matched(home, tools, listings);
-  const declared = declaredSkills(homes.skillsHome, call.agent.skills);
+  const declared = codexSkills.declared(homes.skillsHome, call.agent.skills);
   errors.push(...declared.errors);
   if (errors.length) throw new Error(errors.join('; '));
   const access = call.access === 'workspace-write' ? 'workspace-write' : 'read-only';
@@ -360,7 +352,7 @@ async function validateIn(listOnce: () => Promise<Listings>, homes: Homes, agent
     fields[field] === undefined || isStrings(fields[field]) ? [] : [`${field} must be a list of names`],
   );
   const tools = resolveTools(agent);
-  if (!errors.length) errors.push(...declaredSkills(homes.skillsHome, fields.skills).errors);
+  if (!errors.length) errors.push(...codexSkills.declared(homes.skillsHome, fields.skills).errors);
   if (!errors.length && (tools.plugins.length || tools.mcp.length)) {
     try {
       errors.push(...matched(homes.codexHome, tools, await listOnce()).errors);
@@ -371,8 +363,14 @@ async function validateIn(listOnce: () => Promise<Listings>, homes: Homes, agent
   return { ok: !errors.length, errors, hinted: tools.hinted };
 }
 
-// The members built from the exec shipped.ts is given: validate, which lists what Codex has installed once per
-// preflight, and doctor (#484); run is #482's.
+const notImplemented = (): never => {
+  throw new Error('not implemented');
+};
+
+// The members built from the exec shipped.ts is given: run (#482, lib/harnesses/codex-run.ts), validate, which lists
+// what Codex has installed once per preflight, and doctor (#484); interactiveArgs and metrics throw "not implemented"
+// until their slices. Each call's launch lists afresh, so a plugin gone since preflight fails that call before it
+// spawns, and a failed listing fails only its own call (ADR 0031 point 7, #481 Q2 A).
 export const createCli = (
   runner: Runner,
   { codexHome: home = codexHome(), skillsHome: skills = skillsHome() }: Partial<Homes> = {},
@@ -380,9 +378,16 @@ export const createCli = (
   let listing: Promise<Listings> | undefined;
   const listOnce = () => (listing ??= list(runner, home));
   const homes = { codexHome: home, skillsHome: skills };
+  const launch = async (call: codexRun.RunCall, signal: AbortSignal) =>
+    launchArgsIn(homes, call, call.tools, await list(runner, home, signal));
   return {
+    run: (call: Record<string, unknown>, hooks: runContext.HarnessHooks) =>
+      codexRun.run(runner, { codexHome: home, launch }, call as unknown as codexRun.RunCall, hooks),
+    interactiveArgs: notImplemented as (agent: unknown, opening: string, options?: unknown) => string[],
+    metrics: notImplemented as (session: string) => null,
     validate: (agent: unknown) => validateIn(listOnce, homes, agent),
-    // The probes launch over the listing a Run's call gets, so a server the probe Agent does not list is off (D17 A).
+    // The probes launch over a listing like the one each Run's call takes, so a server the probe Agent does not list
+    // is off (D17 A).
     doctor: (options: runContext.DoctorOptions) =>
       codexDoctor.doctor(runner, options, {
         home,

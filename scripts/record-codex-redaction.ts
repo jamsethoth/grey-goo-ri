@@ -12,11 +12,21 @@ export const ACCOUNT_KEYS = /account_id|user_id|^email$|repository_url|installat
 const CHECKOUT = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]$/, '');
 const TRIMMED_KEYS = new Set(['base_instructions', 'encrypted_content']);
 
+// The user's name as a pattern: anywhere, or with `wholeName` only where it is not joined to a word.
+const nameRule = (name: string, wholeName: boolean): [RegExp, string] => [
+  new RegExp(wholeName ? `(?<![\\w-])${name}(?![\\w-])` : name, 'gi'),
+  '<user>',
+];
+
 // The text replacements: as written, with forward slashes, JSON-escaped, as Git Bash writes a path, and as a
 // directory name made of it. `wholeName`, for the privacy test's check of committed text alone, matches the user's
 // name only where it is not joined to letters, digits, `_` or `-`: Ubuntu CI's `runner` is inside Codex's own
-// `codex-command-runner.exe`, which the recorder, on that machine, would redact.
-export function redactorOf(base: string, { username = userInfo().username, wholeName = false } = {}) {
+// `codex-command-runner.exe`, which the recorder, on that machine, would redact. A null `username` reads no name: the
+// privacy test's scan under CI, where nothing is recorded (owner D1 A).
+export function redactorOf(
+  base: string,
+  { username = userInfo().username, wholeName = false }: { username?: string | null; wholeName?: boolean } = {},
+) {
   const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // A path's separators as any run of slashes or backslashes: written, forward, or escaped once or more (a -c value
   // that quotes a path, saved in a JSON argv, then in an error line); as Git Bash writes it; and as a directory name.
@@ -29,7 +39,7 @@ export function redactorOf(base: string, { username = userInfo().username, whole
     ...forms(base).map((form): [RegExp, string] => [new RegExp(form, 'gi'), '<recording>']),
     ...forms(CHECKOUT).map((form): [RegExp, string] => [new RegExp(form, 'gi'), '<gg>']),
     ...forms(homedir()).map((form): [RegExp, string] => [new RegExp(form, 'gi'), '<home>']),
-    [new RegExp(wholeName ? `(?<![\\w-])${escape(username)}(?![\\w-])` : escape(username), 'gi'), '<user>'],
+    ...(username === null ? [] : [nameRule(escape(username), wholeName)]),
     [/eyJ[\w-]+\.[\w-]+\.[\w-]+/g, '<jwt>'],
     [/sk-[\w-]{16,}/g, 'sk-<redacted>'],
     [/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '<email>'],
