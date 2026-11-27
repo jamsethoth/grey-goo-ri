@@ -104,6 +104,24 @@ test('a job holds a process only at the start it was linked at', options.WIN_CAS
   assert.ok(job.members().includes(entry.pid), 'adopted into the job');
 });
 
+// After a failed none save the watcher holds an escapee to end it, never to adopt it (#532 Q2 A).
+test("a job's hold to end a process ends it, unadopted", options.WIN_CASE, async (t) => {
+  const kernel32 = containment.openKernel32() as containment.Kernel32;
+  const { job } = await shellWithSleeper(t, kernel32);
+  const directory = mkdtempSync(join(tmpdir(), 'gg-hold-'));
+  const pidFile = join(directory, 'outside.pid');
+  spawn(process.execPath, [childScripts.LONG_LIVED, pidFile], { stdio: 'ignore' }).unref();
+  t.after(() => processProbe.endProcessIn(pidFile));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  await processProbe.waitFor(() => pidIn(pidFile) > 0, t.signal);
+  const entry = { pid: pidIn(pidFile), parentPid: process.pid, exe: 'node.exe' };
+  assert.equal(job.hold(entry, containment.startOf(kernel32, entry.pid) as bigint, 'end')?.held, true);
+  assert.ok(!job.members().includes(entry.pid), 'not adopted');
+  const gone = AbortSignal.any([t.signal, AbortSignal.timeout(10_000)]);
+  await processProbe.waitFor(() => !processProbe.alive(entry.pid), gone).catch(() => {});
+  assert.equal(processProbe.alive(entry.pid), false, 'ended');
+});
+
 // Every job gg creates, for a Check's shell runner, a launch and the suite launcher, sets kill-on-close alone, so a
 // child that asks to break away fails to start (ADR 0030 decision 1). Each entry gives the limit flags of every job it
 // set up. The suite launcher's job is never given this test process, as in test/contract/exec/run-suite.test.ts.

@@ -446,7 +446,7 @@ test('launch: a none report that throws ends the escapee unadopted and takes the
       },
     })
     .then(
-      ({ code }) => ({ outcome: 'resolved', code }),
+      ({ code, cancelled }) => ({ outcome: 'resolved', code, cancelled }),
       (err: Error) => ({ outcome: 'rejected', message: err.message }),
     );
   const adopted = () => [...attempts.values()].some((tried) => tried.includes('gg-job'));
@@ -462,6 +462,12 @@ test('launch: a none report that throws ends the escapee unadopted and takes the
       ended: tried.includes('terminate'),
       running: [...attempts.keys()].filter(alive),
     },
-    { reports: ['job', 'none'], outcome: { outcome: 'resolved', code: null }, adoptions: [], ended: true, running: [] },
+    {
+      reports: ['job', 'none'],
+      outcome: { outcome: 'resolved', code: null, cancelled: true },
+      adoptions: [],
+      ended: true,
+      running: [],
+    },
   );
 });

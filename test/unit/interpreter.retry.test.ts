@@ -451,7 +451,7 @@ for (const [name, matches] of [
 // A). `dies` is gg killed once the call has returned. The case wraps the fake's run, with no scripting key (Q4 A).
 function escapingRed(
   fixture: golden.GoldenFixture,
-  { later = [], dies = false }: { later?: string[]; dies?: boolean } = {},
+  { later = [], dies = false, rejects = false }: { later?: string[]; dies?: boolean; rejects?: boolean } = {},
 ) {
   const seen: string[] = [];
   const run = fixture.harness.run;
@@ -463,7 +463,9 @@ function escapingRed(
     } catch {
       seen.push('ended');
       fixture.harness.cancel();
-      return answer;
+      if (!rejects) return answer;
+      await answer;
+      throw new Error('the Harness rejected after it ended the call');
     }
     seen.push('adopted');
     for (const kind of later) hooks!.started({ kind });
@@ -536,8 +538,14 @@ test('a none save that is interrupted stops the Run before the escapee is adopte
 
 // The one fatal error after which gg performs an effect (ADR 0030 decision 2): the escapee ends first.
 test('a none save that fails ends the escapee, then stops the Run', async (t) => {
+  for (const rejects of [false, true])
+    await t.test(rejects ? 'the Harness rejects after it' : 'the Harness resolves', (t) => noneSaveFails(t, rejects));
+});
+
+// The save's error outranks the Harness's own rejection, which would hide it.
+async function noneSaveFails(t: TestContext, rejects: boolean) {
   const fixture = await escapingFixture(t);
-  const seen = escapingRed(fixture);
+  const seen = escapingRed(fixture, { rejects });
   let failed = false;
   caseDatabase.failSaves(t, (_saved, next) => {
     if (failed || !('execution' in next) || containmentIn(next, redFirst(fixture)) !== 'none') return false;
@@ -549,7 +557,7 @@ test('a none save that fails ends the escapee, then stops the Run', async (t) =>
   assert.deepEqual(writeAheadSteps(saved, redFirst(fixture)), ['intent'], "the call's result is never saved");
   assert.equal(savedContainment(fixture), 'job');
   assert.equal(actionEvent(fixture, 'red', 'red'), undefined, 'nor its Action Event');
-});
+}
 
 // Every `started` report after a `none` leaves it `none` and saves nothing (ADR 0030 decision 4): the stop path's late
 // `job`, after the take-down's last poll, and a second escapee's `none`.
