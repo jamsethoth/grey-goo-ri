@@ -1298,6 +1298,23 @@ null meant the key was left out.
   `plan: null` required (a `plan` key says there is a plan, and none can exist yet); per-key type checks in place of
   the one pass (`model: 7` still passes, a backlog item).
 
+## A call's containment and its escapees (2026-11-27)
+
+Taken by the owner with ADR 0030 (2026-11-22) and grey-goo-ri issue #532. The lines below amend L6 (`:920-921`), N1's
+research (`:834-835`) and the N1 and L14 amendment (`:1261-1262`), which stay as written.
+
+- L6, N1 and L14 amended. gg's job allows no breakaway (ADR 0030 decision 1), so no tool can break away from it, and
+  the residual risk those lines accept for one that does is gone. A process Windows starts outside the job, as it does
+  a packaged app's, is linked by the watcher, then adopted or ended (ADR 0030 decision 3). A call's containment is
+  `job` only while nothing it started has left gg's job (decision 4): the first process the watcher sees outside it
+  makes gg save the call's containment as `none` before it adopts or ends that process, and it stays `none`, so a
+  resume rescues and holds that call, never resets it in place. A failed `none` save makes gg end the escapee, then
+  stop the Run. A saved `job` then gives N1 and L14 the confirmation they ask for, but for decision 8's residual risk:
+  on Windows, a process outside gg's job that no poll saw before its parent ended or gg died, or one a poll saw whose
+  call's `none` save had not committed when gg died, or that gg failed to end after the save failed; a process a
+  service, WMI or the task scheduler starts on a command's behalf; and on Linux without a cgroup, a process that
+  leaves the process group and closes its stdio.
+
 ## Open
 
 - Step 2 is done: [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md).

@@ -528,6 +528,14 @@ test('cleanupReport: an uncontained command is always unconfirmed', () => {
   assert.match(report.reason as string, /uncontained/);
 });
 
+// The escapee may outlive gg's job, so a later Run must not take the job as proof (#532 Q3 A).
+test('cleanupReport: after an escapee, an unconfirmed cleanup reports none and a confirmed one keeps job', () => {
+  const escaped = { escaped: true };
+  const unconfirmed = commandCleanup.cleanupReport(JOB, { survivors: [SURVIVOR], cleanupErrors: [] }, escaped);
+  const confirmed = commandCleanup.cleanupReport(JOB, { survivors: [], cleanupErrors: [] }, escaped);
+  assert.deepEqual([unconfirmed.containment, confirmed.containment], [{ kind: 'none' }, JOB]);
+});
+
 test('a Check that ran no command names no process and no containment', () => {
   assert.deepEqual(commandCleanup.NO_COMMAND, { confirmed: true, survivors: [] });
 });
