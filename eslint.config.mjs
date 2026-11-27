@@ -73,7 +73,7 @@ const NO_MODULE_STATE = [
   },
 ];
 // gg's own code, not a test: throwIfNoEntry hides only a missing path, and one gg cannot read still throws (#548).
-const STAT_ERRORS = { selector: '[name=throwIfNoEntry],[value=throwIfNoEntry]', message: 'Catch every error.' };
+const STAT_ERRORS = '[name=throwIfNoEntry],[value=throwIfNoEntry],[value.cooked=throwIfNoEntry]';
 const CODE_SYNTAX = [...NO_MODULE_STATE, STAT_ERRORS];
 
 // A rule, not a selector: a selector cannot compare the class's name with the one it sets.

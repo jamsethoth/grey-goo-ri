@@ -29,12 +29,16 @@ test('lint fails throwIfNoEntry in lib, bin and scripts', async () => {
     assert.deepEqual(await lintFindings(filePath, text), ['no-restricted-syntax'], filePath);
 });
 
-// The option's name, wherever it is written: a quoted key fails the format check, but these two pass it.
-test('lint fails throwIfNoEntry as a computed key or a member assignment', async () => {
+// The option's name, wherever it is written: a quoted key fails the format check, but these pass it.
+test('lint fails throwIfNoEntry as a computed key, a member assignment or a template string', async () => {
   const forms = {
     computed:
       "import { lstatSync } from 'node:fs';\n\nexport const entry = lstatSync('x', { ['throwIfNoEntry']: false });\n",
     member: 'export const quiet = (options: Record<string, boolean>) => {\n  options.throwIfNoEntry = false;\n};\n',
+    templateKey:
+      "import { lstatSync } from 'node:fs';\n\nexport const entry = lstatSync('x', { [`throwIfNoEntry`]: false });\n",
+    templateMember:
+      'export const quiet = (options: Record<string, boolean>) => {\n  options[`throwIfNoEntry`] = false;\n};\n',
   };
   for (const [form, text] of Object.entries(forms))
     assert.deepEqual(await lintFindings('lib/sample.ts', text), ['no-restricted-syntax'], form);
