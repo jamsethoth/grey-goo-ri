@@ -204,7 +204,9 @@ test('a rollout that cannot be read is an unknown failure that keeps the launch,
   );
 });
 
-test("a call launches codex under the launch profile's Codex home and, with no limits of its own, the default ones", async (t) => {
+// gg runs Codex under its own Codex home, never the user's (ADR 0031), with the Claude Harness's default limits (#425
+// decision 3).
+test("a call launches codex in the profile's Codex home with the default limits when it sets none", async (t) => {
   const codex = codexHome(t);
   await codexRun.run(codex.runner, codex.runs, call(), hooks);
   const launch = codex.launches[0];
