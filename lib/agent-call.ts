@@ -38,21 +38,23 @@ const UNREPORTED: commandCleanup.CleanupReport = {
 // While an agent call runs its heartbeat is saved about every 60 s on the clock, the call's liveness signal. It proves
 // no file the agent's: an Interrupted Attempt's rescue keeps every change, before the last heartbeat or after (V9). A
 // heartbeat that cannot be saved stops and fails the call.
-async function withHeartbeat<Result>(runContext: RunContext, run: () => Promise<Result>): Promise<Result> {
+async function withHeartbeat<Result>(
+  runContext: RunContext,
+  saves: CallSaves,
+  run: () => Promise<Result>,
+): Promise<Result> {
   const executionRecord = runContext.record;
-  let failed: unknown = null;
   const stop = runContext.clock.every(60_000, () => {
     executionRecord.heartbeat = new Date(runContext.clock.now()).toISOString();
     try {
-      runContext.database.save(executionRecord);
-    } catch (err) {
-      failed ??= err;
+      saves.save();
+    } catch {
       stop();
     }
   });
   try {
     const result = await run();
-    if (failed) throw failed;
+    if (saves.failed) throw saves.failed;
     return result;
   } finally {
     stop();
@@ -108,21 +110,18 @@ export async function guardedCall(
   runContext.database.intent(executionRecord, call.marker as string, 'call', { baseline });
   // Neither side keeps an object the other may change: the Harness gets a copy of the call, and gg keeps a copy of the
   // answer, taken before anything reads or keeps it, since every save writes the whole record again.
-  const containment = savedContainment(runContext, call.marker as string);
-  const answered = await withHeartbeat(runContext, async () => {
-    // A started report that threw is the Run's stop, which the Harness answered by ending the call (Q2 A), so it
-    // outranks whatever the call gave.
-    let answer: Awaited<ReturnType<Harness['run']>>;
+  const saves = callSaves(runContext);
+  // A save that failed, the heartbeat's or a started report's, is the Run's stop, which the Harness answered by ending
+  // the call (Q2 A), so it outranks whatever the call gave.
+  const answered = await withHeartbeat(runContext, saves, async () => {
     try {
-      answer = await harness.run(structuredClone(call), {
-        started: containment.started,
+      return await harness.run(structuredClone(call), {
+        started: savedContainment(runContext, call.marker as string, saves),
         signal: runContext.runState.signal,
       });
     } catch (err) {
-      throw containment.failed ?? err;
+      throw saves.failed ?? err;
     }
-    if (containment.failed) throw containment.failed;
-    return answer;
   });
   // The job handle is no data, and a copy throws on a function it can see, so it comes off the report by name, however
   // the Harness attached it, and is carried over to close the call's processes.
@@ -146,24 +145,40 @@ export async function guardedCall(
 // the containment is known only once the call has started (N1). Unsaved, the Interrupted Attempt is held, never reset.
 // A `none`, an escapee seen outside gg's job, stays whatever is reported after it, so `job` proves no process ever left
 // the job (ADR 0030 decision 4). The report's error, thrown back to the Harness, is kept for guardedCall to rethrow.
-function savedContainment(runContext: RunContext, actionMarker: string) {
-  const containment: { started: (report: HarnessStarted) => void; failed: unknown } = {
-    failed: null,
-    started: ({ kind }) => {
-      const intended = writeAhead.findEntry(runContext.record, actionMarker, 'intent')!;
-      const payload = writeAhead.payloadOf(intended, writeAhead.readCallPayload);
-      if (payload.containment?.kind === 'none') return;
-      intended.payload = { ...payload, containment: { kind } };
+function savedContainment(runContext: RunContext, actionMarker: string, saves: CallSaves) {
+  return ({ kind }: HarnessStarted) => {
+    if (saves.failed) throw saves.failed;
+    const intended = writeAhead.findEntry(runContext.record, actionMarker, 'intent')!;
+    const payload = writeAhead.payloadOf(intended, writeAhead.readCallPayload);
+    if (payload.containment?.kind === 'none') return;
+    intended.payload = { ...payload, containment: { kind } };
+    try {
+      saves.save();
+      if (kind === 'none') effectErrors.crashPoint(runContext, actionMarker, 'after-none-saved');
+    } catch (err) {
+      saves.failed ??= err;
+      throw err;
+    }
+  };
+}
+
+// A call's record saves, its heartbeat's and its started reports': after one fails, or gg crashes in one, none is
+// tried again, since a failed save is fatal (effect-errors), and each rethrows the first error.
+type CallSaves = ReturnType<typeof callSaves>;
+function callSaves(runContext: RunContext) {
+  const saves = {
+    failed: null as unknown,
+    save: () => {
+      if (saves.failed) throw saves.failed;
       try {
         runContext.database.save(runContext.record);
-        if (kind === 'none') effectErrors.crashPoint(runContext, actionMarker, 'after-none-saved');
       } catch (err) {
-        containment.failed ??= err;
+        saves.failed = err;
         throw err;
       }
     },
   };
-  return containment;
+  return saves;
 }
 
 const othersOf = async ({ others: listed }: RunContext) =>

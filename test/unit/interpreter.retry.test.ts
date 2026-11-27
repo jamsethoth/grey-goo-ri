@@ -559,6 +559,59 @@ async function noneSaveFails(t: TestContext, rejects: boolean) {
   assert.equal(actionEvent(fixture, 'red', 'red'), undefined, 'nor its Action Event');
 }
 
+// A failed save is fatal (effect-errors): once one of red's call fails, the heartbeat's or a started report's, no save
+// of the record is tried again, an escapee found after it is ended, and the Run stops on that first error.
+test('after a save during a call fails, no save of the record is tried again', async (t) => {
+  const cases = [
+    ["the job report's save fails, then the take-down finds an escapee", 'job', ['none']],
+    ["the job report's save fails, then a heartbeat", 'job', ['beat']],
+    ["a heartbeat's save fails, then an escapee", 'beat', ['none']],
+  ] as const;
+  for (const [name, failing, next] of cases)
+    await t.test(name, async (t) => {
+      const fixture = await escapingFixture(t);
+      const seen: string[] = [];
+      let first: unknown = null;
+      let beating = false;
+      let triedAfter = 0;
+      caseDatabase.onSave(t, (saved) => {
+        if (!('execution' in saved)) return;
+        if (first) return void triedAfter++;
+        if (failing === 'beat' ? !beating : containmentIn(saved, redFirst(fixture)) !== 'job') return;
+        throw (first = new Error('disk I/O error'));
+      });
+      const run = fixture.harness.run;
+      fixture.harness.run = async (call, hooks) => {
+        const answer = run(call, hooks);
+        if (call.vertex !== 'red' || call.attempt !== 1) return answer;
+        answer.catch(() => {});
+        if (failing === 'beat') {
+          beating = true;
+          fixture.clock.beat();
+          beating = false;
+        }
+        for (const step of next) {
+          if (step === 'beat') fixture.clock.beat();
+          else
+            try {
+              hooks!.started({ kind: 'none' });
+              seen.push('adopted');
+            } catch {
+              seen.push('ended');
+            }
+        }
+        fixture.harness.cancel();
+        return answer;
+      };
+      await assert.rejects(
+        interpreter.runExecution(fixture.options),
+        (err) => err instanceof record.RecordSaveError && err.cause === first,
+      );
+      assert.equal(triedAfter, 0, 'no save is tried after the failed one');
+      if (next[0] === 'none') assert.deepEqual(seen, ['ended'], 'the escapee is ended, never adopted');
+    });
+});
+
 // Every `started` report after a `none` leaves it `none` and saves nothing (ADR 0030 decision 4): the stop path's late
 // `job`, after the take-down's last poll, and a second escapee's `none`.
 test('an Interrupted Attempt whose call had an escapee gg adopted is rescued and held, not reset', async (t) => {
