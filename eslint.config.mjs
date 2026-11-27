@@ -72,6 +72,9 @@ const NO_MODULE_STATE = [
       'parameter from the caller instead.',
   },
 ];
+// gg's own code, not a test: throwIfNoEntry hides only a missing path, and one gg cannot read still throws (#548).
+const STAT_ERRORS = { selector: "Property[key.name='throwIfNoEntry']", message: 'Catch every error, not just ENOENT.' };
+const CODE_SYNTAX = [...NO_MODULE_STATE, STAT_ERRORS];
 
 // A rule, not a selector: a selector cannot compare the class's name with the one it sets.
 // shortcut: a superclass behind a call or a computed key, `extends Mixin(Error)` or `extends exec['CommandError']`, is
@@ -352,14 +355,11 @@ export default defineConfig([
       'max-lines': ['error', 400],
       eqeqeq: ['error', 'always', { null: 'ignore' }],
       // Outside lib/, a lib/ module is any path through a lib directory.
-      'no-restricted-syntax': ['error', namespaceImport('/(^|[/])lib[/]/'), ...NO_MODULE_STATE],
+      'no-restricted-syntax': ['error', namespaceImport('/(^|[/])lib[/]/'), ...CODE_SYNTAX],
     },
   },
-  {
-    // Inside lib/, every relative import is a lib/ module.
-    files: ['lib/**/*.ts'],
-    rules: { 'no-restricted-syntax': ['error', namespaceImport('/^[.]/'), ...NO_MODULE_STATE] },
-  },
+  // Inside lib/, every relative import is a lib/ module.
+  { files: ['lib/**/*.ts'], rules: { 'no-restricted-syntax': ['error', namespaceImport('/^[.]/'), ...CODE_SYNTAX] } },
   {
     // `t` is node:test's test context, and only there.
     files: ['test/**/*.ts'],

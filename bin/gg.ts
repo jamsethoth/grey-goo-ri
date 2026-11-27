@@ -44,8 +44,13 @@ const realDeps = (gh: github.Gh) =>
 // working directory that is missing or a file as `spawn git ENOENT`, as if git were missing, so gg names it first.
 function repositoryPath(parsed: options.ParsedOptions) {
   const path = resolve((parsed.repo as string | undefined) ?? process.cwd());
-  if (statSync(path, { throwIfNoEntry: false })?.isDirectory() !== true)
-    throw new Error(`--repo ${path}: not a directory`);
+  let directory = false;
+  try {
+    directory = statSync(path).isDirectory();
+  } catch {
+    // A path gg cannot read (missing, an unreachable share, a link loop) is not a directory to act on (#548).
+  }
+  if (!directory) throw new Error(`--repo ${path}: not a directory`);
   return path;
 }
 
