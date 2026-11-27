@@ -136,8 +136,13 @@ for (const [fate, steps] of Object.entries(HOLD_STEPS) as [keyof typeof HOLD_STE
 
 // After a failed none save the watcher holds an escapee to end it, never to adopt it (#532 Q2 A).
 test("a job's hold to end a process ends it, unadopted", options.WIN_CASE, async (t) => {
-  const kernel32 = containment.openKernel32() as containment.Kernel32;
+  const real = kernel32Doubles.realKernel32 as containment.Kernel32;
+  const assigned: unknown[] = [];
+  const kernel32 = kernel32Doubles.withKernel32({
+    AssignProcessToJobObject: (job, handle) => (assigned.push(handle), real.AssignProcessToJobObject(job, handle)),
+  });
   const { job } = await shellWithSleeper(t, kernel32);
+  assigned.length = 0;
   const directory = mkdtempSync(join(tmpdir(), 'gg-hold-'));
   const pidFile = join(directory, 'outside.pid');
   spawn(process.execPath, [childScripts.LONG_LIVED, pidFile], { stdio: 'ignore' }).unref();
@@ -147,6 +152,7 @@ test("a job's hold to end a process ends it, unadopted", options.WIN_CASE, async
   const entry = { pid: pidIn(pidFile), parentPid: process.pid, exe: 'node.exe' };
   assert.equal(job.hold(entry, containment.startOf(kernel32, entry.pid) as bigint, 'end')?.held, true);
   assert.ok(!job.members().includes(entry.pid), 'not adopted');
+  assert.deepEqual(assigned, [], 'never put in a job');
   const gone = AbortSignal.any([t.signal, AbortSignal.timeout(10_000)]);
   await processProbe.waitFor(() => !processProbe.alive(entry.pid), gone).catch(() => {});
   assert.equal(processProbe.alive(entry.pid), false, 'ended');
