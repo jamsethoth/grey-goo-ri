@@ -1,15 +1,18 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import type * as events from '../../lib/events.ts';
 import * as github from '../../lib/github.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
+import * as record from '../../lib/record.ts';
 import * as stateDatabase from '../../lib/state-database/index.ts';
 import * as sideEffect from '../../lib/effects/side-effect.ts';
+import * as caseDatabase from '../support/case-database.ts';
 import * as golden from '../support/golden.ts';
 import {
   actionEvent,
   attemptMarker,
+  intents,
   loadTicket,
   originSha,
   runStopEvent,
@@ -441,3 +444,130 @@ for (const [name, matches] of [
     assert.equal(loadTicket(fixture).retries[REVIEW_COMMENT].remote!.count, 2);
   });
 }
+
+// An escapee of red's first call (#532, ADR 0030 decision 4): the call reports `job`, as the fake does, then the
+// watcher's first sight of a process outside gg's job reports `none`. Once that report returns, the escapee is adopted
+// and each `later` report follows; when it throws, the escapee is ended and the call taken down, as a Harness must (Q2
+// A). `dies` is gg killed once the call has returned. The case wraps the fake's run, with no scripting key (Q4 A).
+function escapingRed(
+  fixture: golden.GoldenFixture,
+  { later = [], dies = false }: { later?: string[]; dies?: boolean } = {},
+) {
+  const seen: string[] = [];
+  const run = fixture.harness.run;
+  fixture.harness.run = async (call, hooks) => {
+    const answer = run(call, hooks);
+    if (call.vertex !== 'red' || call.attempt !== 1) return answer;
+    try {
+      hooks!.started({ kind: 'none' });
+    } catch {
+      seen.push('ended');
+      fixture.harness.cancel();
+      return answer;
+    }
+    seen.push('adopted');
+    for (const kind of later) hooks!.started({ kind });
+    if (!dies) return answer;
+    await answer;
+    throw new interpreter.CrashError(`gg was killed during ${call.marker as string}`);
+  };
+  return seen;
+}
+
+// red answers its first call and, should a resume retry it, its second.
+const redCall = (attempt: number) => keys.responseKey({ vertex: 'red', visit: 1, action: 'red', attempt });
+const escapingFixture = (t: TestContext) =>
+  golden.fixture(t, {
+    responses: { ...golden.firstVisitResponses, [redCall(2)]: golden.firstVisitResponses[redCall(1)]! },
+  });
+const redFirst = (fixture: golden.GoldenFixture) => attemptMarker(fixture, 'red', 1, 'red', 0, 1);
+
+// The containment red's first call intent holds, in a record about to be saved or as saved.
+const containmentIn = (executionRecord: record.ExecutionRecord, actionMarker: string) =>
+  (
+    intents(executionRecord, 'call').find((entry) => entry.actionMarker === actionMarker)?.payload as
+      { containment?: { kind: string } } | undefined
+  )?.containment?.kind ?? null;
+const savedContainment = (fixture: golden.GoldenFixture) => containmentIn(loadTicket(fixture), redFirst(fixture));
+
+const crashed = (err: unknown) => err instanceof interpreter.CrashError;
+
+// The next Run rescues red's Interrupted Attempt and holds it: one of its processes may still write (N1, L6).
+async function assertRescuedAndHeld(fixture: golden.GoldenFixture) {
+  const result = await interpreter.runExecution({ ...fixture.options, record: loadTicket(fixture) });
+  assert.equal(result.held, true, JSON.stringify(result));
+  const saved = loadTicket(fixture);
+  assert.equal(intents(saved, 'rescue').length, 1, 'the work is rescued');
+  assert.deepEqual(intents(saved, 'reset'), [], 'and not reset');
+  assert.match(saved.terminalReason?.text ?? '', /nothing was reset/);
+  assert.equal(fixture.harness.calls.filter((call) => call.marker?.includes(':red:')).length, 1, 'nothing was retried');
+}
+
+test('a crash after the none save commits holds the Interrupted Attempt', async (t) => {
+  const fixture = await escapingFixture(t);
+  const seen = escapingRed(fixture);
+  await assert.rejects(
+    interpreter.runExecution({ ...fixture.options, crashAt: { marker: redFirst(fixture), point: 'after-none-saved' } }),
+    crashed,
+  );
+  assert.equal(seen.includes('adopted'), false, 'gg died before it adopted the escapee');
+  assert.equal(savedContainment(fixture), 'none', 'the none save committed');
+  await assertRescuedAndHeld(fixture);
+});
+
+// The save comes first (ADR 0005), so gg dying inside it leaves the escapee as the watcher found it: ADR 0030 decision
+// 8's residual risk. A save cut off is a RecordSaveError, whose cause is the crash.
+test('a none save that is interrupted stops the Run before the escapee is adopted or ended', async (t) => {
+  const fixture = await escapingFixture(t);
+  const seen = escapingRed(fixture);
+  let atCrash: string[] | null = null;
+  caseDatabase.onSave(t, (next) => {
+    if (atCrash || !('execution' in next) || containmentIn(next, redFirst(fixture)) !== 'none') return;
+    atCrash = [...seen];
+    throw new interpreter.CrashError('gg was killed during the none save');
+  });
+  await assert.rejects(
+    interpreter.runExecution(fixture.options),
+    (err) => err instanceof record.RecordSaveError && err.cause instanceof interpreter.CrashError,
+  );
+  assert.deepEqual(atCrash, [], 'neither adopted nor ended while the save ran');
+  assert.equal(savedContainment(fixture), 'job', 'the call stays job');
+});
+
+// The one fatal error after which gg performs an effect (ADR 0030 decision 2): the escapee ends first.
+test('a none save that fails ends the escapee, then stops the Run', async (t) => {
+  const fixture = await escapingFixture(t);
+  const seen = escapingRed(fixture);
+  let failed = false;
+  caseDatabase.failSaves(t, (_saved, next) => {
+    if (failed || !('execution' in next) || containmentIn(next, redFirst(fixture)) !== 'none') return false;
+    return (failed = true);
+  });
+  await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof record.RecordSaveError);
+  assert.deepEqual(seen, ['ended'], 'the escapee was ended, never adopted');
+  const saved = loadTicket(fixture);
+  assert.deepEqual(writeAheadSteps(saved, redFirst(fixture)), ['intent'], "the call's result is never saved");
+  assert.equal(savedContainment(fixture), 'job');
+  assert.equal(actionEvent(fixture, 'red', 'red'), undefined, 'nor its Action Event');
+});
+
+// Every `started` report after a `none` leaves it `none` and saves nothing (ADR 0030 decision 4): the stop path's late
+// `job`, after the take-down's last poll, and a second escapee's `none`.
+test('an Interrupted Attempt whose call had an escapee gg adopted is rescued and held, not reset', async (t) => {
+  for (const [name, later] of [
+    ["a late job report from the call's stop", 'job'],
+    ["a second escapee's none", 'none'],
+  ] as const)
+    await t.test(name, async (t) => {
+      const fixture = await escapingFixture(t);
+      const seen = escapingRed(fixture, { later: [later], dies: true });
+      let laterSaves = 0;
+      caseDatabase.onSave(t, () => {
+        if (seen.includes('adopted')) laterSaves++;
+      });
+      await assert.rejects(interpreter.runExecution(fixture.options), crashed);
+      assert.equal(savedContainment(fixture), 'none', "the escapee's none stays");
+      assert.equal(laterSaves, 0, 'a report after none saves nothing');
+      await assertRescuedAndHeld(fixture);
+    });
+});
