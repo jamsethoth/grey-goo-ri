@@ -94,6 +94,24 @@ test('a resume sends the Brief alone, and one whose rollout is missing discards 
   assert.match(failure?.message ?? '', /rollout of resumed thread thread-0 is missing/);
 });
 
+// The listings run under the call's cancel signal, so a cancel ends the call there (F15).
+test('a call cancelled while its launch lists is killed and starts no command', async (t) => {
+  const controller = new AbortController();
+  const codex = codexHome(t, {
+    prepare: () => {
+      controller.abort();
+      throw new Error('codex plugin list --json printed no JSON');
+    },
+  });
+  const { response, result, failure } = await codexRun.run(codex.runner, codex.runs, call(), {
+    ...hooks,
+    signal: controller.signal,
+  });
+  assert.equal(codex.launches.length, 0);
+  assert.equal(response, null);
+  assert.deepEqual({ status: result.status, failure }, { status: 'killed', failure: null });
+});
+
 test('a launch that cannot be prepared is an unknown failure that started no command', async (t) => {
   const codex = codexHome(t, {
     prepare: () => {

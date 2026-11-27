@@ -24,10 +24,10 @@ export interface RunCall extends codex.CodexCall {
 }
 
 // What the Harness gives run: gg's Codex home, which holds the rollouts, and the launch profile's launch of a call,
-// which fails when a listing does or Codex lacks a tool the call lists.
+// under its cancel signal, which fails when a listing does or Codex lacks a tool the call lists.
 export interface Runs {
   codexHome: string;
-  launch: (call: RunCall) => Promise<codex.Launch>;
+  launch: (call: RunCall, signal: AbortSignal) => Promise<codex.Launch>;
 }
 
 type RunResult = Awaited<ReturnType<runContext.Harness['run']>>;
@@ -54,11 +54,17 @@ function usageOf(stream: codexStream.CodexStream, previous: events.Usage | null)
   return { cumulative: { ...cumulative, costBasis: null }, delta: { ...delta, costBasis: null } };
 }
 
-// A call that started no `codex exec`: its launch could not be built, or its executable could not start.
-function unstarted(failure: visit.HarnessFailure | null, stream: codexStream.CodexStream, call: RunCall): RunResult {
+// A call that started no `codex exec`: its launch could not be built, a cancel came first, or its executable could not
+// start.
+function unstarted(
+  failure: visit.HarnessFailure | null,
+  stream: codexStream.CodexStream,
+  call: RunCall,
+  status: 'failed' | 'killed' = 'failed',
+): RunResult {
   const usage = usageOf(stream, call.previousUsage);
   const result = {
-    status: 'failed' as const,
+    status,
     sessionId: null,
     transcriptPath: null,
     usage,
@@ -92,8 +98,8 @@ function finalMessage(path: string): jsonValue.JsonValue {
 }
 
 // The launch with its files written, and no final message left from an earlier try at the same Attempt.
-async function prepared(runs: Runs, call: RunCall) {
-  const launched = await runs.launch(call);
+async function prepared(runs: Runs, call: RunCall, signal: AbortSignal) {
+  const launched = await runs.launch(call, signal);
   for (const [path, text] of Object.entries(launched.files)) writeFileSync(path, text);
   rmSync(launched.lastMessage, { force: true });
   return launched;
@@ -158,9 +164,11 @@ export async function run(
   call: RunCall,
   hooks: runContext.HarnessHooks,
 ): Promise<RunResult> {
-  const launched = await prepared(runs, call).catch((err: unknown) =>
+  const launched = await prepared(runs, call, hooks.signal).catch((err: unknown) =>
     err instanceof Error ? err : new Error(String(err)),
   );
+  // A cancel during the listings ends the call killed, and starts no codex exec.
+  if (hooks.signal.aborted) return unstarted(null, codexStream.read([]), call, 'killed');
   if (launched instanceof Error) return unstarted(unknownFailure(launched.message), codexStream.read([]), call);
   const called = await cliCall.run(runner, hooks, {
     launch: {

@@ -19,6 +19,20 @@ test('each listing runs under the probe wall limit, not the cheap one', async ()
   );
 });
 
+// A cancel of the call stops its listings at once, not after their wall limit (F15).
+test("each listing runs under the call's cancel signal", async () => {
+  const cli = cliReplay.replayLaunch((args) => ({
+    stdout: args[0] === 'plugin' ? '{"installed":[]}' : '[]',
+    exitCode: 0,
+  }));
+  const { signal } = new AbortController();
+  await codex.list(cli, 'codex-home', signal);
+  assert.deepEqual(
+    cli.launches.map((launch) => launch.signal),
+    [signal, signal],
+  );
+});
+
 // A plugin's servers stay out of the server listing, as feature-flow listed them (#481 D9 B).
 test('the plugin listing runs as is and the server listing with the plugins feature off', async () => {
   const cli = cliReplay.replayLaunch((args) => ({

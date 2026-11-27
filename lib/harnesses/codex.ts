@@ -108,7 +108,7 @@ type Runner = Pick<exec.Exec, 'launch' | 'childInJob'>;
 
 // What a listing printed, parsed; a failure or no JSON is an error naming the command, never an empty list, which
 // would leave every plugin and server on (ported, feature-flow 89e1d67 lib/toolkit.mjs:79-96).
-async function listed(runner: Runner, home: string, args: string[]): Promise<{ command: string; data: unknown }> {
+async function listed(runner: Runner, home: string, args: string[], signal?: AbortSignal) {
   const command = ['codex', ...args].join(' ');
   // The plugin listing reads OpenAI's catalog and once took 87 s, past the cheap limit (#481 F16).
   const ran = await cliDoctor.said(runner, {
@@ -116,6 +116,7 @@ async function listed(runner: Runner, home: string, args: string[]): Promise<{ c
     args,
     env: { CODEX_HOME: home },
     wallMs: cliDoctor.PROBE_WALL_MS,
+    signal,
   });
   const reason = cliDoctor.reasonOf(ran);
   if (reason !== null) throw new Error(`${command} failed: ${reason}`);
@@ -133,10 +134,10 @@ const PLUGIN_KEYS = ['pluginId', 'name', 'marketplaceName', 'version'];
 
 // The installed plugins and MCP servers, listed afresh, both at once. The server listing leaves out a plugin's servers,
 // which Q3 C refuses and whose launch entry failed Codex's configuration load in feature-flow (#481 D9 B).
-export async function list(runner: Runner, home: string): Promise<Listings> {
+export async function list(runner: Runner, home: string, signal?: AbortSignal): Promise<Listings> {
   const [plugins, servers] = await Promise.all([
-    listed(runner, home, ['plugin', 'list', '--json']),
-    listed(runner, home, ['mcp', 'list', '--json', '-c', 'features.plugins=false']),
+    listed(runner, home, ['plugin', 'list', '--json'], signal),
+    listed(runner, home, ['mcp', 'list', '--json', '-c', 'features.plugins=false'], signal),
   ]);
   const installed = referencePaths.isRecord(plugins.data) ? plugins.data.installed : undefined;
   if (!Array.isArray(installed) || !installed.every((entry) => filled(entry, PLUGIN_KEYS)))
@@ -377,14 +378,16 @@ export const createCli = (
   let listing: Promise<Listings> | undefined;
   const listOnce = () => (listing ??= list(runner, home));
   const homes = { codexHome: home, skillsHome: skills };
-  const launch = async (call: codexRun.RunCall) => launchArgsIn(homes, call, call.tools, await list(runner, home));
+  const launch = async (call: codexRun.RunCall, signal: AbortSignal) =>
+    launchArgsIn(homes, call, call.tools, await list(runner, home, signal));
   return {
     run: (call: Record<string, unknown>, hooks: runContext.HarnessHooks) =>
       codexRun.run(runner, { codexHome: home, launch }, call as unknown as codexRun.RunCall, hooks),
     interactiveArgs: notImplemented as (agent: unknown, opening: string, options?: unknown) => string[],
     metrics: notImplemented as (session: string) => null,
     validate: (agent: unknown) => validateIn(listOnce, homes, agent),
-    // The probes launch over the listing a Run's call gets, so a server the probe Agent does not list is off (D17 A).
+    // The probes launch over a listing like the one each Run's call takes, so a server the probe Agent does not list
+    // is off (D17 A).
     doctor: (options: runContext.DoctorOptions) =>
       codexDoctor.doctor(runner, options, {
         home,
