@@ -7,12 +7,13 @@ import * as referencePaths from '../reference-paths.ts';
 import type * as visit from '../visit.ts';
 
 // The last turn.completed's usage: the thread's cumulative total, mapped to the Usage token rules (request 3.7).
+// A count the usage leaves out is null, never 0 (decision 3).
 export interface Totals {
-  inputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  outputTokens: number;
-  reasoningTokens: number;
+  inputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  outputTokens: number | null;
+  reasoningTokens: number | null;
 }
 
 // A call's stream, read. `failure` is null only for a stream whose last turn event is turn.completed.
@@ -37,9 +38,10 @@ type Line = Record<string, unknown>;
 
 // Each failure text Codex 0.171 ends a turn with, by its Failure Class, the first match winning; any other is unknown
 // (Q2 A: codex-rs/codex-api/src/api_bridge.rs and codex-rs/protocol/src/error.rs at rust-v0.171.0). The stream carries
-// a message only, with no code. Codex has no spend limit of its own (budget), and no text gives a wait gg could honour.
+// a message only, with no code, and writes a status as "unexpected status N" or "last status: N". Codex has no spend
+// limit of its own (budget), and no text gives a wait gg could honour.
 const FAILURE_CLASSES: [string, (string | RegExp)[]][] = [
-  ['auth', [/unexpected status 401\b/, /last status: 401\b/]],
+  ['auth', [/(?:unexpected status|last status:) 401\b/]],
   [
     'quota',
     [
@@ -50,7 +52,7 @@ const FAILURE_CLASSES: [string, (string | RegExp)[]][] = [
       'To use Codex with your ChatGPT plan',
     ],
   ],
-  ['rate-limited', [/last status: 429\b/, 'rate limit exceeded:']],
+  ['rate-limited', [/(?:unexpected status|last status:) 429\b/, 'rate limit exceeded:']],
   [
     'transient',
     [
@@ -58,7 +60,7 @@ const FAILURE_CLASSES: [string, (string | RegExp)[]][] = [
       'We’re currently experiencing high demand',
       'stream disconnected before completion',
       'Connection failed:',
-      /last status: 5\d\d\b/,
+      /(?:unexpected status|last status:) 5\d\d\b/,
     ],
   ],
 ];
@@ -82,18 +84,19 @@ function parsed(line: string): Line | null {
 }
 
 const linesOf = (lines: string[]) => lines.map(parsed).filter((line) => line !== null);
-const numberOf = (value: unknown) => (typeof value === 'number' ? value : 0);
+const numberOf = (value: unknown) => (typeof value === 'number' ? value : null);
 const stringOf = (value: unknown) => (typeof value === 'string' ? value : null);
 const recordOf = (value: unknown): Line => (referencePaths.isRecord(value) ? value : {});
 
-// Codex's input_tokens holds its cached and cache-write tokens, and output_tokens its reasoning tokens, which are
-// reported beside it and never added again.
+// Codex's input_tokens holds its cached and cache-write tokens, since Codex reads both from the API's
+// `input_tokens_details`, a breakdown of input_tokens (codex-rs/codex-api/src/sse/responses.rs at rust-v0.171.0), and
+// output_tokens its reasoning tokens, which are reported beside it and never added again.
 function totalsOf(usage: Line): Totals {
-  const [input, cached, written] = ['input_tokens', 'cached_input_tokens', 'cache_write_input_tokens'].map((key) =>
-    numberOf(usage[key]),
-  ) as [number, number, number];
+  const input = numberOf(usage.input_tokens);
+  const cached = numberOf(usage.cached_input_tokens);
+  const written = numberOf(usage.cache_write_input_tokens);
   return {
-    inputTokens: input - cached - written,
+    inputTokens: input === null || cached === null ? null : input - cached - (written ?? 0),
     cacheReadTokens: cached,
     cacheWriteTokens: written,
     outputTokens: numberOf(usage.output_tokens),

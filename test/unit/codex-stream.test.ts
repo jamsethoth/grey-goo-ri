@@ -52,6 +52,41 @@ test('codexUsage takes the last cumulative turn.completed and does not double-co
   });
 });
 
+// Decision 3: a count the stream never reported is null, never zero; inputTokens is the rest of input_tokens, so it is
+// null when input_tokens or cached_input_tokens is missing.
+test('a turn.completed that leaves a count out reports it null', () => {
+  const usage = {
+    input_tokens: 150,
+    cached_input_tokens: 60,
+    cache_write_input_tokens: 10,
+    output_tokens: 9,
+    reasoning_output_tokens: 4,
+  };
+  const totalsWithout = (key: string | null) => {
+    const left = Object.fromEntries(Object.entries(usage).filter(([name]) => name !== key));
+    return codexStream.read([line(key === null ? { type: 'turn.completed' } : { type: 'turn.completed', usage: left })])
+      .totals;
+  };
+  const full = { inputTokens: 80, cacheReadTokens: 60, cacheWriteTokens: 10, outputTokens: 9, reasoningTokens: 4 };
+  assert.deepEqual(
+    Object.keys(usage).map((key) => totalsWithout(key)),
+    [
+      { ...full, inputTokens: null },
+      { ...full, inputTokens: null, cacheReadTokens: null },
+      { ...full, inputTokens: 90, cacheWriteTokens: null },
+      { ...full, outputTokens: null },
+      { ...full, reasoningTokens: null },
+    ],
+  );
+  assert.deepEqual(totalsWithout(null), {
+    inputTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    outputTokens: null,
+    reasoningTokens: null,
+  });
+});
+
 test('a stream with no turn.completed reports no totals', () => {
   assert.equal(codexStream.read(recordedLines('usage-limit')).totals, null);
 });
@@ -122,6 +157,38 @@ const RECORDED_CLASSES: Record<string, string> = {
   'usage-limit': 'quota',
 };
 
+// Each HTTP status Codex 0.171 classes, in both texts its source writes a status in (api_bridge.rs's UnexpectedStatus
+// and RetryLimit), each ending a turn through turn.failed and through a last error event.
+const STATUS_CLASSES: [string, string][] = [
+  ['401 Unauthorized', 'auth'],
+  ['429 Too Many Requests', 'rate-limited'],
+  ['500 Internal Server Error', 'transient'],
+  ['502 Bad Gateway', 'transient'],
+  ['503 Service Unavailable', 'transient'],
+  ['504 Gateway Timeout', 'transient'],
+];
+const statusTexts = (status: string) => [
+  `unexpected status ${status}: upstream body, url: x`,
+  `exceeded retry limit, last status: ${status}, request id: req_4`,
+];
+const endedBy = (message: string) => ({
+  'turn.failed': [line({ type: 'turn.started' }), line({ type: 'turn.failed', error: { message } })],
+  error: [line({ type: 'turn.started' }), line({ type: 'error', message })],
+});
+
+// Each status text, through each event, whose Failure Class or retry delay is not its source's.
+function misclassedStatuses() {
+  const broken: string[] = [];
+  for (const [status, failureClass] of STATUS_CLASSES)
+    for (const message of statusTexts(status))
+      for (const [event, lines] of Object.entries(endedBy(message))) {
+        const failure = codexStream.read(lines).failure;
+        if (failure?.failureClass !== failureClass || failure.retryAfterMs !== null)
+          broken.push(`${event} ${message}: ${JSON.stringify(failure)}, not ${failureClass}`);
+      }
+  return broken;
+}
+
 test('every failure text of Codex 0.171 is classed as its source says, with no retry delay', () => {
   const recorded = readdirSync(FIXTURES)
     .filter((file) => file.endsWith('.jsonl') && !file.endsWith('.rollout.jsonl'))
@@ -134,6 +201,7 @@ test('every failure text of Codex 0.171 is classed as its source says, with no r
     if (failure?.failureClass !== failureClass || failure.retryAfterMs !== null || failure.message !== message)
       broken.push(`${message}: ${JSON.stringify(failure)}, not ${failureClass}`);
   }
+  broken.push(...misclassedStatuses());
   for (const [name, failureClass] of Object.entries(RECORDED_CLASSES)) {
     const failure = codexStream.read(recordedLines(name)).failure;
     if (failure?.failureClass !== failureClass) broken.push(`${name}: ${failure?.failureClass}, not ${failureClass}`);
