@@ -4,7 +4,8 @@
 // test/fixtures/codex/<name>.jsonl, the command that made them, each line's arrival time and what the call left behind
 // in <name>.json, and its session file, trimmed and redacted, in <name>.rollout.jsonl. Each command that is no model
 // call runs once, and its argv, exit code and output land in <name>.json. It calls the real CLI and spends the
-// subscription's usage: run it to re-record a new Codex version, never from a test.
+// subscription's usage: run it to re-record a new Codex version, never from a test. The name `example` instead records
+// the example's first-visit pass through gg (scripts/record-codex-example.ts, #482), alone.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -13,7 +14,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as commandShim from '../lib/command-shim.ts';
 import * as containment from '../lib/containment.ts';
+import * as cliRecording from './cli-recording.ts';
 import { type CliCommand, COMMANDS } from './record-codex-commands.ts';
+import * as recordCodexExample from './record-codex-example.ts';
 import * as homeGuard from './record-codex-home.ts';
 import * as harnessLaunch from './record-codex-launch.ts';
 import * as redaction from './record-codex-redaction.ts';
@@ -30,7 +33,8 @@ const USAGE = `usage: node scripts/record-codex.ts [name ...]
   no name: every scenario but a kept thread's fork, in order (a resume or fork needs the one it continues), then
   every command
   scenarios: ${SCENARIOS.map((scenario) => scenario.name).join(', ')}
-  commands, none a model call: ${COMMANDS.map((command) => command.name).join(', ')}`;
+  commands, none a model call: ${COMMANDS.map((command) => command.name).join(', ')}
+  example, alone: the example's first-visit pass through gg, one call each agent Action (3 model calls)`;
 const { MODEL, SCHEMA } = harnessLaunch;
 const GG_CODEX_HOME = join(process.env.GG_HOME || join(homedir(), '.agents', 'gg'), 'codex');
 
@@ -63,9 +67,6 @@ function profile(
   ];
   return keys.flatMap((key) => ['-c', key]);
 }
-
-const fill = (text: string, values: Record<string, string>) =>
-  text.replace(/\{(\w+)\}/g, (whole, key: string) => values[key] ?? whole);
 
 // How the call starts: a new thread, or the thread it continues resumed or forked, with --sandbox and -C on exec
 // before resume or fork (request 3.2) except for the resume that sets its sandbox by -c after resume and the fork that
@@ -103,7 +104,7 @@ function argvOf(
     ...headOf(scenario, directories.repo, from?.threadId ?? ''),
     ...profile(directories.repo, { ...scenario, hooks: scenario.hooks?.enabled }),
     ...mcp,
-    ...(scenario.config ?? []).flatMap((key) => ['-c', fill(key, values)]),
+    ...(scenario.config ?? []).flatMap((key) => ['-c', cliRecording.fill(key, values)]),
     ...hooks,
     ...(scenario.extraArgv ?? []),
     '--json',
@@ -256,16 +257,11 @@ function save(name: string, redact: (text: string) => string, lines: string[], m
 }
 
 const INHERITED = /^(?:CLAUDE|ANTHROPIC|CODEX|OPENAI)/;
-const environmentWith = (env: Record<string, string>) => ({
-  ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !INHERITED.test(key))),
-  ...env,
-});
-
 function codexSync(argv: string[], options: { cwd?: string; env: Record<string, string> }) {
   const { command, args } = commandShim.argvOf('codex', argv);
   return spawnSync(command, args, {
     ...options,
-    env: environmentWith(options.env),
+    env: cliRecording.environmentOf(INHERITED, options.env),
     encoding: 'utf8',
     timeout: 120_000,
   });
@@ -306,7 +302,7 @@ function recordCommand(command: CliCommand, cliVersion: string, base: string) {
   const split = command.argv[0] === 'debug' ? 2 : 0;
   const extra = command.profile || command.trusted ? profileFor(command, directories.repo) : [];
   const argv = [...command.argv.slice(0, split), ...extra, ...command.argv.slice(split)].map((arg) =>
-    fill(arg, { base: directories.base.replaceAll('\\', '/') }),
+    cliRecording.fill(arg, { base: directories.base.replaceAll('\\', '/') }),
   );
   const ran = codexSync(argv, { cwd: directories.repo, env: { CODEX_HOME: home } });
   const isPromptInput = split === 2 && ran.status === 0;
@@ -367,6 +363,14 @@ function chosenOf(names: string[]) {
 }
 
 async function main(names: string[]) {
+  if (names.includes('example'))
+    return recordCodexExample.recordExample(names, {
+      usage: USAGE,
+      inherited: INHERITED,
+      output: OUTPUT,
+      save,
+      writeLines,
+    });
   const chosen = chosenOf(names);
   if ('error' in chosen) {
     console.error(chosen.error);

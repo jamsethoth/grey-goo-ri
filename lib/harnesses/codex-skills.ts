@@ -36,6 +36,16 @@ export function skillAt(directory: string, prefix = ''): Skill | undefined {
   return { name: prefix + (fields.name || basename(directory)), description: fields.description ?? '', file };
 }
 
+// The skills an Agent declares, each a folder of the user's skills folder, and every one not found there (D2 A).
+export function declared(skillsFolder: string, names: unknown) {
+  const asked = Array.isArray(names) ? names.filter((name) => typeof name === 'string') : [];
+  const lookedUp = asked.map((name) => [name, skillAt(join(skillsFolder, name))] as const);
+  return {
+    skills: lookedUp.flatMap(([, skill]) => skill ?? []),
+    errors: lookedUp.flatMap(([name, skill]) => (skill ? [] : [`skill ${name} is not in ${skillsFolder}`])),
+  };
+}
+
 // A skill whose agents/openai.yaml sets policy.allow_implicit_invocation false is one Codex leaves out of its own
 // list and uses only when asked for by name (#481 D7 A).
 // shortcut: the flow form (policy: {allow_implicit_invocation: false}) and a deeper key of the same name are not told

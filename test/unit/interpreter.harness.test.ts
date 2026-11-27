@@ -175,6 +175,25 @@ test("the fake's agent Action Event holds null for the digest, CLI version, mode
   );
 });
 
+// The contract lets a Harness leave out what its stream does not report, as Codex leaves out sessionInit (#482).
+const LEFT_OUT = ['exitCode', 'exitSignal', 'finalEventSubtype', 'sessionInit', 'permissionDenials', 'commandsRun'];
+
+test("an agent Action Event holds null for each diagnostic field the Harness's result leaves out", async (t) => {
+  const fixture = await golden.fixture(t);
+  const run = fixture.harness.run;
+  fixture.harness.run = async (call, hooks) => {
+    const ran = await run(call, hooks);
+    for (const key of LEFT_OUT) Reflect.deleteProperty(ran.result, key);
+    return ran;
+  };
+  await interpreter.runExecution(fixture.options);
+  const event = actionEvent(fixture, 'red', 'red') as unknown as Record<string, unknown>;
+  assert.deepEqual(
+    Object.fromEntries(LEFT_OUT.map((key) => [key, event[key]])),
+    Object.fromEntries(LEFT_OUT.map((key) => [key, null])),
+  );
+});
+
 // The Run's signal is aborted once the hung call has started. A call given no signal is released by cancel() instead,
 // so the case fails on its assertion, never hangs; a fake that ignored the signal would hang to the case timeout.
 test('an aborted signal resolves a hung call as killed', { timeout: 60_000 }, async (t) => {

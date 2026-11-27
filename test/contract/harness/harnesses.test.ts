@@ -24,6 +24,8 @@ const NOT_HARNESSES = [
   'codex-doctor.ts',
   'codex-plugins.ts',
   'codex-skills.ts',
+  'codex-stream.ts',
+  'codex-run.ts',
   'ask-session.ts',
   'cli-call.ts',
   'cli-doctor.ts',

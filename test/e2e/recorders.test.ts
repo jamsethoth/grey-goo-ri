@@ -38,3 +38,17 @@ for (const recorder of ['record-codex', 'record-claude']) {
     assert.match(result.stderr, new RegExp(`^usage: node scripts/${recorder}\\.ts`));
   });
 }
+
+// `example` runs the pass alone: with another name, a recorder prints so and exits 2 before any CLI is called.
+for (const recorder of ['record-codex', 'record-claude']) {
+  test(`${recorder} example with another name prints that it records alone`, () => {
+    const script = fileURLToPath(new URL(`../../scripts/${recorder}.ts`, import.meta.url));
+    const result = spawnSync(process.execPath, [script, 'example', '--help'], {
+      encoding: 'utf8',
+      env: environment,
+      timeout: 60_000,
+    });
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, new RegExp(`^example records alone\\nusage: node scripts/${recorder}\\.ts`));
+  });
+}

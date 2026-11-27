@@ -337,7 +337,8 @@ test('gg doctor lists an Execution Record whose Flow is no longer declared as an
   assert.ok(!text.includes('ticket-8'), text);
 });
 
-// gg doctor runs the Harness preflight gg run does, so a stub Harness fails both (#362, decision 1).
+// gg doctor runs the Harness preflight gg run does, so a stub Harness, here the Claude module with no run, fails both
+// by the contract check (#362, decision 1; #482 decision 8).
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
 test("gg doctor reports harness-preflight-failed for each Vertex on a stub Harness, as gg run's preflight does", async () => {
   const source = example();
@@ -353,7 +354,7 @@ test("gg doctor reports harness-preflight-failed for each Vertex on a stub Harne
     text.split('\n').filter((line) => line.startsWith('error: ')),
     vertices.map(
       (id) =>
-        `error: flows.default.ticket.vertices.${id}: vertex ${id}: harness claude: not implemented ` +
+        `error: flows.default.ticket.vertices.${id}: vertex ${id}: harness claude: harness is missing run ` +
         '[harness-preflight-failed]',
     ),
   );

@@ -1,12 +1,12 @@
 // What a recorder of an Agent CLI does the same way as any other (#480; one uses it until #534 moves the other):
 // the names it records chosen with the chain of calls that continue one another checked, the text a value fills
 // into, the environment a nested CLI starts with, the redaction of what it commits, the stand-in API server some
-// calls run against, the temporary directory its repositories live in, and a call's saved files. How a call starts,
-// and what its CLI's output means, stays each recorder's.
-import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+// calls run against, the temporary directory its repositories live in, a call's saved files, and the files a call
+// changed in a worktree. How a call starts, and what its CLI's output means, stays each recorder's.
+import { mkdtempSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 
 // A scenario or a command a recorder can name; a scenario that continues another needs it recorded before it.
 export interface Named {
@@ -149,4 +149,24 @@ export function save(
   const text = recorded.lines.map(recorded.redact).join('\n');
   writeFileSync(join(output, `${name}.jsonl`), text && `${text}\n`);
   writeFileSync(join(output, `${name}.json`), `${recorded.redact(JSON.stringify(recorded.meta, null, 2))}\n`);
+}
+
+// Each file in a worktree by its path with forward slashes, git's own files left out.
+export function filesOf(worktree: string): Map<string, string> {
+  const paths = (readdirSync(worktree, { recursive: true }) as string[]).filter(
+    (path) => !/^(?:\.git|node_modules)(?:[\\/]|$)/.test(path) && statSync(join(worktree, path)).isFile(),
+  );
+  return new Map(
+    paths.map((path) => [
+      relative(worktree, join(worktree, path)).split(sep).join('/'),
+      readFileSync(join(worktree, path), 'utf8'),
+    ]),
+  );
+}
+
+// What a call changed: each file it added or changed, with its content, and each it deleted, as null.
+export function changesOf(before: Map<string, string>, after: Map<string, string>): Record<string, string | null> {
+  const changed = [...after].filter(([path, text]) => before.get(path) !== text);
+  const deleted = [...before.keys()].filter((path) => !after.has(path)).map((path) => [path, null]);
+  return Object.fromEntries([...changed, ...deleted]);
 }
