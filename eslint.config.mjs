@@ -368,10 +368,7 @@ export default defineConfig([
       'no-restricted-syntax': ['error', namespaceImportWithTypes('/(^|[/])lib[/]/'), ...NO_MODULE_STATE],
     },
   },
-  {
-    files: ['test/**/*.test.ts'],
-    rules: { 'max-lines': ['error', 800] },
-  },
+  { files: ['test/**/*.test.ts'], rules: { 'max-lines': ['error', 800] } },
   {
     // The directories tsconfig.json includes: the typed rules read its program. eslint.config.mjs is outside it.
     files: ['lib/**/*.ts', 'bin/**/*.ts', 'scripts/**/*.ts', 'test/**/*.ts'],
@@ -382,8 +379,11 @@ export default defineConfig([
       'gg/no-map-to-json': 'error',
     },
   },
-  // gg's own code checks what JSON.parse gives; a test may type it by what the case expects (#354).
-  { files: ['lib/**/*.ts', 'bin/**/*.ts', 'scripts/**/*.ts'], rules: { 'gg/no-json-parse-assertion': 'error' } },
+  // gg's own code checks JSON.parse's result (#354) and awaits each promise or voids it (#531); a test need not.
+  {
+    files: ['lib/**/*.ts', 'bin/**/*.ts', 'scripts/**/*.ts'],
+    rules: { 'gg/no-json-parse-assertion': 'error', '@typescript-eslint/no-floating-promises': 'error' },
+  },
   {
     // Typed by a check, never by an assertion or an `any`: an Event by lib/event-read.ts (#350), a record's row by
     // lib/record-read.ts (#357). test/unit/layout.test.ts holds this list to their importers and modules.

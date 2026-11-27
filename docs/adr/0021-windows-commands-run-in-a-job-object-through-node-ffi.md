@@ -29,7 +29,10 @@ created the job, and wrote its answers as `\x01GGJOB` notes into the command's o
   or `if errorlevel` in the command would read; the variable is then cleared. The gate also swallows any stdin
   written with the gate line, so this start is only for commands given no stdin. Amended 2026-11-25 (grey-goo-ri
   issue #530, ADR 0030 decision 1): the job sets kill-on-close alone, with no breakaway-OK, so a child that asks to
-  break away fails to start, and Git Bash's children stay in the job.
+  break away fails to start, and Git Bash's children stay in the job. Amended 2026-11-25 (grey-goo-ri issue #531,
+  ADR 0030 decision 3): Windows creates a packaged app's process outside the job whatever its limits, so not
+  everything the command starts is in the job; a watcher links each such process to the job's members, holds it by a
+  handle, and adopts it into gg's job or a new kill-on-close job, or ends it, and cleanup confirms it gone or names it.
 - On timeout gg terminates the job and lists its members until it is empty. A job it cannot read or terminate is
   reported, its processes named as survivors, and its handle kept, so kill-on-close takes them when gg exits.
 - gg holds the job's only handle, so the job's processes also die when gg does. The result names its containment,
@@ -47,7 +50,10 @@ created the job, and wrote its answers as `\x01GGJOB` notes into the command's o
   directory before `PATH`, unless `NoDefaultCurrentDirectoryInExePath` is set, and an agent can write there; this was
   checked on Node 26.13 with a planted `taskkill.exe`.
 - `bin/gg.ts` opens the kernel32 functions once and passes them down through `exec.createExec` (ADR 0019). A test
-  passes `null` or a copy with some functions replaced.
+  passes `null` or a copy with some functions replaced. (Amended 2026-11-26 for grey-goo-ri issue #531, decision D1 A:
+  every `node:ffi` call is synchronous, so the Windows watcher's periodic process snapshot runs on a worker thread
+  that opens kernel32 itself, `lib/snapshot-worker.ts`, and blocks none of the clocks judging the command; a test's
+  replaced snapshot functions reach only the cleanup's last poll, on gg's thread.)
 
 ## node:ffi is experimental
 

@@ -48,7 +48,7 @@ export function run(
   { cwd, input, allowFail = false, inherit = false, timeoutMs, env }: RunOptions = {},
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
-    const argv = commandShim.argvOf(command, args, env?.PATH, cwd);
+    const argv = commandShim.argvOf(command, args, { path: env?.PATH, cwd });
     const child = spawn(argv.command, argv.args, {
       cwd,
       stdio: inherit ? 'inherit' : ['pipe', 'pipe', 'pipe'],
@@ -94,8 +94,8 @@ function finishedNote(cleanup: processTree.Settled) {
   return left + cleanupNote(cleanup);
 }
 
-// How a shell command was held: in a job (Windows: the command and all it starts), or not, with containmentError saying
-// why when a Windows command runs uncontained.
+// How a shell command was held: in a job (Windows: the command and all it starts, a process started outside it adopted
+// or ended by its watcher), or not, with containmentError saying why when a Windows command runs uncontained.
 export type Containment = { containment: 'job' } | { containment: 'none'; containmentError?: string };
 
 // A shell command's run: its exit code and combined output, and what its Command Cleanup found. A timed-out run has
@@ -131,7 +131,7 @@ export interface ShellOptions {
 // What launch runs: an argv with no shell, contained, under a stall clock, a wall clock and the Run's cancel signal.
 // onIdle answers when the stall clock runs out: the time (ms since the epoch) of the last activity the caller saw, from
 // which the clock re-arms for what is left of stallMs, or null. testHooks are a test's alone: stall and wall count from
-// when testHooks.signal aborts, as runShell's timeout does (#475).
+// when testHooks.signal aborts, as runShell's timeout does (#475), and on testHooks.clock when given (#531 D2 B).
 export interface LaunchOptions {
   command: string;
   args: string[];
@@ -144,7 +144,7 @@ export interface LaunchOptions {
   onStarted?: (containment: commandCleanup.CleanupContainment) => void;
   onLine?: (line: string) => void;
   onIdle?: () => number | null | Promise<number | null>;
-  testHooks?: Pick<TestHooks, 'signal'>;
+  testHooks?: Pick<TestHooks, 'signal'> & { clock?: launchClock.Clock };
 }
 
 // What a launch ended with: how the process exited, which clock or the cancel stopped it, its stderr's end, and what
@@ -164,7 +164,7 @@ const STDERR_TAIL_CHARS = 16_384;
 // An argv started with no shell, and when it started or why it could not: on Windows behind the gate in a job,
 // elsewhere in its own process group. env is merged over gg's environment, as run's is.
 function startArgv(kernel32: containment.Kernel32 | null, { command, args, cwd, env }: LaunchOptions) {
-  const argv = commandShim.argvOf(command, args, env?.PATH, cwd);
+  const argv = commandShim.argvOf(command, args, { path: env?.PATH, cwd });
   const environment = env ? { ...process.env, ...env } : undefined;
   if (process.platform === 'win32') return containment.startArgv(kernel32, argv, { cwd, env: environment });
   const child = spawn(argv.command, argv.args, { cwd, env: environment, detached: true, stdio: 'pipe' });
@@ -184,14 +184,14 @@ function eachLine(stream: Readable, onLine: (line: string) => void) {
 }
 
 // Start an argv contained, with no shell; see LaunchOptions. Nothing is left running when it resolves: a stop takes the
-// tree down, and an exit ends what the argv left, as runShell does; cleanup says what it found. A launch whose
-// executable cannot start rejects with the spawn error.
+// tree down, and an exit ends what the argv left, with what its watcher linked, as runShell does; cleanup says what it
+// found. A launch whose executable cannot start rejects with the spawn error.
 function launch(kernel32: containment.Kernel32 | null, options: LaunchOptions): Promise<LaunchResult> {
   return new Promise((resolve, reject) => {
     const started = startArgv(kernel32, options);
     const { child } = started;
     const cleanupContainment = cleanupContainmentOf(started);
-    const watcher = process.platform === 'win32' || !child.pid ? null : processTree.watchDescendants(child.pid);
+    const watcher = processTree.watch(started, kernel32);
     const closed = new Promise((settled) => child.on('close', settled));
     const { promise: gaveUp, resolve: giveUp } = Promise.withResolvers<void>();
     let stopped: launchClock.Stop | null = null;
@@ -211,7 +211,7 @@ function launch(kernel32: containment.Kernel32 | null, options: LaunchOptions): 
       if (exited) return giveUp();
       if (stopped || !child.pid) return; // no pid: the spawn failed, and its error rejects the launch
       stopped = why;
-      watcher?.stop();
+      void watcher?.stop(); // ends the snapshots now; takeDown joins their thread (#531)
       const { survivors, cleanupErrors } = await processTree.takeDown(started, kernel32, watcher, {});
       if (survivors.length) reportStarted();
       else await started.spawned;
@@ -226,18 +226,18 @@ function launch(kernel32: containment.Kernel32 | null, options: LaunchOptions): 
     eachLine(stdoutPipe, (line) => options.onLine?.(line));
     child.stdin?.on('error', () => {}); // exited before reading all input: its exit reports it
     child.stdin?.end(options.input ?? '');
-    void started.spawned.then((failure) => {
+    void started.spawned.then(async (failure) => {
       // A stop that ended the gate before it answered resolves the launch; the containment still held what started.
       if (!failure || stopped) return reportStarted();
       clocks.stop();
-      watcher?.stop();
+      await watcher?.stop();
       reject(failure);
     });
     // 'exit', not 'close': a leftover process can hold the pipes open for as long as it runs
     child.on('exit', async (code: number | null, signal: NodeJS.Signals | null) => {
       if (stopped) return;
       exited = true;
-      watcher?.stop();
+      void watcher?.stop(); // ends the snapshots now; settle joins their thread (#531)
       await started.spawned;
       const settled = await processTree.settle(started, kernel32, watcher, {});
       if (!(await Promise.race([closed.then(() => true), gaveUp.then(() => false)])))
@@ -268,8 +268,8 @@ export type Exec = ReturnType<typeof createExec>;
 
 // Run a repo-declared command line (e.g. "npm test") through the platform shell. timeoutMs bounds the command from the
 // call, or from when testHooks.signal aborts.
-// The result names its containment: job (Windows: the command and all it starts held in a job object) or none, with
-// containmentError saying why when a Windows command runs uncontained. Nothing is left running when it answers, whether
+// The result names its containment: job (Windows: the command and all it starts held in a job object, or adopted or
+// ended by its watcher) or none, with containmentError saying why. Nothing is left running when it answers, whether
 // the command finished or timed out (L6): it ends its leftovers, waits for its output pipes to close, and says what it
 // found in cleanup. On timeout it also resolves with timedOut: true, survivors: [{ pid, error }] for processes that
 // could not be killed or confirmed gone, and cleanupErrors. A command that finishes names what it left as
@@ -362,21 +362,21 @@ function shell(
     // The clock also bounds the wait for a finished command's pipes, which a process cleanup cannot find may hold.
     let giveUp = () => {};
     const gaveUp = new Promise<void>((wake) => (giveUp = wake));
-    const watcher = process.platform === 'win32' ? null : processTree.watchDescendants(child.pid!);
-    if (watcher) testHooks.onWatch?.(watcher.seen);
+    const watcher = processTree.watch(started, kernel32);
+    if (watcher && 'seen' in watcher) testHooks.onWatch?.(watcher.seen);
     const stopClock = startClock({ timeoutMs, signal: testHooks.signal, timers: testHooks.timers }, async () => {
       if (exited) return giveUp();
       timedOut = true; // the kill makes 'exit' and 'close' fire first; the timeout result below wins
-      watcher?.stop();
+      void watcher?.stop(); // ends the snapshots now; takeDown joins their thread (#531)
       const { survivors, cleanupErrors } = await processTree.takeDown(started, kernel32, watcher, testHooks);
       for (const pipe of pipesOf(child)) pipe.destroy(); // orphans may still hold the pipes
       const taken = { survivors, cleanupErrors };
       const note = timeoutNote(timeoutMs as number, taken);
       resolve({ code: null, output: output + note, timedOut: true, ...taken, ...resultOf(taken) });
     });
-    child.on('error', (err) => {
+    child.on('error', async (err) => {
       stopClock();
-      watcher?.stop();
+      await watcher?.stop();
       reject(err);
     });
     // 'exit', not 'close': a leftover process can hold the pipes open for as long as it runs
@@ -384,7 +384,7 @@ function shell(
       if (timedOut) return;
       exited = true;
       testHooks.onExit?.();
-      watcher?.stop();
+      void watcher?.stop(); // ends the snapshots now; settle joins their thread (#531)
       const settled = await processTree.settle(started, kernel32, watcher, testHooks);
       // With no leftover alive every writer is gone, so the pipes close once read to the end, and a line that arrived
       // late is still read. A process that left the containment can hold them on; holding them is how it shows.

@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -81,6 +82,26 @@ test('describe of a pid that is gone, or with no kernel32, names only the pid', 
     commandLine: null,
   });
   assert.deepEqual(containment.describe(null, 7), { pid: 7, created: null, commandLine: null });
+});
+
+// The watcher linked a pid at one start; by the hold its pid names a process with another start, which is not the
+// watcher's to adopt or end (#531). The same process at its own start is held and adopted into the job.
+test('a job holds a process only at the start it was linked at', options.WIN_CASE, async (t) => {
+  const kernel32 = containment.openKernel32() as containment.Kernel32;
+  const { job } = await shellWithSleeper(t, kernel32);
+  const directory = mkdtempSync(join(tmpdir(), 'gg-hold-'));
+  const pidFile = join(directory, 'outside.pid');
+  spawn(process.execPath, [childScripts.LONG_LIVED, pidFile], { stdio: 'ignore' }).unref();
+  t.after(() => processProbe.endProcessIn(pidFile));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  await processProbe.waitFor(() => pidIn(pidFile) > 0, t.signal);
+  const entry = { pid: pidIn(pidFile), parentPid: process.pid, exe: 'node.exe' };
+  const started = containment.startOf(kernel32, entry.pid) as bigint;
+  assert.equal(job.hold(entry, started + 1n), null);
+  assert.ok(!job.members().includes(entry.pid), 'not adopted');
+  assert.ok(processProbe.alive(entry.pid), 'not ended');
+  assert.equal(job.hold(entry, started)?.held, true);
+  assert.ok(job.members().includes(entry.pid), 'adopted into the job');
 });
 
 // Every job gg creates, for a Check's shell runner, a launch and the suite launcher, sets kill-on-close alone, so a

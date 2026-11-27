@@ -30,7 +30,7 @@ export const childInJob =
   async ({ command, args, cwd, env, wallMs = cliDoctor.CHEAP_WALL_MS }: ChildInJobOptions): Promise<ChildInJob> => {
     let argv: { command: string; args: string[] };
     try {
-      argv = commandShim.argvOf(command, args, env?.PATH, cwd);
+      argv = commandShim.argvOf(command, args, { path: env?.PATH, cwd });
     } catch (err) {
       return { lines: [], pid: null, inJob: null, failure: `${command} did not start: ${(err as Error).message}` };
     }
