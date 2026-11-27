@@ -5,6 +5,7 @@ import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type * as exec from '../../lib/exec.ts';
 import * as codexRun from '../../lib/harnesses/codex-run.ts';
 import * as cliReplay from '../support/cli-replay.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
@@ -112,8 +113,44 @@ test('a launch that cannot be prepared is an unknown failure that started no com
   );
 });
 
+// A launch that prints `stdout` and ends as `ending` says, writing the -o file's final message as the recorded call
+// does.
+function endingLaunch(lastMessage: string, stdout: string, ending: Partial<exec.LaunchResult>) {
+  return (options: exec.LaunchOptions): Promise<exec.LaunchResult> => {
+    writeFileSync(lastMessage, '{"answer":"heliotrope"}');
+    options.onStarted?.({ kind: 'none' });
+    for (const line of stdout.split('\n').filter(Boolean)) options.onLine?.(line);
+    const cleanup = { confirmed: true, survivors: [], reason: null, containment: { kind: 'none' as const } };
+    return Promise.resolve({
+      code: 0,
+      signal: null,
+      timedOut: null,
+      cancelled: false,
+      stderrTail: '',
+      cleanup,
+      ...ending,
+    });
+  };
+}
+
+// Each way a call ends: the stream it printed and what its launch gave.
+const failedLine = (message: string) => JSON.stringify({ type: 'turn.failed', error: { message } });
+const endings: Record<string, { stdout: string; ending: Partial<exec.LaunchResult> }> = {
+  completed: { stdout: recorded('start.jsonl'), ending: {} },
+  'timed out on the wall clock': { stdout: '', ending: { code: null, timedOut: 'wall' } },
+  'timed out on the stall clock': { stdout: '', ending: { code: null, timedOut: 'stall' } },
+  cancelled: { stdout: '', ending: { code: null, cancelled: true } },
+  'auth failed': { stdout: recorded('auth-invalid.jsonl'), ending: { code: 1 } },
+  'rate-limited': {
+    stdout: failedLine('exceeded retry limit, last status: 429 Too Many Requests'),
+    ending: { code: 1 },
+  },
+  transient: { stdout: failedLine('unexpected status 503 Service Unavailable: busy'), ending: { code: 1 } },
+};
+
 // DoD 3: a Harness failure is a typed result, never a throw, after the launch too: a sessions tree that cannot be
-// read leaves the launch's exit and cleanup in the result.
+// read leaves the launch's exit and cleanup in the result. It fails a completed call alone; a timeout, a cancel or a
+// classed failure keeps its own status and failure (DoD 2, Q2 A).
 test('a rollout that cannot be read is an unknown failure that keeps the launch, never a rejection', async (t) => {
   const faults: Record<string, (home: string) => void> = {
     'a sessions path that is a file': (home) => writeFileSync(join(home, 'sessions'), 'not a folder'),
@@ -121,32 +158,44 @@ test('a rollout that cannot be read is an unknown failure that keeps the launch,
       mkdirSync(join(home, 'sessions', '2026', `rollout-2026-11-22T17-24-53-${THREAD}.jsonl`), { recursive: true }),
   };
   const ended: Record<string, unknown> = {};
-  for (const [name, fault] of Object.entries(faults)) {
-    const codex = codexHome(t);
-    fault(codex.home);
-    try {
-      const { response, result, failure } = await codexRun.run(codex.runner, codex.runs, call(THREAD), hooks);
-      ended[name] = {
-        response,
-        status: result.status,
-        failureClass: failure?.failureClass,
-        exitCode: result.exitCode,
-        exitSignal: result.exitSignal,
-        confirmed: result.cleanup?.confirmed,
-        transcriptPath: result.transcriptPath,
-      };
-    } catch (err) {
-      ended[name] = `rejected: ${(err as Error).message}`;
+  for (const [faultName, fault] of Object.entries(faults)) {
+    for (const [endingName, { stdout, ending }] of Object.entries(endings)) {
+      const codex = codexHome(t);
+      fault(codex.home);
+      const runner = { launch: endingLaunch(join(codex.home, 'last-message.json'), stdout, ending) };
+      const name = `${faultName}, ${endingName}`;
+      try {
+        const { response, result, failure } = await codexRun.run(runner, codex.runs, call(THREAD), hooks);
+        ended[name] = {
+          response,
+          status: result.status,
+          failureClass: failure?.failureClass ?? null,
+          exitCode: result.exitCode,
+          exitSignal: result.exitSignal,
+          confirmed: result.cleanup?.confirmed,
+          transcriptPath: result.transcriptPath,
+        };
+      } catch (err) {
+        ended[name] = `rejected: ${(err as Error).message}`;
+      }
     }
   }
-  const failed = {
-    response: null,
-    status: 'failed',
-    failureClass: 'unknown',
-    exitCode: 0,
-    exitSignal: null,
-    confirmed: true,
-    transcriptPath: null,
+  const kept = { response: null, exitSignal: null, confirmed: true, transcriptPath: null };
+  const expected = {
+    completed: { ...kept, status: 'failed', failureClass: 'unknown', exitCode: 0 },
+    'timed out on the wall clock': { ...kept, status: 'timed-out', failureClass: null, exitCode: null },
+    'timed out on the stall clock': { ...kept, status: 'timed-out', failureClass: null, exitCode: null },
+    cancelled: { ...kept, status: 'killed', failureClass: null, exitCode: null },
+    'auth failed': { ...kept, status: 'failed', failureClass: 'auth', exitCode: 1 },
+    'rate-limited': { ...kept, status: 'failed', failureClass: 'rate-limited', exitCode: 1 },
+    transient: { ...kept, status: 'failed', failureClass: 'transient', exitCode: 1 },
   };
-  assert.deepEqual(ended, { 'a sessions path that is a file': failed, 'a rollout path that is a folder': failed });
+  assert.deepEqual(
+    ended,
+    Object.fromEntries(
+      Object.keys(faults).flatMap((faultName) =>
+        Object.entries(expected).map(([endingName, value]) => [`${faultName}, ${endingName}`, value]),
+      ),
+    ),
+  );
 });

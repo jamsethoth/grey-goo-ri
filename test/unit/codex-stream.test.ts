@@ -53,7 +53,7 @@ test('codexUsage takes the last cumulative turn.completed and does not double-co
 });
 
 // Decision 3: a count the stream never reported is null, never zero; inputTokens is the rest of input_tokens, so it is
-// null when input_tokens or cached_input_tokens is missing.
+// null when input_tokens, cached_input_tokens or cache_write_input_tokens is missing.
 test('a turn.completed that leaves a count out reports it null', () => {
   const usage = {
     input_tokens: 150,
@@ -73,7 +73,7 @@ test('a turn.completed that leaves a count out reports it null', () => {
     [
       { ...full, inputTokens: null },
       { ...full, inputTokens: null, cacheReadTokens: null },
-      { ...full, inputTokens: 90, cacheWriteTokens: null },
+      { ...full, inputTokens: null, cacheWriteTokens: null },
       { ...full, outputTokens: null },
       { ...full, reasoningTokens: null },
     ],
