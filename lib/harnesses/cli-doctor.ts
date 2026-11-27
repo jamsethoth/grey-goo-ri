@@ -117,7 +117,13 @@ function targetOf(link: string): string {
 export function findShell(file: string, path: string = process.env.PATH ?? ''): FoundShell | null {
   for (const directory of path.split(delimiter).filter(Boolean)) {
     const candidate = join(directory.replace(/"/g, ''), file);
-    const entry = lstatSync(candidate, { throwIfNoEntry: false });
+    let entry;
+    try {
+      entry = lstatSync(candidate, { throwIfNoEntry: false });
+    } catch {
+      // An entry it cannot read (an unreachable share, a name too long) is skipped, as existsSync skipped it.
+      continue;
+    }
     if (!entry) continue;
     const target = entry.isSymbolicLink() ? targetOf(candidate) : candidate;
     return { path: candidate, packaged: PACKAGED.test(candidate) || PACKAGED.test(target) };

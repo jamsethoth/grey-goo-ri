@@ -3,7 +3,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { delimiter, join } from 'node:path';
 import * as cliDoctor from '../../lib/harnesses/cli-doctor.ts';
 import * as storeAlias from '../support/store-alias.ts';
 
@@ -170,4 +171,15 @@ test("a probe's temporary directory is there for its use and gone after it", asy
 test('the shell a link on PATH starts is found, and judged packaged by its target under WindowsApps', (t) => {
   const bin = storeAlias.storeAlias(t);
   assert.deepEqual(cliDoctor.findShell('pwsh.exe', bin), { path: join(bin, 'pwsh.exe'), packaged: true });
+});
+
+// A PATH entry whose lstat fails for a reason other than a missing file (an unreachable share, a name too long) is
+// skipped, as existsSync skipped it, so the doctor still finds the shell after it (#533 QA).
+test('a PATH entry that cannot be read is skipped, and the shell after it is found', (t) => {
+  const bin = storeAlias.storeAlias(t);
+  const tooLong = join(tmpdir(), ...Array<string>(200).fill('y'.repeat(200)));
+  assert.deepEqual(cliDoctor.findShell('pwsh.exe', [tooLong, bin].join(delimiter)), {
+    path: join(bin, 'pwsh.exe'),
+    packaged: true,
+  });
 });
