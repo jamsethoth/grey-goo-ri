@@ -6,7 +6,7 @@ import type * as marker from './marker.ts';
 import type * as record from './record.ts';
 import type * as referencePaths from './reference-paths.ts';
 import * as render from './render.ts';
-import type { HarnessResult } from './run-context.ts';
+import type { Harness, HarnessResult } from './run-context.ts';
 import type * as visit from './visit.ts';
 import * as visitScope from './visit-scope.ts';
 
@@ -32,16 +32,33 @@ export function handoffOf(
   return { note: String(response[briefs.HANDOFF_NOTE]), sessionId: previous.sessionId ?? null };
 }
 
-// The Brief after a hand-off: the Attempt's own, then gg's hand-off section with the note.
-export async function withSection(text: string, handoff: Handoff | null | undefined): Promise<string> {
+// gg ask-session starts the Harness's CLI on a copy of the Session, which an agent inside its Harness's sandbox cannot
+// start: there the nested CLI cannot write its home (#485 Q1 B, ADR 0033). Only an agent whose commands run outside a
+// sandbox is offered it.
+const asks = (harness: Pick<Harness, 'capabilities'>) => (harness.capabilities.sandbox ?? 'none') === 'none';
+
+// The Brief after a hand-off: the Attempt's own, then gg's hand-off section with the note, and the line that asks the
+// handed-off Session where the agent can ask it.
+export async function withSection(
+  text: string,
+  handoff: Handoff | null | undefined,
+  harness: Pick<Harness, 'capabilities'>,
+): Promise<string> {
   if (!handoff) return text;
-  const section = await briefs.brief(render.engineTemplate('handoff.md'), { ...handoff });
+  const section = await briefs.brief(render.engineTemplate('handoff.md'), {
+    ...handoff,
+    sessionId: asks(harness) ? handoff.sessionId : null,
+  });
   return `${text.trimEnd()}\n\n${section}`;
 }
 
-// Once the Action has handed a Session off, its agent may ask it through gg ask-session (Q1 A).
-export const askable = (session: record.SessionEntry | undefined, commands: Record<string, string>) =>
-  session?.handedOff?.some((handedOff) => handedOff.sessionId)
+// Once the Action has handed a Session off, its agent may ask it through gg ask-session (Q1 A), where it can.
+export const askable = (
+  session: record.SessionEntry | undefined,
+  commands: Record<string, string>,
+  harness: Pick<Harness, 'capabilities'>,
+) =>
+  asks(harness) && session?.handedOff?.some((handedOff) => handedOff.sessionId)
     ? { ...commands, 'ask-session': 'gg ask-session' }
     : commands;
 

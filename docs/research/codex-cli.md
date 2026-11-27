@@ -145,6 +145,14 @@ These go to the owner as one decision batch before #481.
    status `failed` (`mxc-read-only.jsonl`). The call itself completes.
 9. **Token refresh racing `~/.codex/auth.json`**: moot. gg has its own login in its `CODEX_HOME` (Q5 A); nothing is
    copied.
+10. **A fork from inside MXC** (#485 Q1 A, recorded 2026-11-27, not committed as fixtures): fails. gg ask-session's
+    fork of a kept thread, `codex exec -s read-only -C <repo> fork <id>` under gg's `CODEX_HOME`, started by node
+    from `pwsh.exe -NoProfile -Command` inside `codex sandbox -c windows.sandbox="mxc"`, once with
+    `--permissions-profile :read-only` and once with `:workspace`, exited 1 before any model call both times: "could
+    not create PATH aliases: Access is denied. (os error 5)" at `tmp\arg0-windows` in gg's Codex home, then "failed
+    to initialize in-process app-server client: Access is denied. (os error 5)". `mkdtemp` in TEMP failed with
+    ENOENT under both; a write in the repository failed EPERM under read-only and worked under workspace. So a Codex
+    agent cannot ask its handed-off thread itself (ADR 0033 point 3).
 
 ## Decision 4's calls
 

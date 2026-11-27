@@ -128,7 +128,7 @@ export interface Harness {
     failure: visit.HarnessFailure | null;
   }>;
   resolveTools(agent: unknown, context: ToolsContext): jsonValue.JsonValue;
-  capabilities: { confinement?: string | null; sessionResume?: { supported?: boolean } };
+  capabilities: { confinement?: string | null; sandbox?: string; sessionResume?: { supported?: boolean } };
   launchProfile?: LaunchProfile | null;
 }
 

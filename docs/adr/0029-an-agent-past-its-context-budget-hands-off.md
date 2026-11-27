@@ -38,7 +38,8 @@ decided planning's G17 B on 2026-11-16 and Clarify's Q1 to Q5 A on 2026-11-20.
    (`--resume` with `--fork-session`) read-only under the launch profile, prints the answer, and leaves the kept
    Session unchanged, so two questions never see each other. The command's allow rule joins the Agent's list once its
    Action has handed off. A question is not an Attempt: it counts against no budget, and its Usage stays off the
-   record.
+   record. Amended by ADR 0033 point 3 (#485): an agent whose Harness runs its commands in a sandbox is not offered
+   it, since there the nested CLI cannot write its home.
 7. **`gg doctor --probe` checks the hook under the real CLI (Q5 A, ADR 0028).** The launch profile's probe sets a tiny
    budget and fails when the hook does not fire. No recording shows a hook, so the owner runs the probe once before
    this merges.
@@ -64,4 +65,4 @@ decided planning's G17 B on 2026-11-16 and Clarify's Q1 to Q5 A on 2026-11-20.
 
 `contextBudget.byModel` stays for later (G9). Codex's hand-off is slice 3's, with Codex's launch; until then its
 module declares no Capability for `contextBudget`. A Procedure's own schema never names the note, so every answer of
-a budgeted Agent carries `"handoff": ""`.
+a budgeted Agent carries `"handoff": ""`. Codex's hand-off is ADR 0033's (#485).

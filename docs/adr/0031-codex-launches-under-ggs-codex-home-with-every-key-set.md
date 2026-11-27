@@ -22,7 +22,9 @@ and Clarify's Q1 to Q3 on 2026-11-23. Codex stays refused at preflight until #48
    `CLAUDE_CODE_DISABLE_CLAUDE_MDS` keeps `CLAUDE.md` out of a Claude call (Q18 A); `check_for_update_on_startup=false`;
    and the Agent's model and effort when it sets them. The call ends `--json --output-schema <file> -o <file> -`: the
    strict schema from a file in the Run directory, the Brief on stdin, and the final message read from the `-o` file
-   (F2), one per call. A change to this argv bumps the version.
+   (F2), one per call. A change to this argv bumps the version (replaced by ADR 0033 point 4, #485 Q4 A: a change to
+   the argv or environment of a call this version admits bumps the version; argv added for an Agent it refused at
+   preflight does not).
 3. **A resume keeps its sandbox and cwd** by passing `-s` and `-C` before `resume <id>` on every resume: a resumed turn
    runs under the invocation's flags and in its cwd, not the thread's (codex-cli.md question 2).
 4. **Both access intents hold under MXC, with no unelevated fallback.** `-s` is the Agent's `access`; on win32
@@ -32,7 +34,7 @@ and Clarify's Q1 to Q3 on 2026-11-23. Codex stays refused at preflight until #48
 5. **Capabilities as #479 showed them (Q15 A).** A field not shown `exact` is `unsupported`: `access`, `plugins` and
    `mcp` are `exact`; `skills` is `hint`, since a declared skill reaches Codex as text only; `network` is
    `unsupported`, since no recording shows a network call blocked or allowed; `contextBudget` is `unsupported` until
-   #485. A listed MCP server runs outside the sandbox under `default_tools_approval_mode="approve"`, passed after its
+   #485 (`exact` since ADR 0033). A listed MCP server runs outside the sandbox under `default_tools_approval_mode="approve"`, passed after its
    table, and the Agent's listing is the owner's consent for it (D17 A). The confinement is Codex's sandbox, not
    Trusted-Command Mode, and the Config Hash pins it with `codex-exec` at its version (ADR 0027).
 6. **The per-surface rules live in Codex's `validate`** (ADR 0026 point 2): the shell and file tools, MCP, plugins and
@@ -85,4 +87,5 @@ and Clarify's Q1 to Q3 on 2026-11-23. Codex stays refused at preflight until #48
 ## Consequences
 
 `lib/harnesses/codex.ts` declares the profile, Capabilities, `validate`, `resolveTools` and `launchArgs`; `run` and
-`doctor` arrive with #482 and #484. A Codex Agent setting `network` or `contextBudget` fails preflight at its key.
+`doctor` arrive with #482 and #484. A Codex Agent setting `network` or `contextBudget` fails preflight at its key
+(`contextBudget` runs since ADR 0033).
