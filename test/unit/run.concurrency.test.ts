@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type * as events from '../../lib/events.ts';
-import * as gitModule from '../../lib/git.ts';
 import * as integrity from '../../lib/integrity.ts';
 import * as locks from '../../lib/locks.ts';
 import * as record from '../../lib/record.ts';
@@ -14,6 +13,7 @@ import * as executionContext from '../support/execution-context.ts';
 import * as latch from '../support/latch.ts';
 import * as runFixture from '../support/run-fixture.ts';
 import * as fakeGh from '../support/fake-gh.ts';
+import * as fakeGit from '../support/fake-git.ts';
 
 const { TICKET } = runFixture;
 const { EPIC } = epicRun;
@@ -440,9 +440,10 @@ const UNLOCKED_VERBS = [
   'worktreePath',
 ];
 
-// A new git verb is placed on one list, so one that fetches or writes cannot miss the repo lock unnoticed (#490).
+// A new git verb is placed on one list, so one that fetches or writes cannot miss the repo lock unnoticed (#490). The
+// fake's verbs are lib/git.ts's: tsc holds the fake to every verb of its Git.
 test('every git verb is a locked write or a named unlocked verb', () => {
-  assert.deepEqual(Object.keys(gitModule.createGit()).sort(), [...LOCKED_VERBS, ...UNLOCKED_VERBS].sort());
+  assert.deepEqual(Object.keys(fakeGit.fakeGit().git).sort(), [...LOCKED_VERBS, ...UNLOCKED_VERBS].sort());
 });
 
 // A slow fetch in another process may hold the repo lock past acquire's default 60 s; snapshots and orchestrator writes
