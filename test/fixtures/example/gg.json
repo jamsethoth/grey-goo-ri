@@ -127,6 +127,7 @@
         "entry": "baseline",
         "routes": {
           "misscoped": { "end": "needs-replan" },
+          "nothing-to-publish": { "end": "needs-human" },
           "*": { "end": "needs-human" }
         },
         "vertices": {

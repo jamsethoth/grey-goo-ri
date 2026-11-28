@@ -340,6 +340,11 @@ admission (`lib/procedures.ts` holds the lists):
 | `comment` | `target`, `body` | `pr` or `ticket`; the comment template | none |
 | `await-approval` | `decisions` | the Decision values it accepts, `approved` and `rejected` by default (3.3) | `decision` |
 
+A `push`, and a `pr-upsert` that finds no open PR, first counts the commits the branch has that origin's base lacks,
+after fetching it; at zero it makes no effect and ends the Visit with the engine Outcome `nothing-to-publish`, so no
+branch equal to its base is pushed and no PR is created for one (ADR 0034). Its Terminal Reason names
+`gg work done <n> --close`, L12's end for a Ticket that needed no change.
+
 | Check kind | Keys | What each key takes | Outputs |
 |---|---|---|---|
 | `command` | `command`, `reuse` | a Declared Command's name; optional, `tree` reuses a pass recorded for the same tree | `evidence`, `cleanup` |
@@ -405,9 +410,10 @@ A remote 401 and git's own credential failure are auth; a 403 that is not a rate
 branch protection). A Harness reports only auth, quota, budget, rate-limited, transient and unknown.
 
 Outcomes are the Procedure's own (its tokens, its tables' Outcomes and `otherwise`) plus gg's engine Outcomes
-`failed`, `harness-transient`, `harness-timeout`, `harness-unparsed` and `harness-handoff`, each routable and defaulting to
-`end: needs-human`. In the example, `blocked` is the one stop token, with a `reason`; `misscoped` is the `stopped`
-table's Outcome for `reason: misscoped`, which the Flow's defaults route to `end: needs-replan`. Thrown errors go to
+`failed`, `harness-transient`, `harness-timeout`, `harness-unparsed`, `harness-handoff` and `nothing-to-publish`, each
+routable and defaulting to `end: needs-human`. In the example, `blocked` is the one stop token, with a `reason`;
+`misscoped` is the `stopped` table's Outcome for `reason: misscoped`, which the Flow's defaults route to
+`end: needs-replan`, and the Flow's routes name `nothing-to-publish`'s `end: needs-human`. Thrown errors go to
 needs-human with the error on the ticket end event. A stop is honoured after every agent Attempt, recovery included;
 today's ff misses those, so this is a correction, not a port.
 
