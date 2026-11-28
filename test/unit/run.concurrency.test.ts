@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type * as events from '../../lib/events.ts';
+import * as gitModule from '../../lib/git.ts';
 import * as integrity from '../../lib/integrity.ts';
 import * as locks from '../../lib/locks.ts';
 import * as record from '../../lib/record.ts';
@@ -411,7 +412,38 @@ const LOCKED_VERBS = [
   'rescueTree',
   'rescueCommit',
   'createRef',
+  'commitsAhead',
 ] as const;
+// The verbs that change no ref and write no object, and fingerprint, whose snapshot takes the repo lock itself.
+const UNLOCKED_VERBS = [
+  'repoInfo',
+  'commonDir',
+  'listWorktrees',
+  'currentBranch',
+  'refTarget',
+  'headSha',
+  'branchHead',
+  'treeOf',
+  'hasTree',
+  'commitLog',
+  'treeDiff',
+  'changedPaths',
+  'changedSince',
+  'untrackedPaths',
+  'conflictedPaths',
+  'diffSummary',
+  'branchDiff',
+  'diffStats',
+  'fingerprint',
+  'defaultBranch',
+  'slugify',
+  'worktreePath',
+];
+
+// A new git verb is placed on one list, so one that fetches or writes cannot miss the repo lock unnoticed (#490).
+test('every git verb is a locked write or a named unlocked verb', () => {
+  assert.deepEqual(Object.keys(gitModule.createGit()).sort(), [...LOCKED_VERBS, ...UNLOCKED_VERBS].sort());
+});
 
 // A slow fetch in another process may hold the repo lock past acquire's default 60 s; snapshots and orchestrator writes
 // wait longer, so contention does not become a fault. Each lock poll here takes a minute, as an overrunning sleep may.

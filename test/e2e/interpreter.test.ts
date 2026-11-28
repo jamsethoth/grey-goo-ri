@@ -282,7 +282,7 @@ test('a run stop during a repo-lock wait skips the queued effect and only needs-
     written = { ...counts };
   });
   const counts = onLockedGit(fixture, (verb, count) => {
-    if (verb === 'commitStaged' && count === 2) lock.arm();
+    if (verb === 'commitsAhead' && count === 1) lock.arm();
   });
   const result = await interpreter.runExecution({ ...fixture.options, runState });
 
