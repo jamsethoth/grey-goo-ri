@@ -1,5 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type * as events from '../../lib/events.ts';
 import * as claude from '../../lib/harnesses/claude.ts';
@@ -143,6 +144,27 @@ test('a fourth hand-off of one Action spends its budget of 3 and ends at harness
     rule: { table: 'fixed', row: 'handoff-exhausted' },
   });
   assert.deepEqual(fixture.executionRecord.retries[GREEN_RETRIES], { handoff: 3 });
+});
+
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test("a Ticket that ends through harness-handoff posts its last hand-off note, fenced and redacted, in the Terminal Reason's comment", async (t) => {
+  const last = `note 4: the plan is at ${homedir()}`;
+  const fixture = await budgetedFixture(t, {
+    ...Object.fromEntries([1, 2, 3].map((attempt) => [greenAt(attempt), handOff(`note ${attempt}`)])),
+    [greenAt(4)]: handOff(last),
+  });
+  const result = await interpreter.runExecution(fixture.options);
+
+  assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
+  const reason = stopReason(fixture, {
+    vertex: 'green',
+    action: 'green',
+    outcome: 'harness-handoff',
+    rule: { table: 'fixed', row: 'handoff-exhausted' },
+  });
+  const body = fixture.gh.comments.find((posted) => posted.body.includes(reason.text))!.body;
+  assert.ok(body.includes('```\nnote 4: the plan is at [local]\n```'), body);
+  assert.ok(!body.includes('note 3'), 'only the last note');
 });
 
 // Every call is checked, whichever kind of Attempt made it: the first, a retry and a recovery pass of the budgeted

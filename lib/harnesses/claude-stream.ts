@@ -38,6 +38,8 @@ export interface ClaudeStream {
   turns: number;
   compactions: number;
   peakContextTokens: number;
+  // The context the first request was sent with, where a fresh Session starts (#497); null when none was sent.
+  startContextTokens: number | null;
   totals: Totals | null;
 }
 
@@ -143,19 +145,18 @@ function toolUsesOf(stream: Line[]) {
   return toolUses;
 }
 
-// The largest context a message was sent with: its uncached input, cache reads and cache writes.
-const peakOf = (stream: Line[]) =>
-  Math.max(
-    0,
-    ...stream.map((line) => {
-      const usage = referencePaths.isRecord(line.message) ? line.message.usage : undefined;
-      if (line.type !== 'assistant' || !referencePaths.isRecord(usage)) return 0;
-      return ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens'].reduce(
+// The context each assistant message was sent with, in order: its uncached input, cache reads and cache writes.
+const contextsOf = (stream: Line[]) =>
+  stream.flatMap((line) => {
+    const usage = referencePaths.isRecord(line.message) ? line.message.usage : undefined;
+    if (line.type !== 'assistant' || !referencePaths.isRecord(usage)) return [];
+    return [
+      ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens'].reduce(
         (total, key) => total + numberOf(usage[key]),
         0,
-      );
-    }),
-  );
+      ),
+    ];
+  });
 
 // A call's stream, from its lines; a line that is not a JSON object is skipped.
 export function read(lines: string[]): ClaudeStream {
@@ -166,6 +167,7 @@ export function read(lines: string[]): ClaudeStream {
   const toolUses = toolUsesOf(stream);
   const denied = new Set(recordsOf(result?.permission_denials).map((denial) => denial.tool_use_id));
   const shellRuns = [...toolUses].filter(([id, name]) => SHELL_TOOLS.includes(String(name)) && !denied.has(id));
+  const contexts = contextsOf(stream);
   return {
     sessionId: stringOf(init?.session_id),
     cliVersion: stringOf(init?.claude_code_version),
@@ -179,7 +181,8 @@ export function read(lines: string[]): ClaudeStream {
     toolCalls: toolUses.size,
     turns: numberOf(result?.num_turns),
     compactions: stream.filter((line) => line.type === 'system' && line.subtype === 'compact_boundary').length,
-    peakContextTokens: peakOf(stream),
+    peakContextTokens: Math.max(0, ...contexts),
+    startContextTokens: contexts[0] ?? null,
     totals: totalsOf(result?.modelUsage),
   };
 }

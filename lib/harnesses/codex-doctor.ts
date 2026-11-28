@@ -11,6 +11,7 @@ import * as outcome from '../outcome.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
 import * as cliDoctor from './cli-doctor.ts';
+import * as codexStream from './codex-stream.ts';
 import type * as codex from './codex.ts';
 
 // The version #479's recordings came from.
@@ -198,7 +199,8 @@ function forkCheck(forked: cliDoctor.Said, threadId: string): Check {
   return cliDoctor.failed('fork-probe', `codex exec fork ${threadId} started no thread of its own`);
 }
 
-const probes = (runner: Runner, home: string, profile: ProfileLaunch) =>
+// The model probes, and the budget checks on the context the profile probe's first request sent (#497).
+const probes = (runner: Runner, home: string, profile: ProfileLaunch, agents: runContext.DoctorOptions['agents']) =>
   cliDoctor.inTemporary('gg-codex-probe-', async (directory) => {
     const cwd = join(directory, 'repo');
     // shortcut: exec starts only inside a git repository, which Codex finds by a .git above the cwd, so an empty one
@@ -227,12 +229,15 @@ const probes = (runner: Runner, home: string, profile: ProfileLaunch) =>
       'the launch profile answered under MXC in its output schema',
     );
     const { threadId } = streamOf(ran.lines);
-    if (!profileChecked.ok) return [profileChecked];
+    const start = threadId === null ? null : (codexStream.rollout(home, threadId)?.startContextTokens ?? null);
+    const budgetChecks = cliDoctor.startChecks(start, agents);
+    if (!profileChecked.ok) return [profileChecked, ...budgetChecks];
     const checks = [profileChecked, handoffCheck(ran)];
     if (threadId === null)
       return [
         ...checks,
         cliDoctor.failed('resume-probe', "the launch profile's call named no thread, so there is none to resume"),
+        ...budgetChecks,
       ];
     const resumed = await launch({ ...call, marker: 'resume-probe', resume: threadId }, RESUME_BRIEF);
     const fork = {
@@ -244,14 +249,14 @@ const probes = (runner: Runner, home: string, profile: ProfileLaunch) =>
       fork: true,
     };
     const forked = await launch(fork, FORK_BRIEF);
-    return [...checks, resumeCheck(resumed, threadId), forkCheck(forked, threadId)];
+    return [...checks, resumeCheck(resumed, threadId), forkCheck(forked, threadId), ...budgetChecks];
   });
 
 // The cheap checks, then under probe the model probes. A CLI that cannot start is the one failure: the checks that
 // read what it prints do not run.
 export async function doctor(
   runner: Runner,
-  { probe }: runContext.DoctorOptions,
+  { probe, agents }: runContext.DoctorOptions,
   { home, profile }: { home: string; profile: ProfileLaunch },
 ): Promise<runContext.DoctorReport> {
   const onWindows = process.platform === 'win32';
@@ -266,7 +271,7 @@ export async function doctor(
     ]);
     checks.push(cliDoctor.passed('executable', 'codex starts'), versionCheck(version), loginCheck(login, home));
     if (sandbox) checks.push(sandboxCheck(sandbox));
-    if (probe) checks.push(...(await probes(runner, home, profile)));
+    if (probe) checks.push(...(await probes(runner, home, profile, agents)));
     // Codex runs the Agents' commands through its sandbox under MXC, so the probe runs there (#533 Q1 B).
     if (probe && shell?.shell)
       checks.push(

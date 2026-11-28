@@ -1,8 +1,10 @@
 // The Codex CLI's answers as recorded (#484): its no-model commands from test/fixtures/codex/cli-*.json (#479, and the
 // sandbox commands #484 recorded), and a model call from an exec recording (#479). `recordedCodexCli` gives them
 // through cli-replay.ts's launch double, in-process, a small test's stand-in for the CLI.
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type * as containmentProbe from '../../lib/containment-probe.ts';
+import type * as exec from '../../lib/exec.ts';
 import * as cliReplay from './cli-replay.ts';
 import * as codexHookHandlers from './codex-hook-handlers.ts';
 
@@ -47,7 +49,8 @@ export const OLD_VERSION = '0.170.0';
 // no marker line as the cmd recording did, the exec recording a model call replays: the profile probe's, and the
 // resume probe's and the fork probe's, and the one of them whose stream lost its thread.started line, and the one whose
 // answer is prose; the MCP servers the server listing names in place of the recorded none; and whether a call carrying
-// the hand-off hook keeps its recorded answer, as when the hook stays silent, instead of the hand-off stand-in's.
+// the hand-off hook keeps its recorded answer, as when the hook stays silent, instead of the hand-off stand-in's; and
+// whether each model call writes its recording's rollout under the CODEX_HOME it is given, as Codex does (#497).
 export interface CodexState extends cliReplay.LaunchState {
   version?: string;
   loggedOut?: boolean;
@@ -59,6 +62,7 @@ export interface CodexState extends cliReplay.LaunchState {
   prose?: ModelCall;
   servers?: string[];
   hookSilent?: boolean;
+  rollouts?: boolean;
 }
 
 type ModelCall = 'profile' | 'resume' | 'fork';
@@ -79,15 +83,20 @@ const answered = (stream: string, answer: unknown) =>
 const sameArgv = (left: readonly string[], right: readonly string[]) =>
   left.length === right.length && left.every((arg, index) => arg === right[index]);
 
-// An exec recording's stream and exit code.
-function modelCall(args: readonly string[], state: CodexState): cliReplay.Answer {
+// Which model call an exec argv is, and the recording it replays.
+function recordingOf(args: readonly string[], state: CodexState) {
   const call = (['resume', 'fork'] as const).find((kind) => args.includes(kind)) ?? 'profile';
   const names = {
     profile: state.profile ?? 'start',
     resume: state.resume ?? 'resume-flags-before',
     fork: state.fork ?? 'fork-kept-read-only',
   };
-  const name = names[call];
+  return { call, name: names[call] };
+}
+
+// An exec recording's stream and exit code.
+function modelCall(args: readonly string[], state: CodexState): cliReplay.Answer {
+  const { call, name } = recordingOf(args, state);
   const recorded = readFileSync(new URL(`${name}.jsonl`, FIXTURES), 'utf8');
   const threaded =
     state.unthreaded === call
@@ -159,11 +168,36 @@ function probedUnderMxc({ escapes = false }: CodexState): containmentProbe.Child
   };
 }
 
+// A model call's recorded rollout, written where Codex wrote it, from `sessions` on, under the CODEX_HOME the call is
+// given. A resume appends to its thread's rollout, so one already there is kept, its first request first.
+function writeRollout({ args, env }: exec.LaunchOptions, state: CodexState) {
+  const home = env?.CODEX_HOME;
+  if (!state.rollouts || args[0] !== 'exec' || home === undefined) return;
+  const { name } = recordingOf(args, state);
+  const { rolloutPath } = JSON.parse(readFileSync(new URL(`${name}.json`, FIXTURES), 'utf8')) as {
+    rolloutPath: string | null;
+  };
+  const recorded = new URL(`${name}.rollout.jsonl`, FIXTURES);
+  if (rolloutPath === null || !existsSync(recorded)) return;
+  const parts = rolloutPath.split(/[\\/]/);
+  const path = join(home, ...parts.slice(parts.indexOf('sessions')));
+  if (existsSync(path)) return;
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, readFileSync(recorded));
+}
+
 // A launch that answers each argv in-process as the recorded Codex CLI does, and every launch it was asked for; and
 // the containment probe, answered by the recording.
-export const recordedCodexCli = (state: CodexState = {}) =>
-  cliReplay.replayLaunch(
+export function recordedCodexCli(state: CodexState = {}) {
+  const replayed = cliReplay.replayLaunch(
     (args) => answer(args, state),
     state,
     () => probedUnderMxc(state),
   );
+  const launch = async (options: exec.LaunchOptions) => {
+    const ended = await replayed.launch(options);
+    writeRollout(options, state);
+    return ended;
+  };
+  return { ...replayed, launch };
+}
