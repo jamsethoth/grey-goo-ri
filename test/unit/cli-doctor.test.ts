@@ -236,3 +236,7 @@ test('a probe that measured no start warns that no contextBudget was checked, an
   );
   assert.ok(checks[0]!.message.includes('contextBudget'), checks[0]!.message);
 });
+
+test('a probe that measured no start, given no Agent with a contextBudget, warns of nothing', () => {
+  assert.deepEqual(cliDoctor.startChecks(null, { reviewer: { harness: 'codex' } }), []);
+});

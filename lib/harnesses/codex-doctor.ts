@@ -229,7 +229,6 @@ const probes = (runner: Runner, home: string, profile: ProfileLaunch, agents: ru
       'the launch profile answered under MXC in its output schema',
     );
     const { threadId } = streamOf(ran.lines);
-    // The start is read before the resume probe appends its own requests to the thread's rollout.
     const start = threadId === null ? null : (codexStream.rollout(home, threadId)?.startContextTokens ?? null);
     const budgetChecks = cliDoctor.startChecks(start, agents);
     if (!profileChecked.ok) return [profileChecked, ...budgetChecks];

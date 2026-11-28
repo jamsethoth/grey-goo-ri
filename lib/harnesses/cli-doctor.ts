@@ -193,8 +193,12 @@ export async function containmentCheck(
 // The one budget check every Harness with a context budget runs under --probe (#497 Q1 A, Q2 A): `start`, the
 // context the profile probe's first request sent, as a passed check, and a warning for each given Agent whose
 // contextBudget is below twice it, since a real Attempt starts above the bare probe's floor; null when the probe
-// measured none.
+// measured none, which warns only when some Agent has a budget it could not check.
 export function startChecks(start: number | null, agents: runContext.DoctorOptions['agents']): Check[] {
+  const budgeted = Object.values(agents).some(
+    (agent) => referencePaths.isRecord(agent) && typeof agent.contextBudget === 'number',
+  );
+  if (start === null && !budgeted) return [];
   if (start === null)
     return [
       failed(
