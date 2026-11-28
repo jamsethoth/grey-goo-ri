@@ -10,12 +10,12 @@ here outside the Reserved section needs a new ADR under `docs/adr/` and a versio
 - Version: `RECORD_SCHEMA_VERSION = 5`, saved as each row's `schemaVersion`. A row of version 4, the one before, still
   reads: each field a version added is optional, so a row without it reads (ADR 0024). Every save writes the current
   version, whichever version the row was read at. A row of any other version is a corrupt row, never read as this one.
-- Version 3 added the hand-off (#430, ADR 0029): the retry kind `handoff` in `retries.*` and `retryKind`, the fixed
-  rows `handed-off` and `handoff-exhausted`, and each Session an Action handed off, in `sessions.*.handedOff`.
 - Version 5 added the fixed row `nothing-to-publish`, a push or pr-upsert of a branch with no commit its base lacks
   (#490, ADR 0034).
 - Version 4 changed no shape: it changed what a saved containment of `job` proves (#532, ADR 0030 decision 4; Cleanup
   and containment below). A row of version 3 gets no rule of its own for its `job`: gg had no records in use.
+- Version 3 added the hand-off (#430, ADR 0029): the retry kind `handoff` in `retries.*` and `retryKind`, the fixed
+  rows `handed-off` and `handoff-exhausted`, and each Session an Action handed off, in `sessions.*.handedOff`.
 - Version 2 added the Harness Result's `repositoryDigest`, `agentCliVersion`, `effectiveModel` and `effectiveEffort`
   (#422).
 - The State Database version: `stateDatabase.SCHEMA_VERSION = 1`, its `user_version` (below).
