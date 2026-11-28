@@ -77,8 +77,10 @@ const violated = (signals: Resolving) => signals.checks.find((check) => !check.p
 // Harness exhaustion, which a Vertex may route; unrouted, each ends at needs-human (Q3f, R12c). A run stop, an
 // Integrity Violation and any other failure are never routable.
 export const HARNESS_OUTCOMES = ['harness-timeout', 'harness-transient', 'harness-unparsed', 'harness-handoff'];
-// The engine's own routable Outcomes: a required Check's final failure is `failed` (T7, U14).
-export const ENGINE_OUTCOMES = ['failed', ...HARNESS_OUTCOMES];
+// The engine's own routable Outcomes: a required Check's final failure is `failed` (T7, U14), and a push or pr-upsert
+// of a branch with no commit its base lacks is `nothing-to-publish` (#490).
+export const NOTHING_TO_PUBLISH = 'nothing-to-publish';
+export const ENGINE_OUTCOMES = ['failed', ...HARNESS_OUTCOMES, NOTHING_TO_PUBLISH];
 
 interface TableRow {
   name: visit.FixedRow;

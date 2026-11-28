@@ -283,7 +283,11 @@ async function stopVisit(runContext: RunContext, state: RunningVisit, ran: Ran, 
   if (resolution.row === 'integrity-violation') await rollBack(runContext, state, ran);
   else await rescueRouted(runContext, state, ran);
   const traversal = bounds.traverse(runContext, outcomeName);
-  const text = terminal.stopText(actionIdentity, outcomeName, resolution);
+  const text = terminal.stopText(actionIdentity, outcomeName, {
+    ...resolution,
+    ticket: runContext.record.ticket,
+    base: runContext.base,
+  });
   const spent = traversal.spent.length ? `${text.replace(/\.$/, '')}${bounds.spentText(traversal)}.` : text;
   return {
     next: traversal.next,

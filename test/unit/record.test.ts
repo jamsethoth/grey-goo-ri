@@ -519,8 +519,8 @@ test('a record whose visits, traversals or Check runs are not objects is corrupt
 // A save writes the current version, so a record's version always says which fields it may hold (#422, Q4 A).
 test('a record read at the previous schema version saves at the current one', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
-  const execution = { ...record.toJson(knownRecord(commonDir, 8)), schemaVersion: 3 };
-  const epic = { ...withoutCommonDir(record.createEpicRecord({ commonDir, epic: 3 })), schemaVersion: 3 };
+  const execution = { ...record.toJson(knownRecord(commonDir, 8)), schemaVersion: 4 };
+  const epic = { ...withoutCommonDir(record.createEpicRecord({ commonDir, epic: 3 })), schemaVersion: 4 };
   withDb(commonDir, (db) => {
     const insert = db.prepare('INSERT INTO records (kind, n, json) VALUES (?, ?, ?)');
     insert.run('ticket', 8, JSON.stringify(execution));
@@ -538,7 +538,7 @@ test('a record read at the previous schema version saves at the current one', as
           ) as { schemaVersion: number }
         ).schemaVersion,
     );
-  assert.deepEqual([savedVersion('ticket', 8), savedVersion('epic', 3)], [4, 4]);
+  assert.deepEqual([savedVersion('ticket', 8), savedVersion('epic', 3)], [5, 5]);
 });
 
 test('a record written before Action ids is corrupt, not misread', async (t) => {
