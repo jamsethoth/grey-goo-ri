@@ -237,7 +237,7 @@ test(
       'Nothing to publish: the branch has no change from main; if no change was needed, `gg work done 15 --close`.',
     );
     const ticketEnd = fullTerminalReason.ticketEnds(fixture.commonDir, fixture.executionRecord.execution).at(-1);
-    assert.equal(ticketEnd?.error, undefined, 'no fault');
+    assert.equal(ticketEnd?.error, null, 'no fault');
     assert.deepEqual(
       fixture.gh.calls.filter(({ args }) => args[0] === 'pr' && args[1] === 'create'),
       [],
