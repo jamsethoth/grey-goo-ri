@@ -12,6 +12,7 @@ import * as push from './effects/push.ts';
 import * as sideEffect from './effects/side-effect.ts';
 import * as outcome from './outcome.ts';
 import type * as procedures from './procedures.ts';
+import * as remoteEffects from './remote-effects.ts';
 import * as render from './render.ts';
 import type { RunContext } from './run-context.ts';
 import type * as visit from './visit.ts';
@@ -164,7 +165,11 @@ function publishing<Payload extends writeAhead.Payload, EffectContext, Prepared 
     prepare,
     work: async (prepared, actionMarker) => {
       const effect = await made(prepared);
-      if (!writeAhead.findEntry(runContext.record, actionMarker, 'intent') && (await unpublished(effect.payload)))
+      // The check's reads are remote, so a transient failure of one is retried on the Action's budget (#490).
+      if (
+        !writeAhead.findEntry(runContext.record, actionMarker, 'intent') &&
+        (await remoteEffects.remoteRead(runContext, actionMarker, () => unpublished(effect.payload)))
+      )
         return null;
       return sideEffect.sideEffect<Payload, EffectContext>(runContext, { actionMarker, ...effect, deferred: true });
     },

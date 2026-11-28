@@ -207,6 +207,25 @@ async function relaunch(context: sideEffect.EffectContext, actionMarker: string,
   context.database.save(context.record);
 }
 
+// A remote read an Action makes before its launch, such as whether push or pr-upsert has anything to publish (#490), is
+// retried on the Action's budget as its launch is, so a transient failure of it is no unexpected fault.
+export async function remoteRead<Result>(
+  context: sideEffect.EffectContext,
+  actionMarker: string,
+  read: () => Promise<Result>,
+): Promise<Result> {
+  const startedAt = context.clock.now();
+  for (;;) {
+    await cooldown(context, actionMarker);
+    try {
+      return await read();
+    } catch (err) {
+      if (err instanceof effectErrors.EarlyTerminalError || effectErrors.fatal(err)) throw err;
+      await reserveRetry(context, { actionMarker, startedAt, err });
+    }
+  }
+}
+
 // Looks for a remote Action's effect by its marker. A failed lookup proves nothing, so it is retried on the Action's
 // budget; only a lookup that worked can find the effect absent.
 export async function findEffectRetrying(

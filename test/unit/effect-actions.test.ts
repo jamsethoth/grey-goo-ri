@@ -4,12 +4,16 @@ import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as effectActions from '../../lib/effect-actions.ts';
+import * as interpreter from '../../lib/interpreter.ts';
 import type * as procedures from '../../lib/procedures.ts';
 import * as runContextModule from '../../lib/run-context.ts';
 import type * as visit from '../../lib/visit.ts';
 import type * as visitScope from '../../lib/visit-scope.ts';
 import * as exampleRun from '../support/example-run.ts';
+import * as executionReads from '../support/execution-reads.ts';
 import * as golden from '../support/golden.ts';
+import * as keys from '../support/keys.ts';
+import * as remoteFailures from '../support/remote-failures.ts';
 
 type Kind = keyof typeof effectActions.EFFECT_KINDS;
 
@@ -134,4 +138,33 @@ test('no effect Action kind publishes a ticket branch with no commit its base la
     'pr-upsert': [],
     'pr-ready': [],
   });
+});
+
+// The check whether there is anything to publish reads origin and GitHub before the launch, so a transient failure of
+// either is retried on the Action's remote budget, as the launch's own is (#490 Q1 A).
+test("a transient failure of push's fetch for its check is retried and pushes once", async (t) => {
+  const fixture = await golden.fixture(t);
+  const git = fixture.options.deps.git;
+  let checks = 0;
+  fixture.options.deps.git = {
+    ...git,
+    commitsAhead: (...args) =>
+      ++checks === 1 ? Promise.reject(remoteFailures.pushError()) : git.commitsAhead(...args),
+  };
+  const result = await interpreter.runExecution(fixture.options);
+
+  const push = keys.retryKey({ vertex: 'green', visit: 1, action: 'push', recovery: 0 });
+  await remoteFailures.retriedOnce(fixture, result, push, executionReads.actionMarker(fixture, 'green', 'push'));
+  assert.equal(await executionReads.originSha(fixture), await executionReads.headSha(fixture));
+});
+
+test("a transient failure of pr-upsert's PR lookup for its check is retried and opens one PR", async (t) => {
+  const fixture = await golden.fixture(t);
+  fixture.gh.fail({ matches: remoteFailures.isPr('list'), status: 502 });
+  const result = await interpreter.runExecution(fixture.options);
+
+  const prUpsert = keys.retryKey({ vertex: 'green', visit: 1, action: 'pr', recovery: 0 });
+  const marker = executionReads.attemptMarker(fixture, 'green', 1, 'pr', 0);
+  await remoteFailures.retriedOnce(fixture, result, prUpsert, marker);
+  assert.equal(remoteFailures.prCalls(fixture, 'create').length, 1, 'one create, after the retried lookup');
 });
