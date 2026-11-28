@@ -116,6 +116,15 @@ function exampleOn(name: string, budget: number): config.Configuration {
       file(exampleSource.fixtureText(written)),
     ]),
   );
+  return sources(repository, files);
+}
+
+// `repository` beside a user source that holds only the machine settings, typed through its own parameter so the
+// example keeps its type (example-source.test.ts's census).
+function sources<Repository extends config.Source>(
+  repository: Repository,
+  files: config.SourceFiles,
+): config.Configuration {
   return {
     repository,
     user: { maxParallel: 2, worktreeRoot: '~/worktrees' },
