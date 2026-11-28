@@ -712,7 +712,7 @@ for (const shown of ['{}', '[]']) {
       `\nvertex red\n  procedure: tests-fail\n  agent: implementer (harness fake)\n  access: ${shown}\n`,
       `\n  checks: test (${shown} test)\n`,
       `\n  claimTokens: ok requires ${shown}, blocked stops\n`,
-      `\n  routes: misscoped -> end ${shown}, * -> end needs-human\n`,
+      `\n  routes: misscoped -> end ${shown}, nothing-to-publish -> end needs-human, * -> end needs-human\n`,
       `\n    1. claim = ok and check.review-pass = passed -> ${shown}\n`,
       `\n    2. check.repeat = ${shown} -> repeat\n`,
       `\n    4. response.count > ${shown} -> retest\n`,

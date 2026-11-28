@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as outcome from '../../lib/outcome.ts';
 import * as exampleSource from '../support/example-source.ts';
 import * as procedureActions from '../support/procedure-actions.ts';
 
@@ -44,6 +45,23 @@ test('a Claim token named failed or harness-timeout is an error', () => {
       code: 'reserved-name',
     },
   ]);
+});
+
+// Every engine Outcome, nothing-to-publish among them (#490, Q2 A), is a name no Procedure may give its own Outcome.
+test('a table outcome named after any engine Outcome is an error', () => {
+  assert.ok(outcome.ENGINE_OUTCOMES.includes('nothing-to-publish'), outcome.ENGINE_OUTCOMES.join(', '));
+  const fired = outcome.ENGINE_OUTCOMES.map((name) => {
+    const config = exampleSource.config();
+    config.procedures['tests-fail'].stopped[0].outcome = name;
+    return { name, fired: exampleSource.firedRules(exampleSource.check(config).errors) };
+  });
+  assert.deepEqual(
+    fired,
+    outcome.ENGINE_OUTCOMES.map((name) => ({
+      name,
+      fired: [{ at: 'procedures.tests-fail.stopped[0]', code: 'reserved-name' }],
+    })),
+  );
 });
 
 test('a table outcome or otherwise named after an end is an error', () => {

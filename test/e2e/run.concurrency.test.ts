@@ -53,6 +53,7 @@ const LOCKED_VERBS = [
   'rescueTree',
   'rescueCommit',
   'createRef',
+  'commitsAhead',
 ] as const;
 
 test('every orchestrator git write waits for the repo lock', { timeout: 120_000 }, async (t) => {

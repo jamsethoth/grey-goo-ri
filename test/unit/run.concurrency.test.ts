@@ -13,6 +13,7 @@ import * as executionContext from '../support/execution-context.ts';
 import * as latch from '../support/latch.ts';
 import * as runFixture from '../support/run-fixture.ts';
 import * as fakeGh from '../support/fake-gh.ts';
+import * as fakeGit from '../support/fake-git.ts';
 
 const { TICKET } = runFixture;
 const { EPIC } = epicRun;
@@ -411,7 +412,39 @@ const LOCKED_VERBS = [
   'rescueTree',
   'rescueCommit',
   'createRef',
+  'commitsAhead',
 ] as const;
+// The verbs that change no ref and write no object, and fingerprint, whose snapshot takes the repo lock itself.
+const UNLOCKED_VERBS = [
+  'repoInfo',
+  'commonDir',
+  'listWorktrees',
+  'currentBranch',
+  'refTarget',
+  'headSha',
+  'branchHead',
+  'treeOf',
+  'hasTree',
+  'commitLog',
+  'treeDiff',
+  'changedPaths',
+  'changedSince',
+  'untrackedPaths',
+  'conflictedPaths',
+  'diffSummary',
+  'branchDiff',
+  'diffStats',
+  'fingerprint',
+  'defaultBranch',
+  'slugify',
+  'worktreePath',
+];
+
+// A new git verb is placed on one list, so one that fetches or writes cannot miss the repo lock unnoticed (#490). The
+// fake's verbs are lib/git.ts's: tsc holds the fake to every verb of its Git.
+test('every git verb is a locked write or a named unlocked verb', () => {
+  assert.deepEqual(Object.keys(fakeGit.fakeGit().git).sort(), [...LOCKED_VERBS, ...UNLOCKED_VERBS].sort());
+});
 
 // A slow fetch in another process may hold the repo lock past acquire's default 60 s; snapshots and orchestrator writes
 // wait longer, so contention does not become a fault. Each lock poll here takes a minute, as an overrunning sleep may.

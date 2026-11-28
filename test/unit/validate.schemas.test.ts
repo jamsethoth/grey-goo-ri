@@ -378,6 +378,7 @@ test('a token whose every passing case a row maps away is not an Outcome', () =>
     'harness-transient',
     'harness-unparsed',
     'harness-handoff',
+    'nothing-to-publish',
   ]);
 });
 

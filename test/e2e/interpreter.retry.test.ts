@@ -11,9 +11,9 @@ test('a git write queued behind another holder of the repo lock checks the human
     const lock = contendRepoLock(fixture, async () => {
       fixture.gh.labels.add('gg:state:needs-human');
     });
-    // The green commit's write is the last before the push, whose lock attempt then waits.
+    // The nothing-to-publish check's fetch is the last write before the push, whose lock attempt then waits.
     const counts = onLockedGit(fixture, (verb, count) => {
-      if (verb === 'commitStaged' && count === 2) lock.arm();
+      if (verb === 'commitsAhead' && count === 1) lock.arm();
     });
     const result = await interpreter.runExecution(fixture.options);
 
@@ -31,7 +31,7 @@ test('a git write queued behind another holder of the repo lock checks the human
       git.push(fixture.worktree, golden.BRANCH, await git.headSha(fixture.worktree)),
     );
     const counts = onLockedGit(fixture, (verb, count) => {
-      if (verb === 'commitStaged' && count === 2) lock.arm();
+      if (verb === 'commitsAhead' && count === 1) lock.arm();
     });
     const result = await interpreter.runExecution(fixture.options);
 

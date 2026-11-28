@@ -1,6 +1,6 @@
 {
   "execution": {
-    "schemaVersion": 4,
+    "schemaVersion": 5,
     "repository": "o/r",
     "execution": "8.a1b2c3",
     "ticket": 8,
@@ -476,6 +476,16 @@
         "failureClass": null
       },
       {
+        "outcome": "nothing-to-publish",
+        "direction": "stop",
+        "rule": { "table": "fixed", "row": "nothing-to-publish" },
+        "row": "nothing-to-publish",
+        "check": null,
+        "retryAfterMs": null,
+        "retryKind": null,
+        "failureClass": null
+      },
+      {
         "outcome": "passed",
         "direction": "advance",
         "rule": { "table": "fixed", "row": "effect-completed" },
@@ -648,7 +658,7 @@
     ]
   },
   "epic": {
-    "schemaVersion": 4,
+    "schemaVersion": 5,
     "epic": 1,
     "planDecision": { "approved": [1, 2] },
     "approvalRequest": {

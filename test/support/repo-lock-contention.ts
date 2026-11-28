@@ -40,7 +40,7 @@ export function contendRepoLock(fixture: GoldenFixture, during: () => Promise<un
   };
 }
 
-type Verb = 'writeTree' | 'commitStaged' | 'push';
+type Verb = 'writeTree' | 'commitStaged' | 'commitsAhead' | 'push';
 
 // Puts the golden Execution on the orchestrator's locked git; `after(verb, n)` runs after the nth raw call of a verb.
 // Returns the raw calls counted so far, by verb.
@@ -55,7 +55,12 @@ export function onLockedGit(fixture: GoldenFixture, after: (verb: Verb, count: n
       after(verb, counts[verb]);
       return result;
     };
-  const raw = { writeTree: counted('writeTree'), commitStaged: counted('commitStaged'), push: counted('push') };
+  const raw = {
+    writeTree: counted('writeTree'),
+    commitStaged: counted('commitStaged'),
+    commitsAhead: counted('commitsAhead'),
+    push: counted('push'),
+  };
   fixture.options.deps.git = run.lockedGit({ ...git, ...raw } as runContext.RunGit, fixture.commonDir, {
     locks: fixture.options.deps.locks,
   });

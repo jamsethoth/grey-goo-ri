@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as exampleRun from '../support/example-run.ts';
+import * as fullTerminalReason from '../support/full-terminal-reason.ts';
 import * as golden from '../support/golden.ts';
+import * as goldenRun from '../support/golden-run.ts';
 import { editRuns } from '../support/suite-runs.ts';
 
 // The example Flow `gg init` writes (#120), run end to end over the fakes; its rescues run on real git in
@@ -199,3 +201,48 @@ test('golden: a failed baseline runs again for the next Ticket', async (t) => {
   assert.equal(runs, 1, 'the baseline ran again');
   assert.equal(next.record.terminalReason?.text, 'The command Check baseline.test failed with no recovery left.');
 });
+
+// A Ticket whose behaviour main already has: red needs no test and green changes nothing (#490, Q2 A).
+test(
+  'golden: a green that commits nothing ends at needs-human with nothing-to-publish, ' +
+    'pushing no branch and opening no PR',
+  async (t) => {
+    const fixture = await exampleRun.runExample(t, {
+      baseFiles: { ...exampleRun.ADD, ...exampleRun.ADDS_TEST },
+      responses: {
+        [call('red', 1, 'red')]: { files: {}, response: exampleRun.noTestResponse() },
+        [call('green', 1, 'green')]: { files: {}, response: exampleRun.greenResponse() },
+      },
+    });
+    assert.equal(fixture.result.outcome, 'needs-human');
+    assert.deepEqual(goldenRun.fullTrace(fixture), [
+      'baseline/test/r0/a1/ok',
+      'baseline ok -> red',
+      'red/red/r0/a1/blocked',
+      'red/red-check/r0/a1/no-test',
+      'red no-test -> green',
+      'green/green/r0/a1/ok',
+      'green/test/r0/a1/ok',
+      'green/commit/r0/a1/ok',
+      'green/push/r0/a1/nothing-to-publish',
+      'green nothing-to-publish -> needs-human',
+      'needs-human/end-comment/r0/a1/ok',
+      'needs-human/end-label/r0/a1/ok',
+    ]);
+    const reason = goldenRun.terminalReasonOf(fixture);
+    assert.equal(reason.outcome, 'nothing-to-publish');
+    assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, action: 'push', recovery: 0 });
+    assert.equal(
+      reason.text,
+      'Nothing to publish: the branch has no change from main; if no change was needed, `gg work done 15 --close`.',
+    );
+    const ticketEnd = fullTerminalReason.ticketEnds(fixture.commonDir, fixture.executionRecord.execution).at(-1);
+    assert.equal(ticketEnd?.error, null, 'no fault');
+    assert.deepEqual(
+      fixture.gh.calls.filter(({ args }) => args[0] === 'pr' && args[1] === 'create'),
+      [],
+      'no gh pr create',
+    );
+    assert.equal(await fixture.fakeGit!.git.remoteSha(fixture.mainRoot, golden.BRANCH), null, 'no branch pushed');
+  },
+);

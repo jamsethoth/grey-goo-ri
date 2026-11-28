@@ -196,6 +196,16 @@ function refVerbs({ store, placeAt, headOf, commitOf, resolve, ancestors }: Part
           message: store.commit(sha).message.replace(/\n+$/, ''),
         }));
     },
+    async commitsAhead(cwd: string, base: string, sha = 'HEAD') {
+      const place = placeAt(cwd);
+      const { repo } = place;
+      if (!repo.reachable) throw fail(`fatal: '${repo.url}' does not appear to be a git repository`);
+      const remote = repo.origin.get(base);
+      if (!remote) throw fail(`fatal: couldn't find remote ref ${base}`);
+      repo.tracking.set(base, remote);
+      const theirs = ancestors(remote);
+      return [...ancestors(resolve(place, sha))].filter((commit) => !theirs.has(commit)).length;
+    },
   };
 }
 

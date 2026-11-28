@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import * as outcome from '../../lib/outcome.ts';
 import type * as procedures from '../../lib/procedures.ts';
 import type * as visit from '../../lib/visit.ts';
@@ -553,6 +554,26 @@ for (const [name, err, failureClass, retryable] of [
   });
 }
 
+// gh pr create's refusals as gh prints them, with no HTTP status. Each stays a final unknown failure: gg stops
+// before an empty branch's create instead of classifying GitHub's "No commits between" (#490, DoD 2).
+test('every gh pr create refusal stays a final unknown failure', () => {
+  const ghRefusal = (stderr: string) =>
+    Object.assign(new Error(`${stderr}\ngh pr create --draft`), { code: 1, stdout: '', stderr: `${stderr}\n` });
+  const refusals = [
+    'pull request create failed: GraphQL: No commits between main and ticket/213-subtotal (createPullRequest)',
+    'a pull request for branch "ticket/15-x" into branch "main" already exists:\nhttps://github.com/o/r/pull/7',
+    "pull request create failed: GraphQL: Head sha can't be blank, Base sha can't be blank, " +
+      'Head ref must be a branch (createPullRequest)',
+    'pull request create failed: GraphQL: Base ref must be a branch (createPullRequest)',
+    'pull request create failed: GraphQL: Resource not accessible by integration (createPullRequest)',
+  ];
+  const classes = refusals.map((stderr) => {
+    const { failureClass, retryable } = outcome.classifyRemoteFailure(ghRefusal(stderr));
+    return `${failureClass} ${retryable ? 'retried' : 'final'}`;
+  });
+  assert.deepEqual(classes, ['unknown final', 'unknown final', 'unknown final', 'unknown final', 'unknown final']);
+});
+
 const delay = (err: outcome.RemoteError, retry: number) =>
   outcome.remoteRetryDelay(outcome.classifyRemoteFailure(err), retry, NOW);
 
@@ -719,4 +740,28 @@ test('every other fixed row but claimed outranks a hand-off', () => {
       assert.equal(resolution.row, name, `row ${name} with ${spent} hand-offs spent`);
     }
   }
+});
+
+// The documents that define the Outcomes name every engine Outcome, nothing-to-publish among them (#490, DoD 4).
+const documentText = (name: string) =>
+  readFileSync(new URL(`../../${name}`, import.meta.url), 'utf8').replace(/\s+/g, ' ');
+const codeSpans = (text: string) => (text.match(/`[^`]+`/g) ?? []).map((span) => span.slice(1, -1));
+
+test("the request's list of engine Outcomes is the engine's", () => {
+  const request = documentText('docs/requests/node-harness-dag.md');
+  const listed = /gg's engine Outcomes (.*?), each routable/.exec(request);
+  assert.ok(listed, 'the request lists the engine Outcomes');
+  assert.ok(outcome.ENGINE_OUTCOMES.includes('nothing-to-publish'), outcome.ENGINE_OUTCOMES.join(', '));
+  assert.deepEqual(codeSpans(listed[1]!).sort(), [...outcome.ENGINE_OUTCOMES].sort());
+});
+
+test("GLOSSARY.md's Outcome names each engine Outcome that is not a Harness's", () => {
+  const entry = /\*\*Outcome\*\*:(.*?)_Avoid_/.exec(documentText('GLOSSARY.md'));
+  assert.ok(entry, 'GLOSSARY.md defines Outcome');
+  const own = outcome.ENGINE_OUTCOMES.filter((name) => !outcome.HARNESS_OUTCOMES.includes(name));
+  assert.ok(own.includes('nothing-to-publish'), own.join(', '));
+  assert.deepEqual(
+    own.filter((name) => !codeSpans(entry[1]!).includes(name)),
+    [],
+  );
 });

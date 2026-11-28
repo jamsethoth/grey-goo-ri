@@ -12,6 +12,7 @@ import * as push from './effects/push.ts';
 import * as sideEffect from './effects/side-effect.ts';
 import * as outcome from './outcome.ts';
 import type * as procedures from './procedures.ts';
+import * as remoteEffects from './remote-effects.ts';
 import * as render from './render.ts';
 import type { RunContext } from './run-context.ts';
 import type * as visit from './visit.ts';
@@ -129,22 +130,75 @@ function commitAction(runContext: RunContext, running: Running) {
   });
 }
 
-// The commit the record proves was checked, not HEAD: a branch changed by hand is never published.
-function pushAction(runContext: RunContext, { actionIdentity, settle }: Running) {
-  const { record: executionRecord, git } = runContext;
-  return attempt.effectAction(runContext, {
+// A push or pr-upsert of a branch with no commit its base on origin lacks makes no effect, so no branch equal to its
+// base is pushed and no PR is created for one: the Visit stops with nothing-to-publish (#490 Q1 A). An open intent
+// passed this check when it was made.
+const NOTHING_TO_PUBLISH: visit.TableResolution = {
+  outcome: outcome.NOTHING_TO_PUBLISH,
+  direction: 'stop',
+  row: 'nothing-to-publish',
+  rule: { table: 'fixed', row: 'nothing-to-publish' },
+  check: null,
+  retryAfterMs: null,
+  retryKind: null,
+  failureClass: null,
+};
+
+type Made<Payload, EffectContext> = Omit<sideEffect.SideEffect<Payload, EffectContext>, 'actionMarker' | 'deferred'>;
+
+function publishing<Payload extends writeAhead.Payload, EffectContext, Prepared = undefined>(
+  runContext: RunContext & NoInfer<EffectContext>,
+  { actionIdentity, settle }: Running,
+  {
+    prepare,
+    made,
+    unpublished,
+  }: {
+    prepare?: (actionMarker: string) => Promise<Prepared>;
+    made: (prepared: Prepared) => Made<Payload, EffectContext> | Promise<Made<Payload, EffectContext>>;
+    unpublished: (payload: Payload) => Promise<boolean>;
+  },
+): attempt.Attempting<Prepared, writeAhead.Evidence | null, visit.EffectResolution | visit.TableResolution> {
+  return {
     actionIdentity,
+    busy: true,
+    prepare,
+    work: async (prepared, actionMarker) => {
+      const effect = await made(prepared);
+      // The check's reads are remote, so a transient failure of one is retried on the Action's budget (#490).
+      if (
+        !writeAhead.findEntry(runContext.record, actionMarker, 'intent') &&
+        (await remoteEffects.remoteRead(runContext, actionMarker, () => unpublished(effect.payload)))
+      )
+        return null;
+      return sideEffect.sideEffect<Payload, EffectContext>(runContext, { actionMarker, ...effect, deferred: true });
+    },
+    finish: (evidence) => ({ resolution: evidence ? attempt.EFFECT_COMPLETED : NOTHING_TO_PUBLISH }),
     settle,
-    made: async () => ({
-      effect: push.effect,
-      payload: {
-        branch: executionRecord.branch,
-        sha:
-          branchTip.provenTip(executionRecord, runContext.database)?.sha ??
-          (await git.headSha(executionRecord.worktree)),
-      },
+  };
+}
+
+const nothingAhead = async (runContext: RunContext, sha: string) =>
+  (await runContext.git.commitsAhead(runContext.record.worktree, runContext.base!, sha)) === 0;
+
+// The commit the record proves was checked, not HEAD: a branch changed by hand is never published.
+function pushAction(runContext: RunContext, running: Running) {
+  const { record: executionRecord, git } = runContext;
+  return attempt.run(
+    runContext,
+    publishing(runContext, running, {
+      made: async () => ({
+        effect: push.effect,
+        payload: {
+          branch: executionRecord.branch,
+          sha:
+            branchTip.provenTip(executionRecord, runContext.database)?.sha ??
+            (await git.headSha(executionRecord.worktree)),
+        },
+      }),
+      unpublished: (payload) => nothingAhead(runContext, payload.sha),
     }),
-  });
+  );
 }
 
 // `target: ticket` comments on the Ticket; the review's comment goes to the PR (W5). A Procedure with no agent Action
@@ -185,33 +239,37 @@ function postComment(runContext: RunContext, { actionIdentity, action, state, se
 // `with` name shadows the scope's own (implement's `green` is its agent Action's output).
 function upsertPr(runContext: RunContext, running: Running) {
   const { record: executionRecord, ticket } = runContext;
-  const { actionIdentity, action, state, settle } = running;
-  return attempt.effectAction(runContext, {
-    actionIdentity,
-    settle,
-    prepare: (actionMarker) =>
-      render.publicBody(
-        config.namedFile(executionRecord.configurationSnapshot!.files, action.body),
-        {
-          ...visitScope.scopeOf(executionRecord, actionIdentity, state),
-          ...visitScope.bind(executionRecord, running),
-          ticket,
-          provenance: () => render.provenance(executionRecord),
+  const { actionIdentity, action, state } = running;
+  return attempt.run(
+    runContext,
+    publishing(runContext, running, {
+      prepare: (actionMarker) =>
+        render.publicBody(
+          config.namedFile(executionRecord.configurationSnapshot!.files, action.body),
+          {
+            ...visitScope.scopeOf(executionRecord, actionIdentity, state),
+            ...visitScope.bind(executionRecord, running),
+            ticket,
+            provenance: () => render.provenance(executionRecord),
+          },
+          actionMarker,
+          runContext.publicText,
+        ),
+      made: (body) => ({
+        effect: prUpsert.effect,
+        payload: {
+          branch: executionRecord.branch,
+          base: runContext.base,
+          title: runContext.publicText(ticket!.title),
+          body,
+          bodyHash: config.sha256(body),
         },
-        actionMarker,
-        runContext.publicText,
-      ),
-    made: (body) => ({
-      effect: prUpsert.effect,
-      payload: {
-        branch: executionRecord.branch,
-        base: runContext.base,
-        title: runContext.publicText(ticket!.title),
-        body,
-        bodyHash: config.sha256(body),
-      },
+      }),
+      // An open PR is updated whatever its branch holds; only a create needs a commit its base lacks.
+      unpublished: async ({ branch }) =>
+        (await runContext.gh.findPr(branch, runContext.cwd))?.state !== 'OPEN' && nothingAhead(runContext, branch),
     }),
-  });
+  );
 }
 
 // A publishing Action (R11d, T1a): it marks ready only the last commit the record proves pushed, and only if every

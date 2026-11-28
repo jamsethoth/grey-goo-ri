@@ -331,7 +331,8 @@ _Avoid_: hint, flag
 **Outcome**:
 The value the interpreter derives for a Vertex that selects its Edge: from its Procedure's Claim and Checks, or from
 the Decision an `await-approval` Action asked for. A required Check that fails with no recovery left gives the engine
-Outcome `failed`, routable like any other.
+Outcome `failed`, routable like any other, as is `nothing-to-publish`, which a `push` or `pr-upsert` gives when the
+branch has no commit its base lacks.
 _Avoid_: result, status, decision (reserved for humans), verdict (reserved for reviewers)
 
 **Direction**:

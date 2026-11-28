@@ -1,6 +1,7 @@
 // The validator's findings, one report passed to each part that checks, and the value tests every part shares.
 
 import * as labels from '../labels.ts';
+import * as outcome from '../outcome.ts';
 
 export { entries, hasOwnKey, isCount, isName, shown, unique } from './configured-values.ts';
 
@@ -390,8 +391,8 @@ export function checkName(
 }
 // What a Procedure's Outcomes and Claim tokens may not be named.
 const isReserved = (name: string) =>
-  name === 'failed' || (labels.END_STATES as string[]).includes(name) || name.startsWith('harness-');
-const RESERVED = 'is reserved for the engine: failed, an end name or harness-*';
+  [...outcome.ENGINE_OUTCOMES, ...labels.END_STATES].includes(name) || name.startsWith('harness-');
+const RESERVED = 'is reserved for the engine: failed, nothing-to-publish, an end name or harness-*';
 export function checkReserved(report: Report, location: string, what: string, name: string) {
   if (isReserved(name))
     error(report, location, 'reserved-name', `${what} ${JSON.stringify(name)} ${RESERVED}`, { name });

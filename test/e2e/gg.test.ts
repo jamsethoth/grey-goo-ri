@@ -418,7 +418,12 @@ test("gg doctor reads the repository's configuration and its schemas and prints 
     result.stdout.includes('\nvertex reviewer\n  procedure: review\n  agent: reviewer (harness stand-in)\n'),
     result.stdout + result.stderr,
   );
-  assert.ok(result.stdout.includes('\n  routes: misscoped -> end needs-replan, * -> end needs-human\n'), result.stdout);
+  assert.ok(
+    result.stdout.includes(
+      '\n  routes: misscoped -> end needs-replan, nothing-to-publish -> end needs-human, * -> end needs-human\n',
+    ),
+    result.stdout,
+  );
   assertOnlyStandInPreflight(result.stdout, result.status);
 });
 

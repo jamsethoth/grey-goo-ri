@@ -3,6 +3,7 @@ import { join, resolve, dirname, basename } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import * as exec from './exec.ts';
 import * as gitDefaultBranch from './git-default-branch.ts';
+import * as gitPathspecs from './git-pathspecs.ts';
 import * as gitTempIndex from './git-temp-index.ts';
 import type * as integrity from './integrity.ts';
 import * as paths from './paths.ts';
@@ -25,27 +26,6 @@ const CHANGES = new Map<string, Change>([
   ['M', 'modified'],
   ['D', 'deleted'],
 ]);
-
-// `within` limits a listing to { paths, globs, exclude }: `paths` match a path or anything under it,
-// case-insensitively on Windows, which reads .AGENTS/ as .agents/; `globs` and `exclude` are globs that ignore case
-// everywhere, as Test Immutability does (a plain :(glob) ignores it on Windows for some pathspec lists only). Without
-// the trailing slash a directory symlink, a blob at the bare path, still matches. An array is the pathspecs a reset
-// intent saved before #144.
-function pathspecs(within: integrity.Within | undefined) {
-  if (!within) return [];
-  if (Array.isArray(within)) return within.length ? ['--', ...within] : [];
-  const { paths: literal = [], globs = [], exclude = [] } = within;
-  const bare = literal.map((path) => path.replace(/\/+$/, ''));
-  const included = [
-    ...(process.platform === 'win32' ? bare.map((path) => `:(icase)${path}`) : bare),
-    ...globs.map((glob) => `:(glob,icase)${glob}`),
-  ];
-  const combined = [
-    ...(exclude.length && !included.length ? ['.'] : included),
-    ...exclude.map((glob) => `:(exclude,glob,icase)${glob}`),
-  ];
-  return combined.length ? ['--', ...combined] : [];
-}
 
 // Concurrent `git worktree add` calls race on .git/config's lock, so they run one at a time in every git of a process.
 // eslint-disable-next-line no-restricted-syntax -- the queue is the process's, as the lock it orders is the repo's.
@@ -216,7 +196,14 @@ function refVerbs(gitRunner: Runner) {
     (await runGit(['cat-file', '-e', `${tree}^{tree}`], { cwd, allowFail: true })).code === 0;
 
   const commitLog = (cwd: string, branch: string) => readCommitLog(gitRunner, cwd, branch);
-  return { push, headSha, remoteSha, branchHead, treeOf, hasTree, commitLog };
+
+  // The commits `sha` holds that origin's `base` lacks, counted after fetching it: zero when a branch has nothing to
+  // publish (#490).
+  async function commitsAhead(cwd: string, base: string, sha = 'HEAD') {
+    await git(['fetch', 'origin', base], cwd);
+    return Number(await git(['rev-list', '--count', `origin/${base}..${sha}`], cwd));
+  }
+  return { push, headSha, remoteSha, branchHead, treeOf, hasTree, commitLog, commitsAhead };
 }
 
 function commitVerbs(gitRunner: Runner, { headSha, treeOf }: ReturnType<typeof refVerbs>) {
@@ -262,7 +249,7 @@ function commitVerbs(gitRunner: Runner, { headSha, treeOf }: ReturnType<typeof r
 function rescueVerbs(gitRunner: Runner) {
   const { git, runGit } = gitRunner;
   const rescueTree = (cwd: string, { within }: { within?: integrity.Within }) =>
-    gitTempIndex.rescueTree(gitRunner, cwd, within ? pathspecs(within) : null);
+    gitTempIndex.rescueTree(gitRunner, cwd, within ? gitPathspecs.pathspecs(within) : null);
 
   // A commit of a rescued tree on its parent, on no branch: nothing keeps it until a ref does.
   const rescueCommit = (cwd: string, { tree, parent, message }: { tree: string; parent: string; message: string }) =>
@@ -312,7 +299,7 @@ function diffVerbs(gitRunner: Runner) {
 
   // Paths that differ between two commits or trees, within the given paths when asked.
   const changedPaths = (cwd: string, from: string, to: string, within?: integrity.Within) =>
-    listPaths(['diff', '--name-only', '-z', from, to, ...pathspecs(within)], cwd);
+    listPaths(['diff', '--name-only', '-z', from, to, ...gitPathspecs.pathspecs(within)], cwd);
 
   // Tracked paths whose file in the worktree differs from `commit`, renames as both paths.
   const changedSince = (cwd: string, commit: string) =>
@@ -325,7 +312,7 @@ function diffVerbs(gitRunner: Runner) {
     { include = 'unignored', within }: { include?: 'unignored' | 'ignored' | 'all'; within?: integrity.Within } = {},
   ) {
     const only = { unignored: ['--exclude-standard'], ignored: ['--ignored', '--exclude-standard'], all: [] }[include];
-    return listPaths(['ls-files', '--others', ...only, '-z', ...pathspecs(within)], cwd);
+    return listPaths(['ls-files', '--others', ...only, '-z', ...gitPathspecs.pathspecs(within)], cwd);
   }
 
   // git write-tree refuses unmerged entries, so the paths of a merge in progress come first.
@@ -388,6 +375,7 @@ export const {
   treeOf,
   hasTree,
   commitLog,
+  commitsAhead,
   treeDiff,
   changedPaths,
   changedSince,

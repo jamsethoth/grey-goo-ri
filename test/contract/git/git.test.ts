@@ -368,6 +368,35 @@ for (const [name, repo] of sides) {
   );
 
   contract(
+    "commitsAhead counts a ticket branch's commits that origin's base lacks, none when equal to it or behind it",
+    async ({ git, root, mainRoot, commit }) => {
+      const path = join(root, 'wt', 'ticket-4');
+      await git.ensureWorktree({ mainRoot, path, branch: 'ticket/4-title', base: 'main' });
+      assert.equal(await git.commitsAhead(path, 'main', 'HEAD'), 0, 'a branch equal to its base');
+      commit(mainRoot, 'the base moves on');
+      await git.push(mainRoot, 'main');
+      assert.equal(await git.commitsAhead(path, 'main', 'HEAD'), 0, 'a branch behind its base');
+      writeFileSync(join(path, 'work.txt'), 'work');
+      const work = commit(path, 'work');
+      assert.equal(await git.commitsAhead(path, 'main', work), 1, 'a branch with one commit of its own');
+    },
+  );
+
+  contract(
+    'commitsAhead counts against the base on origin, not a local base holding a commit origin lacks',
+    async ({ git, mainRoot: directory, branch, commit }) => {
+      const local = commit(directory, 'on the local main only');
+      branch(directory, 'ticket/9-thing');
+      assert.equal(await git.commitsAhead(directory, 'main', local), 1);
+    },
+  );
+
+  contract('commitsAhead surfaces a fetch failure', async ({ git, mainRoot: directory, breakOrigin }) => {
+    const named = breakOrigin(directory);
+    await assert.rejects(git.commitsAhead(directory, 'main', 'HEAD'), (err: Error) => err.message.includes(named));
+  });
+
+  contract(
     'currentBranch names the checked-out branch, or null on a detached HEAD',
     async ({ git, mainRoot: directory, detach }) => {
       assert.equal(await git.currentBranch(directory), 'main');

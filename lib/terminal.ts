@@ -202,6 +202,9 @@ export interface StopResolution {
   retrying?: boolean;
   actionCap?: number;
   signal?: visit.CheckSignal;
+  // The Ticket and its base, which nothing-to-publish names.
+  ticket?: number;
+  base?: string;
 }
 
 // The sentence for a fixed row of the Transition Table, or undefined for a row of a Procedure's table.
@@ -237,6 +240,11 @@ function rowText(where: string | null, vertex: string, resolution: StopResolutio
       );
     case 'unknown-failure':
       return `The harness call at ${where} failed with class ${failureClass}, which is never retried.`;
+    case 'nothing-to-publish':
+      return (
+        `Nothing to publish: the branch has no change from ${resolution.base}; if no change was needed, ` +
+        `\`gg work done ${resolution.ticket} --close\`.`
+      );
     case 'action-cap':
       return (
         `The Execution reached its Action Cap of ${resolution.actionCap} Attempts, so ${where} at ${vertex} did ` +

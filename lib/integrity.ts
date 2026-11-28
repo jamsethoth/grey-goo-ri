@@ -21,7 +21,7 @@ export type UntrackedBytes = { base64: string; link?: undefined; directory?: und
 export type UntrackedFile = UntrackedLink | UntrackedBytes;
 export type UntrackedFiles = Record<string, UntrackedFile>;
 
-// What a listing is limited to: `paths` and anything under them, `globs`, less `exclude` (git.pathspecs), or git
+// What a listing is limited to: `paths` and anything under them, `globs`, less `exclude` (lib/git-pathspecs.ts), or git
 // pathspecs as they are.
 export type WithinPaths = { paths?: string[]; globs?: string[]; exclude?: string[] };
 export type Within = WithinPaths | string[];

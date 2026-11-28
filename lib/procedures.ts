@@ -61,6 +61,9 @@ export function decisionsOf(action: object): string[] {
 // The await-approval Action of a list of Actions as declared, if it has one.
 export const approvalActionOf = (actions: unknown[]) =>
   actions.find((action) => (action as { do?: unknown } | null)?.do === 'await-approval') as object | undefined;
+// Whether a list of Actions as declared can end nothing-to-publish: a push or a pr-upsert (#490).
+export const publishes = (actions: unknown[]) =>
+  actions.some((action) => ['push', 'pr-upsert'].includes((action as { do?: unknown } | null)?.do as string));
 
 // One Action of a Procedure as the validator resolved it: its id, its kind, and that kind's keys.
 export interface Action {

@@ -166,6 +166,7 @@ const FIXED_ROW: Record<visit.FixedRow, true> = {
   'parse-exhausted': true,
   'handed-off': true,
   'handoff-exhausted': true,
+  'nothing-to-publish': true,
   claimed: true,
   recover: true,
 };

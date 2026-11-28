@@ -17,7 +17,8 @@ export interface RuleIdentity {
 
 export type Direction = 'advance' | 'retry' | 'stop';
 
-// gg's fixed rows of the Transition Table (outcome.FIXED_ROWS), and `recover`, which starts the next recovery pass.
+// gg's fixed rows of the Transition Table (outcome.FIXED_ROWS), `recover`, which starts the next recovery pass, and
+// `nothing-to-publish`, a push or pr-upsert that found no commit to publish (#490).
 export type FixedRow =
   | 'cleanup-unconfirmed'
   | 'integrity-violation'
@@ -31,6 +32,7 @@ export type FixedRow =
   | 'parse-exhausted'
   | 'handed-off'
   | 'handoff-exhausted'
+  | 'nothing-to-publish'
   | 'claimed'
   | 'recover';
 

@@ -185,7 +185,7 @@ test('no module outside lib/git.ts passes git a command line', async () => {
     [/from ['"`]\.\/git\.ts['"`]/, 'an import of lib/git.ts'],
   ];
   // lib/git.ts's helper modules, which it builds its verbs from, run git as it does.
-  const gitModules = ['lib/git.ts', 'lib/git-temp-index.ts', 'lib/git-default-branch.ts'];
+  const gitModules = ['lib/git.ts', 'lib/git-temp-index.ts', 'lib/git-default-branch.ts', 'lib/git-pathspecs.ts'];
   const others = modules.filter((path) => !gitModules.includes(path));
   for (const path of [...others, 'bin/gg.ts', 'scripts/run-suite.ts']) {
     const text = await readFile(root + path, 'utf8');

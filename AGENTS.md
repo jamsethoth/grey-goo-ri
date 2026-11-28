@@ -119,13 +119,13 @@ leverage and a change lands in one place (locality).
 | `lib/agent-call.ts` | an Attempt's call under the Integrity Assertions: its baseline and intent, the Harness's run with its heartbeat, Test Immutability |
 | `lib/check-action.ts` | the check Action and its Check kinds (`command`, `tests-fail`, `response`, `repeat`) |
 | `lib/attempt.ts` | an Attempt from its start to its saved result: its start, its Action Marker, its work (bracketed busy when it touches the worktree, `whileBusy`), and one save holding its result, its completion, its outputs and its Action Event; a complete one's saved result; a held completion (J4); an Effect's Attempt (`effectAction`) |
-| `lib/effect-actions.ts` | the deterministic Actions (commit, push, comment, pr-upsert, pr-ready): the payload each builds for its Effect |
+| `lib/effect-actions.ts` | the deterministic Actions (commit, push, comment, pr-upsert, pr-ready): the payload each builds for its Effect, and, for push and pr-upsert, whether the branch has a commit origin's base lacks (nothing-to-publish) |
 | `lib/approval-action.ts` | the await-approval Action: an Approval Request's write-ahead Actions and a Decision's consumption |
 | `lib/cleanup-hold.ts` | a Pending cleanup hold: its label and comment, and a later Run's confirmation under the recorded containment |
 | `lib/pending-report.ts` | what a Run does for a Ticket it leaves Pending: its label and comment Actions and the ending that stops the Run |
 | `lib/effects/` | the Effects, one module each (`commit.ts`, `push.ts`, `comment.ts`, `pr-upsert.ts`, `pr-ready.ts`, `label.ts`, `close.ts`, `rescue.ts`, `reset.ts`): its payload and the reader that reads an intent's from a row, its perform, how an open intent of it is found by its Action Marker or finished at resume, the worktree state it proves, and whether it is remote; `index.ts`, the lookup by the name an intent persists; `side-effect.ts`, `sideEffect`: the context an Action's effects read, and an Effect's intent, launch and evidence in the write-ahead log, which its Attempt's save completes |
 | `lib/effect-errors.ts` | what the effects throw: crash points, `EarlyTerminalError` (an Execution held, abandoned or stopped from inside an Action), `RetriesExhaustedError` |
-| `lib/remote-effects.ts` | a remote Effect's retries and backoff on a budget saved first, the effect lookup before a retry, the repo-lock guard |
+| `lib/remote-effects.ts` | a remote Effect's retries and backoff on a budget saved first, the effect lookup before a retry, the repo-lock guard, and a remote read an Action makes before its launch (`remoteRead`) |
 | `lib/terminal.ts` | Terminals: hold, abandonment, fault and run stops, the Terminal each ends at, Terminal Reason texts |
 | `lib/terminal-report.ts` | a Terminal's report: its comment and label Actions, the stop it saves first, its state and ticket_end, its run stop; `resolve`, gg work done's report |
 | `lib/procedures.ts` | the Action and Check kinds a Procedure may declare: each kind's keys and outputs, and the keys that name a file (`FILE_KEYS`), which the loader and the validator both read, and the files a Procedure names (`procedureFiles`), which a Visit pins (Procedures themselves are configuration) |
@@ -185,6 +185,7 @@ leverage and a change lands in one place (locality).
 | `lib/git.ts` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
 | `lib/git-default-branch.ts` | the branch a repository's Tickets start from by default, which `gg init` writes as `baseBranch`: origin's HEAD, else the checked-out branch |
 | `lib/git-temp-index.ts` | what `lib/git.ts` reads through a copy of the index: a worktree's fingerprint and a rescue's tree |
+| `lib/git-pathspecs.ts` | the git pathspecs a listing's `within` limits it to, for `lib/git.ts` alone |
 | `lib/path-entry.ts` | the one PATH-entry lookup, which `argvOf` and the Harness doctors' shell check share: a candidate's own entry, a link not followed, or none when it is missing or cannot be read, so the search goes on to the next |
 | `lib/paths.ts` | canonical local paths, the path key every path comparison uses, and the State Database's file in a common dir |
 | `lib/github.ts` | gh verbs, and the label writes and the read of the repository's `owner/name` that never throw; a failed gh process is a `GhError` carrying its HTTP status and rate limit (ported) |

@@ -355,10 +355,12 @@ export function checkProcedure(
   return procedure;
 }
 
-// The Outcomes a Procedure can produce (R12b, T7): each table's rows, and its default when some input falls through.
-// `falls` holds the tokens some input falls through a table for; every token reaching a table that was not analysed
-// falls through.
-export function outcomesOf(procedure: HeldProcedure, falls: FallThroughs) {
+// The Outcomes a Procedure can produce (R12b, T7): each table's rows, its default when some input falls through, and
+// the engine Outcomes no table decides. `falls` holds the tokens some input falls through a table for; every token
+// reaching a table that was not analysed falls through.
+export const outcomesOf = (procedure: HeldProcedure, falls: FallThroughs) =>
+  report.unique([...tableOutcomesOf(procedure, falls), ...engineOutcomesOf(procedure)]);
+function tableOutcomesOf(procedure: HeldProcedure, falls: FallThroughs) {
   const { tokens, tables, otherwise } = procedure;
   const found: string[] = [];
   const add = (table: TableName, fallback: (fell: string[]) => unknown[]) => {
@@ -373,23 +375,26 @@ export function outcomesOf(procedure: HeldProcedure, falls: FallThroughs) {
   add('passed', (fell) => (asking ? procedures.decisionsOf(asking) : (decided ?? fell)));
   add('failed', () => [otherwise ?? 'failed']);
   add('stopped', (fell) => fell);
-  if (procedure.agent) found.push(...outcome.HARNESS_OUTCOMES);
   return report.unique(found);
 }
+// An agent's harness failures (Q3f), and a push or pr-upsert's nothing-to-publish (#490).
+const engineOutcomesOf = ({ agent, actions }: HeldProcedure) => [
+  ...(agent ? outcome.HARNESS_OUTCOMES : []),
+  ...(procedures.publishes(actions) ? [outcome.NOTHING_TO_PUBLISH] : []),
+];
 
 // The ways a Procedure produces each Outcome (H3): each row of a table counting for every token of it (H2), and the
-// default for each token that falls through (outcomesOf, a token at a time); or a harness failure.
+// default for each token that falls through (a token at a time); or an engine Outcome.
 export function casesOf(procedure: HeldProcedure, falls: FallThroughs) {
   const cases: OutcomeCase[] = [];
   for (const table of TABLES) {
     for (const token of procedure.tokens[table]) {
       const tokens = Object.fromEntries(TABLES.map((each) => [each, each === table ? [token] : []]));
       const fell = falls[table] ? { [table]: falls[table].filter((name) => name === token) } : {};
-      const alone = { ...procedure, agent: null, tokens: tokens as CheckedProcedure['tokens'] };
-      for (const name of outcomesOf(alone, fell)) cases.push({ outcome: name, table, token });
+      const alone = { ...procedure, tokens: tokens as CheckedProcedure['tokens'] };
+      for (const name of tableOutcomesOf(alone, fell)) cases.push({ outcome: name, table, token });
     }
   }
-  if (procedure.agent)
-    cases.push(...outcome.HARNESS_OUTCOMES.map((name) => ({ outcome: name, table: null, token: null })));
+  cases.push(...engineOutcomesOf(procedure).map((name) => ({ outcome: name, table: null, token: null })));
   return cases;
 }

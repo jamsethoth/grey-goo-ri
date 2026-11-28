@@ -62,7 +62,7 @@ export async function mapConcurrently<T, R>(items: T[], limit: number, task: (it
 }
 
 // Every orchestrator git write waits for the repo lock, so two gg processes on one repo serialise (request 3.5).
-// writeTree and the rescue's tree and commit write objects, and remoteSha fetches, so all of them count as writes.
+// writeTree and the rescue's tree and commit write objects, and remoteSha and commitsAhead fetch, so all are writes.
 const GIT_WRITES = [
   'ensureWorktree',
   'stageAll',
@@ -75,6 +75,7 @@ const GIT_WRITES = [
   'rescueTree',
   'rescueCommit',
   'createRef',
+  'commitsAhead',
 ] as const;
 type Guard = (verb: string, args: unknown[], unlocked: runContext.RunGit) => Promise<unknown>;
 // A write that waited for the lock runs `guard(verb, args, git)` once it holds it, with git unlocked: the guard may

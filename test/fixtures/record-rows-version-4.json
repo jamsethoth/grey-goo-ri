@@ -1,6 +1,6 @@
 {
   "execution": {
-    "schemaVersion": 3,
+    "schemaVersion": 4,
     "repository": "o/r",
     "execution": "8.a1b2c3",
     "ticket": 8,
@@ -648,7 +648,7 @@
     ]
   },
   "epic": {
-    "schemaVersion": 3,
+    "schemaVersion": 4,
     "epic": 1,
     "planDecision": { "approved": [1, 2] },
     "approvalRequest": {
