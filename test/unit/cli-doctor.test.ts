@@ -183,3 +183,56 @@ test('a PATH entry that cannot be read is skipped, and the shell after it is fou
     packaged: true,
   });
 });
+
+// #497 Q1 A: the profile probe's first request is the floor a fresh Session starts at, and a budget below twice it
+// leaves a real Attempt, which starts higher, little or no room before its first hand-off.
+test('a measured starting context passes, naming the tokens a fresh Session starts at', () => {
+  const checks = cliDoctor.startChecks(9755, {});
+  assert.equal(checks.length, 1, JSON.stringify(checks));
+  const [start] = checks;
+  assert.deepEqual({ name: start!.name, ok: start!.ok }, { name: 'starting-context', ok: true });
+  assert.ok(start!.message.includes('9755'), start!.message);
+});
+
+test('a contextBudget below twice the start warns, naming the Agent, its budget, the start and the threshold', () => {
+  const warnings = cliDoctor.startChecks(9000, { tight: { contextBudget: 8000 } }).filter(({ ok }) => !ok);
+  assert.equal(warnings.length, 1, JSON.stringify(warnings));
+  const [warning] = warnings;
+  assert.deepEqual(
+    { name: warning!.name, severity: warning!.severity },
+    { name: 'context-budget', severity: 'warning' },
+  );
+  for (const said of ['agent tight', '8000', '9000', '18000'])
+    assert.ok(warning!.message.includes(said), `the warning names ${said}: ${warning!.message}`);
+});
+
+test('a contextBudget one token below twice the start warns, and one at twice it does not', () => {
+  const agents = {
+    under: { contextBudget: 17_999 },
+    twice: { contextBudget: 18_000 },
+    over: { contextBudget: 18_001 },
+  };
+  const warned = cliDoctor
+    .startChecks(9000, agents)
+    .filter(({ ok }) => !ok)
+    .map(({ message }) => message);
+  assert.equal(warned.length, 1, JSON.stringify(warned));
+  assert.ok(warned[0]!.includes('agent under'), warned[0]);
+});
+
+test('an Agent with no contextBudget is no warning', () => {
+  const checks = cliDoctor.startChecks(9000, { unbudgeted: { model: 'small' }, declaredOddly: 'not an object' });
+  assert.deepEqual(
+    checks.map(({ name, ok }) => ({ name, ok })),
+    [{ name: 'starting-context', ok: true }],
+  );
+});
+
+test('a probe that measured no start warns that no contextBudget was checked, and judges no Agent', () => {
+  const checks = cliDoctor.startChecks(null, { tight: { contextBudget: 1 } });
+  assert.deepEqual(
+    checks.map(({ name, ok, severity }) => ({ name, ok, severity })),
+    [{ name: 'starting-context', ok: false, severity: 'warning' }],
+  );
+  assert.ok(checks[0]!.message.includes('contextBudget'), checks[0]!.message);
+});
