@@ -109,9 +109,13 @@ export function watchDescendants(rootPid: number) {
 export type Watcher = ReturnType<typeof watchDescendants>;
 
 // A command's watcher: its job's on Windows, the POSIX one over its descendants, or none for an uncontained Windows
-// command or a spawn that failed.
-export function watch({ child, job }: containment.Started, kernel32: containment.Kernel32 | null) {
-  if (job && kernel32) return jobWatcher.watch(job, kernel32, WINDOWS_POLL_GAP_MS);
+// command or a spawn that failed. onEscapee is the job watcher's (lib/job-watcher.ts).
+export function watch(
+  { child, job }: containment.Started,
+  kernel32: containment.Kernel32 | null,
+  onEscapee?: () => void,
+) {
+  if (job && kernel32) return jobWatcher.watch(job, kernel32, WINDOWS_POLL_GAP_MS, onEscapee);
   return process.platform === 'win32' || !child.pid ? null : watchDescendants(child.pid);
 }
 

@@ -9,9 +9,9 @@ import * as paths from './paths.ts';
 import type * as visit from './visit.ts';
 
 // The frozen schema version of both records' rows (docs/interfaces/record.md); a change to it needs a new ADR (#23).
-export const RECORD_SCHEMA_VERSION = 3;
+export const RECORD_SCHEMA_VERSION = 4;
 // A row of the version before reads too: each field its version added is optional (ADR 0024).
-const PREVIOUS_RECORD_SCHEMA_VERSION = 2;
+const PREVIOUS_RECORD_SCHEMA_VERSION = 3;
 
 // A row the reader refuses: its record's number, why, and the field it refused when it names one, which gg doctor
 // reports as values of their own (#439).

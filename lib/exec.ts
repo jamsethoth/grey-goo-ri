@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import * as commandShim from './command-shim.ts';
 import * as containment from './containment.ts';
+import * as containmentReport from './containment-report.ts';
 import * as containmentProbe from './containment-probe.ts';
 import * as commandCleanup from './command-cleanup.ts';
 import * as launchClock from './launch-clock.ts';
@@ -183,6 +184,20 @@ function eachLine(stream: Readable, onLine: (line: string) => void) {
   stream.on('end', () => partial && onLine(partial.replace(/\r$/, '')));
 }
 
+// A launch's output read: each stdout line to onLine, any output to touch, which re-arms the stall clock, and the end
+// of its stderr, which it gives.
+function readOutput(child: ChildProcess, touch: () => void, onLine: LaunchOptions['onLine']) {
+  const [stdoutPipe, stderrPipe] = pipesOf(child);
+  let stderrTail = '';
+  stdoutPipe.setEncoding('utf8').on('data', touch);
+  stderrPipe.setEncoding('utf8').on('data', (data: string) => {
+    touch();
+    stderrTail = (stderrTail + data).slice(-STDERR_TAIL_CHARS);
+  });
+  eachLine(stdoutPipe, (line) => onLine?.(line));
+  return () => stderrTail;
+}
+
 // Start an argv contained, with no shell; see LaunchOptions. Nothing is left running when it resolves: a stop takes the
 // tree down, and an exit ends what the argv left, with what its watcher linked, as runShell does; cleanup says what it
 // found. A launch whose executable cannot start rejects with the spawn error.
@@ -190,45 +205,42 @@ function launch(kernel32: containment.Kernel32 | null, options: LaunchOptions): 
   return new Promise((resolve, reject) => {
     const started = startArgv(kernel32, options);
     const { child } = started;
-    const cleanupContainment = cleanupContainmentOf(started);
-    const watcher = processTree.watch(started, kernel32);
+    const cleanupContainment = containmentReport.cleanupContainmentOf(started);
+    const reports = containmentReport.startedReports(
+      options.onStarted,
+      cleanupContainment,
+      () => exited || stop('cancel'),
+    );
+    const watcher = processTree.watch(started, kernel32, reports.escapee);
     const closed = new Promise((settled) => child.on('close', settled));
     const { promise: gaveUp, resolve: giveUp } = Promise.withResolvers<void>();
     let stopped: launchClock.Stop | null = null;
     let exited = false;
-    let stderrTail = '';
-    let reported = false; // onStarted once, before the result: a gate a stop left running may never answer
-    const reportStarted = () => !reported && ((reported = true), options.onStarted?.(cleanupContainment));
     const finish = (ended: Pick<LaunchResult, 'code' | 'signal'>, cleanup: commandCleanup.Cleanup) => {
       clocks.stop();
       for (const pipe of pipesOf(child)) pipe.destroy();
       const timedOut = stopped === 'cancel' ? null : stopped;
-      const report = reportOf(started, cleanupContainment, cleanup);
-      resolve({ ...ended, timedOut, cancelled: stopped === 'cancel', stderrTail, cleanup: report });
+      const report = containmentReport.reportOf(started, cleanupContainment, cleanup, watcher);
+      resolve({ ...ended, timedOut, cancelled: stopped === 'cancel', stderrTail: stderrTail(), cleanup: report });
     };
     // A clock or the cancel after the exit only stops the wait for pipes a process outside the containment holds.
-    const clocks = launchClock.startClocks(options, async (why) => {
+    const stop = async (why: launchClock.Stop) => {
       if (exited) return giveUp();
       if (stopped || !child.pid) return; // no pid: the spawn failed, and its error rejects the launch
       stopped = why;
       void watcher?.stop(); // ends the snapshots now; takeDown joins their thread (#531)
       const { survivors, cleanupErrors } = await processTree.takeDown(started, kernel32, watcher, {});
-      if (survivors.length) reportStarted();
+      if (survivors.length) reports.started();
       else await started.spawned;
       finish({ code: null, signal: null }, { survivors, cleanupErrors });
-    });
-    const [stdoutPipe, stderrPipe] = pipesOf(child);
-    stdoutPipe.setEncoding('utf8').on('data', clocks.touch);
-    stderrPipe.setEncoding('utf8').on('data', (data: string) => {
-      clocks.touch();
-      stderrTail = (stderrTail + data).slice(-STDERR_TAIL_CHARS);
-    });
-    eachLine(stdoutPipe, (line) => options.onLine?.(line));
+    };
+    const clocks = launchClock.startClocks(options, stop);
+    const stderrTail = readOutput(child, clocks.touch, options.onLine);
     child.stdin?.on('error', () => {}); // exited before reading all input: its exit reports it
     child.stdin?.end(options.input ?? '');
     void started.spawned.then(async (failure) => {
       // A stop that ended the gate before it answered resolves the launch; the containment still held what started.
-      if (!failure || stopped) return reportStarted();
+      if (!failure || stopped) return reports.started();
       clocks.stop();
       await watcher?.stop();
       reject(failure);
@@ -301,25 +313,6 @@ function startCommand(kernel32: containment.Kernel32 | null, commandLine: string
 const containmentOf = ({ job, containmentError }: containment.Started): Containment =>
   job ? { containment: 'job' } : { containment: 'none', ...(containmentError && { containmentError }) };
 
-// How gg can check later that the command's processes are gone (L14). exec's own containment says whether the command
-// dies with gg, which a POSIX process group does not; this one says what there is to check, which it does give.
-function cleanupContainmentOf({ child, job }: containment.Started): commandCleanup.CleanupContainment {
-  if (job) return { kind: 'job' };
-  return process.platform === 'win32' ? { kind: 'none' } : { kind: 'group', pgid: child.pid as number };
-}
-
-// A command's Command Cleanup report. An unconfirmed job keeps gg's handle, for the Run to close (closeJob).
-function reportOf(
-  started: containment.Started,
-  cleanupContainment: commandCleanup.CleanupContainment,
-  cleanup: commandCleanup.Cleanup,
-) {
-  const report = commandCleanup.cleanupReport(cleanupContainment, cleanup);
-  if (started.job && !report.confirmed)
-    Object.defineProperty(report, 'closeJob', { value: () => (started.job as containment.Job).close() });
-  return report;
-}
-
 // The clock of a run: timeoutMs from the call, or from when signal aborts, unless the run stops it first.
 function startClock(
   { timeoutMs, signal, timers = globalThis }: { timeoutMs?: number; signal?: AbortSignal; timers?: Timers },
@@ -348,9 +341,11 @@ function shell(
   const started = startCommand(kernel32, commandLine, cwd);
   const { child } = started;
   const kind = containmentOf(started);
-  const cleanupContainment = cleanupContainmentOf(started);
+  const cleanupContainment = containmentReport.cleanupContainmentOf(started);
+  const watcher = processTree.watch(started, kernel32);
+  if (watcher && 'seen' in watcher) testHooks.onWatch?.(watcher.seen);
   const resultOf = (cleanup: commandCleanup.Cleanup) => ({
-    cleanup: reportOf(started, cleanupContainment, cleanup),
+    cleanup: containmentReport.reportOf(started, cleanupContainment, cleanup, watcher),
     ...kind,
   });
   return new Promise((resolve, reject) => {
@@ -362,8 +357,6 @@ function shell(
     // The clock also bounds the wait for a finished command's pipes, which a process cleanup cannot find may hold.
     let giveUp = () => {};
     const gaveUp = new Promise<void>((wake) => (giveUp = wake));
-    const watcher = processTree.watch(started, kernel32);
-    if (watcher && 'seen' in watcher) testHooks.onWatch?.(watcher.seen);
     const stopClock = startClock({ timeoutMs, signal: testHooks.signal, timers: testHooks.timers }, async () => {
       if (exited) return giveUp();
       timedOut = true; // the kill makes 'exit' and 'close' fire first; the timeout result below wins
