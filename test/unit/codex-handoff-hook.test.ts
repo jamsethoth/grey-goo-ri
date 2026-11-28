@@ -125,3 +125,21 @@ test('the hook process reads its input from stdin and writes its ask, and stays 
   await codexHandoffHook.main(['1000', stateDirectory], ['not json'], stdout);
   assert.equal(written.length, 1, 'it writes nothing for input it cannot parse');
 });
+
+// The step file only throttles the ask (#485 F7), so a state directory the hook cannot write leaves it asking.
+test('the hook asks when it cannot keep its step file', (t) => {
+  const { input, stateDirectory } = hookInput(t, 151000);
+  writeFileSync(stateDirectory, 'a file where the state directory would be');
+  const options = { budget: BUDGET, stateDirectory: join(stateDirectory, 'state') };
+  assert.ok(addedContext(codexHandoffHook.respond(input, options)).includes('151k'));
+});
+
+// A missing session id names no step file, so one thread without it never silences another (#485 F8).
+test('a thread with no session id is asked whatever another one was', (t) => {
+  const first = hookInput(t, 151000);
+  const options = { budget: BUDGET, stateDirectory: first.stateDirectory };
+  const { session_id: _first, ...firstInput } = first.input;
+  const { session_id: _second, ...secondInput } = hookInput(t, 152000).input;
+  assert.ok(addedContext(codexHandoffHook.respond(firstInput, options)).includes('151k'));
+  assert.ok(addedContext(codexHandoffHook.respond(secondInput, options)).includes('152k'));
+});

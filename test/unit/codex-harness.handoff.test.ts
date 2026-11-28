@@ -140,23 +140,38 @@ function launchError(home: string, agent: model.Agent, listings: codex.Listings)
   }
 }
 
-// Q3 A: a budgeted call turns hooks on, which also runs any hooks.json or config.toml hook in gg's Codex home
+// Q3 A: a budgeted call turns hooks on, which also runs the hooks of a hooks.json or a config.toml in gg's Codex home
 // (`hooks-on`: its `home` hooks fired), so such a file fails a budgeted Agent at preflight and again before spawn,
 // naming it, and leaves every other Agent as it was (Q8 A: no hook but gg's reaches a call).
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
 test("a hook file in gg's Codex home fails a Codex Agent with a contextBudget at preflight and before spawn, naming it", async (t) => {
   const wrong: string[] = [];
-  const files = { 'hooks.json': '{"hooks":{}}', 'config.toml': '[features]' };
-  for (const [file, text] of Object.entries(files))
+  // Each form a config.toml declares hooks in refuses; one with plugins, MCP servers or a comment only does not (D1 A).
+  const files: [file: string, text: string, hooks: boolean][] = [
+    ['hooks.json', '{"hooks":{}}', true],
+    ['config.toml', '[hooks]\nPostToolUse = []\n', true],
+    ['config.toml', '[[hooks.PostToolUse]]\nmatcher = ".*"\n', true],
+    ['config.toml', 'hooks.SessionStart = []\n', true],
+    ['config.toml', 'hooks = { PostToolUse = [] }\n', true],
+    ['config.toml', '["hooks".PostToolUse]\nx = 1\n', true],
+    ['config.toml', '[plugins."superpowers@openai-curated"]\nenabled = true\n', false],
+    ['config.toml', '[plugins."git-hooks@x"]\nenabled = true\n', false],
+    ['config.toml', '[mcp_servers.docs]\ncommand = "node"\nargs = ["server.js"]\n', false],
+    ['config.toml', '# hooks = {}\n[features]\n', false],
+  ];
+  for (const [file, text, hooks] of files)
     for (const contextBudget of [undefined, BUDGET]) {
       const home = codexHome(t, { [file]: text });
       const agent = budgetedOf(READER, contextBudget);
       const { ok, errors } = await codex.createCli(codexCli(), { codexHome: home }).validate(agent);
       const launched = launchError(home, agent, await codex.list(codexCli(), home));
-      const refused = contextBudget !== undefined;
+      const refused = hooks && contextBudget !== undefined;
       const named = (message: string) => message.includes(join(home, file));
       if (ok === refused || named(errors.join('; ')) !== refused || named(launched) !== refused)
-        wrong.push(`${file} budget ${contextBudget}: validate ${JSON.stringify({ ok, errors })}, launch "${launched}"`);
+        wrong.push(
+          `${file} ${JSON.stringify(text)} budget ${contextBudget}: ` +
+            `validate ${JSON.stringify({ ok, errors })}, launch "${launched}"`,
+        );
     }
   assert.deepEqual(wrong, []);
 });

@@ -25,9 +25,11 @@ and Q3 A on 2026-11-27, and Q4 A the same day.
    stays the backstop (request 3.1; `compaction` shows the key compacts).
 2. **A hook file in gg's Codex home fails a budgeted Agent (Q3 A).** With hooks on, Codex also runs the hooks of
    `CODEX_HOME/hooks.json` (`hooks-on`'s `home` lines), against Q8 A's "no hook but gg's reaches a call". So while gg's
-   Codex home holds `hooks.json` or `config.toml`, Codex's `validate` fails an Agent with a `contextBudget` at
-   preflight, naming the file, and `launchArgs` fails its call before spawn for a file added since. Every other Agent
-   runs as before, its hooks off.
+   Codex home holds `hooks.json`, or a `config.toml` that declares `hooks` (a `[hooks]` table, a `hooks.` dotted key
+   or an inline `hooks` key, D1 A), Codex's `validate` fails an Agent with a `contextBudget` at preflight, naming the
+   file, and `launchArgs` fails its call before spawn for a file added since. A `config.toml` holding only plugin or
+   MCP server entries, which `codex plugin add` and MCP setup write, fails nothing. Every other Agent runs as before,
+   its hooks off.
 3. **A Codex successor gets the note only, with no `gg ask-session` line (Q1 A, which the probe resolved to B).**
    ADR 0029 point 6 has the fresh agent ask its handed-off Session through `gg ask-session`. A Codex agent's commands
    run inside Codex's sandbox. #485's probe started gg ask-session's fork of a kept thread by node from PowerShell
@@ -63,6 +65,8 @@ and Q3 A on 2026-11-27, and Q4 A the same day.
   inside the sandbox, so every Codex successor would get a command that cannot work.
 - Have the doctor only warn of a hook file in gg's Codex home (Q3 B). Rejected: a run started without `gg doctor`
   would still run the home's hook.
+- Fail a budgeted Agent on any `config.toml` in gg's Codex home (#485 D1 B). Rejected: a plugin or an MCP server
+  there writes one, so budget could not run beside the plugins and MCP servers ADR 0031 supports on Codex.
 - Build `injectHooks` (the issue's branch 2). Rejected: the branch was for a Codex whose hooks do not fire under
   `exec`.
 

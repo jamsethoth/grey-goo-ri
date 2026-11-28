@@ -23,11 +23,16 @@ export function command(budget: number, stateDirectory: string): string {
 }
 
 // With hooks on, Codex also runs the hooks of gg's Codex home, which would reach the call beside gg's own (Q8 A), so a
-// file there that can declare one fails an Agent with a contextBudget, named (Q3 A).
+// hooks.json there, or a config.toml that declares hooks, fails an Agent with a contextBudget, named (Q3 A, D1 A). A
+// config.toml declares them by a key path with a hooks segment: a table header, a dotted or an inline key.
+// shortcut: a line match, not a TOML parse; it refuses too much (a hooks key in a string), never too little, short
+// of an escaped key name; upgrade to a parse if a refusal ever names a file with no hook.
+const HOOKS_KEY = /(^\s*|[[.{,]\s*)["']?hooks["']?\s*[.\]=]/m;
 const HOME_HOOK_FILES = ['hooks.json', 'config.toml'];
+const declaresHooks = (path: string) => !path.endsWith('config.toml') || HOOKS_KEY.test(readFileSync(path, 'utf8'));
 export const homeHookErrors = (codexHome: string): string[] =>
   HOME_HOOK_FILES.map((file) => join(codexHome, file))
-    .filter((path) => existsSync(path))
+    .filter((path) => existsSync(path) && declaresHooks(path))
     .map((path) => `gg's Codex home holds ${path}, whose hooks would run beside an Agent's contextBudget hook`);
 
 // The context the latest complete request sent: the input tokens, cached ones among them, of the rollout's last
@@ -63,10 +68,18 @@ export function respond(input: unknown, options: { budget: number; stateDirector
     const context = latestContext(input.transcript_path);
     if (context === null || context <= options.budget) return null;
     const step = Math.floor((context - options.budget) / STEP);
-    const statePath = join(options.stateDirectory, `${String(input.session_id).replace(/[^\w-]/g, '_')}.step`);
-    if (existsSync(statePath) && Number(readFileSync(statePath, 'utf8')) >= step) return null;
-    mkdirSync(options.stateDirectory, { recursive: true });
-    writeFileSync(statePath, String(step));
+    // The step file only throttles the ask, so one the hook cannot name or keep never silences it (#485 F7, F8).
+    const { session_id: id } = input;
+    if (typeof id === 'string') {
+      const statePath = join(options.stateDirectory, `${id.replace(/[^\w-]/g, '_')}.step`);
+      if (existsSync(statePath) && Number(readFileSync(statePath, 'utf8')) >= step) return null;
+      try {
+        mkdirSync(options.stateDirectory, { recursive: true });
+        writeFileSync(statePath, String(step));
+      } catch {
+        // Asked again at the next tool call, which beats never asking.
+      }
+    }
     const additionalContext =
       `Context budget: your latest request sent ${thousands(context)} tokens, past this Agent's budget of ` +
       `${thousands(options.budget)}. Finish now: end with the Structured Response whose claim is ` +

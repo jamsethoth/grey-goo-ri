@@ -51,10 +51,18 @@ export function respond(input: unknown, options: { budget: number; stateDirector
     const context = latestContext(input.transcript_path);
     if (context === null || context <= options.budget) return null;
     const step = Math.floor((context - options.budget) / STEP);
-    const statePath = join(options.stateDirectory, `${String(input.session_id).replace(/[^\w-]/g, '_')}.step`);
-    if (existsSync(statePath) && Number(readFileSync(statePath, 'utf8')) >= step) return null;
-    mkdirSync(options.stateDirectory, { recursive: true });
-    writeFileSync(statePath, String(step));
+    // The step file only throttles the ask, so one the hook cannot name or keep never silences it (#485 F7, F8).
+    const { session_id: id } = input;
+    if (typeof id === 'string') {
+      const statePath = join(options.stateDirectory, `${id.replace(/[^\w-]/g, '_')}.step`);
+      if (existsSync(statePath) && Number(readFileSync(statePath, 'utf8')) >= step) return null;
+      try {
+        mkdirSync(options.stateDirectory, { recursive: true });
+        writeFileSync(statePath, String(step));
+      } catch {
+        // Asked again at the next tool call, which beats never asking.
+      }
+    }
     const additionalContext =
       `Context budget: your latest request sent ${thousands(context)} tokens, past this Agent's budget of ` +
       `${thousands(options.budget)}. Finish now: end with the Structured Response whose claim is ` +
