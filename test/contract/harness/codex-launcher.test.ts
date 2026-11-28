@@ -18,9 +18,6 @@ const TABLE = { timeout: 300_000 };
 // stop always comes after the descendant and the case can see it go, however slowly the machine starts it (#475).
 const STOP_MS = 3_000;
 
-// How long after its command's pid a stop's helper is checked to have stayed, well inside STOP_MS.
-const HELPER_BEAT_MS = 500;
-
 // What the Harness's stderr text is, written by the fake to its stderr.
 const STDERR = 'codex: the CLI said this on stderr';
 
@@ -64,20 +61,13 @@ async function endedTree(t: TestContext, { cli, changes, cancels }: Ending) {
   const fake = fakeCli(t, { ...cli, orphan: true });
   const controller = new AbortController();
   const reports: string[] = [];
-  let helperStayed: boolean | undefined;
   const started = ({ kind }: { kind: string }) => {
     reports.push(kind);
-    if (cli.mode !== 'hang') return;
-    // A hang holds the tree past HELPER_BEAT_MS, so a helper that stays is alive a beat after its command's pid; one
-    // that exits once the pid is written, the middle process's shape, is not (#483 Q1 A).
-    const stayed = async () => {
-      await processProbe.waitFor(() => processProbe.pidIn(fake.orphanPidFile) > 0, t.signal);
-      await new Promise((resolve) => setTimeout(resolve, HELPER_BEAT_MS));
-      helperStayed = processProbe.alive(processProbe.pidIn(fake.helperPidFile));
-    };
     // The case's own end cancels too, so a case that times out before the pid comes still ends the call's tree.
-    const abort = () => cancels && controller.abort();
-    void stayed().then(abort, abort);
+    if (cancels) {
+      const abort = () => controller.abort();
+      void processProbe.waitFor(() => processProbe.pidIn(fake.orphanPidFile) > 0, t.signal).then(abort, abort);
+    }
   };
   const { result } = await fake.harness.run(codexCall(fake, changes), hooksOf({ started, signal: controller.signal }));
   const [cliPid, helper, descendant] = [fake.cliPidFile, fake.helperPidFile, fake.orphanPidFile].map((pidFile) =>
@@ -91,7 +81,8 @@ async function endedTree(t: TestContext, { cli, changes, cancels }: Ending) {
     helperAlive: Boolean(helper) && processProbe.alive(helper ?? 0),
     descendantStarted: Boolean(descendant),
     descendantAlive: Boolean(descendant) && processProbe.alive(descendant ?? 0),
-    helperStayed,
+    // the helper wrote no exit file: it ran until the cleanup killed it, as MXC's stays with its command (#483 Q1 A)
+    helperStayed: Boolean(helper) && !existsSync(fake.helperExitFile),
     confirmed: result.cleanup?.confirmed,
     containment: result.cleanup?.containment?.kind,
     reports,
@@ -145,9 +136,8 @@ test('a descendant left running is killed with the tree', TABLE, async (t) => {
   const left = names.flatMap((name, index) => {
     const tree = trees[index];
     const gone = tree?.helperStarted && !tree.helperAlive && tree.descendantStarted && !tree.descendantAlive;
-    const stayed = tree?.helperStayed === (ENDINGS[name]?.cli.mode === 'hang' || undefined);
     const held = tree?.confirmed === true && tree.containment === CONTAINMENT;
-    return gone && stayed && held && JSON.stringify(tree.reports) === JSON.stringify(REPORTS)
+    return gone && tree.helperStayed && held && JSON.stringify(tree.reports) === JSON.stringify(REPORTS)
       ? []
       : [`${name}: ${JSON.stringify(tree)}`];
   });

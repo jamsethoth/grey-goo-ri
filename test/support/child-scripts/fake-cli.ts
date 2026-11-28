@@ -27,7 +27,7 @@ const LIVES_MS = 600_000;
 
 const role = process.env.FAKE_CLI_ROLE;
 const orphanFile = process.env.FAKE_CLI_ORPHAN;
-const { FAKE_CLI_HELPER: helperArgs, FAKE_CLI_HELPER_PID: helperFile } = process.env;
+const { FAKE_CLI_HELPER: helperArgs, FAKE_CLI_HELPER_PID: helperFile, FAKE_CLI_HELPER_EXIT: helperExit } = process.env;
 const recording = process.env.FAKE_CLI_RECORDING;
 const answered = commandAnswer(process.env.FAKE_CLI_COMMANDS);
 if (role === 'orphan' && orphanFile) {
@@ -35,6 +35,8 @@ if (role === 'orphan' && orphanFile) {
   setTimeout(() => {}, LIVES_MS);
 } else if (role === 'helper' && orphanFile && helperFile) {
   writeFileSync(helperFile, String(process.pid));
+  // A helper that ends by itself says so; one a cleanup kills cannot, so no exit file means it stayed until cleanup.
+  if (helperExit) process.on('exit', () => writeFileSync(helperExit, String(process.pid)));
   startOrphan(orphanFile);
   setTimeout(() => {}, LIVES_MS);
 } else if (role === 'middle' && orphanFile) startOrphan(orphanFile);

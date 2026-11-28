@@ -129,8 +129,9 @@ export function codexOverFakeCli(t: TestContext, cli: FakeCodex) {
   const launch = withLastMessage(fake, scenarios, mode);
   const homes = { codexHome, skillsHome };
   const harness = { ...codex.createCodex(homes), ...codex.createCli({ launch, childInJob: noProbe }, homes) };
-  const { cwd, runDirectory, received, calls, launches, cliPidFile, helperPidFile, orphanPidFile } = fake;
-  const pidFiles = { cliPidFile, helperPidFile, orphanPidFile };
+  const { cwd, runDirectory, received, calls, launches, cliPidFile, helperPidFile, helperExitFile, orphanPidFile } =
+    fake;
+  const pidFiles = { cliPidFile, helperPidFile, helperExitFile, orphanPidFile };
   return { harness, codexHome, skillsHome, cwd, runDirectory, received, calls, launches, ...pidFiles };
 }
 

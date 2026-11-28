@@ -171,7 +171,15 @@ const pathsIn = (directory: string) => ({
   runDirectory: join(directory, 'run'),
   cliPidFile: join(directory, 'cli.pid'),
   helperPidFile: join(directory, 'helper.pid'),
+  helperExitFile: join(directory, 'helper exited'),
   orphanPidFile: join(directory, 'orphan.pid'),
+});
+
+// What the fake's helper reads: its argv, and the files it writes its pid to and, ending by itself, its exit to.
+const helperEnv = (helper: string[], { helperPidFile, helperExitFile }: ReturnType<typeof pathsIn>) => ({
+  FAKE_CLI_HELPER: JSON.stringify(helper),
+  FAKE_CLI_HELPER_PID: helperPidFile,
+  FAKE_CLI_HELPER_EXIT: helperExitFile,
 });
 
 // The fake CLI in a temp directory holding the CLI's home, the repository a call runs in, the Run directory, and the
@@ -221,7 +229,7 @@ export function fakeCli(t: TestContext, options: FakeCliOptions) {
         FAKE_CLI_SENT: sentFile,
         ...(transcript && { FAKE_CLI_TRANSCRIPT: transcript.path, FAKE_CLI_TRANSCRIPT_FROM: transcript.from }),
         ...(orphan && { FAKE_CLI_ORPHAN: orphanPidFile }),
-        ...(options.helper && { FAKE_CLI_HELPER: JSON.stringify(options.helper), FAKE_CLI_HELPER_PID: helperPidFile }),
+        ...(options.helper && helperEnv(options.helper, paths)),
         ...(stderr !== undefined && { FAKE_CLI_STDERR: stderr }),
       },
     };
