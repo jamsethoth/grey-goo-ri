@@ -66,10 +66,15 @@ export function respond(input: unknown, options: { budget: number; stateDirector
   }
 }
 
-async function main() {
-  const [budget, stateDirectory] = process.argv.slice(2);
+// The hook process, over the arguments, stdin and stdout its command line gives it.
+export async function main(
+  args: string[],
+  stdin: AsyncIterable<unknown> | Iterable<unknown>,
+  stdout: { write(text: string): unknown },
+) {
+  const [budget, stateDirectory] = args;
   let text = '';
-  for await (const chunk of process.stdin) text += String(chunk);
+  for await (const chunk of stdin) text += String(chunk);
   let input: unknown;
   try {
     input = JSON.parse(text);
@@ -77,7 +82,7 @@ async function main() {
     input = undefined;
   }
   const said = respond(input, { budget: Number(budget), stateDirectory: stateDirectory! });
-  if (said !== null) process.stdout.write(said);
+  if (said !== null) stdout.write(said);
 }
 
-if (import.meta.main) await main();
+if (import.meta.main) await main(process.argv.slice(2), process.stdin, process.stdout);

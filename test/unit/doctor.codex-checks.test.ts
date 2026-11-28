@@ -313,8 +313,10 @@ test('under --probe the profile probe carries the hand-off hook and the handoff 
     handlers.map(({ event }) => event),
     ['PostToolUse'],
   );
-  for (const command of [handlers[0]!.keys.command, handlers[0]!.keys.commandWindows])
+  for (const command of [handlers[0]!.keys.command, handlers[0]!.keys.commandWindows]) {
     assert.ok(command?.includes('codex-handoff-hook'), `the hand-off hook, on both commands: ${command}`);
+    assert.ok(command.includes(' 1000 '), `at the 1,000-token budget Q2 A names: ${command}`);
+  }
   const handoff = named('handoff-probe');
   assert.equal(handoff?.ok, true, handoff?.message ?? 'no handoff-probe check');
 });

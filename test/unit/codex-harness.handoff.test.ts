@@ -92,6 +92,7 @@ function hooksShown(argv: string[], contextBudget: number | undefined) {
     atBudget: atBudget.length,
     withoutWindows: handlers.filter(({ keys }) => !keys.command || !keys.commandWindows).length,
     untrusted: passed.includes(`projects={${JSON.stringify(CWD)}={trust_level="untrusted"}}`),
+    compaction: passed.find((key) => key.startsWith('model_auto_compact_token_limit=')) ?? null,
   };
 }
 
@@ -118,6 +119,7 @@ test('every launch of a Codex Agent with a contextBudget turns hooks on with the
       atBudget: Number(budgeted),
       withoutWindows: 0,
       untrusted: true,
+      compaction: budgeted ? 'model_auto_compact_token_limit=187500' : null,
     };
     const found = JSON.stringify(hooksShown(argv, contextBudget));
     const site = `${access} ${resume === null ? 'fresh' : 'resumed'} [${plugins.join()}] budget ${contextBudget}`;

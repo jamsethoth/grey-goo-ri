@@ -108,3 +108,20 @@ test("Codex's hand-off hook skips a partly written last line to the latest compl
   writeFileSync(input.transcript_path, '{"type":"event_msg","payload":{"type":"token_co', { flag: 'a' });
   assert.ok(addedContext(codexHandoffHook.respond(input, { budget: BUDGET, stateDirectory })).includes('151k'));
 });
+
+// The hook's process: its arguments, its stdin and its stdout, as the command line Codex runs gives them.
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('the hook process reads its input from stdin and writes its ask, and stays silent on unreadable input', async (t) => {
+  const stateDirectory = join(tempDirectory.tempDirectory(t, 'gg-codex-handoff-hook-'), 'state');
+  const written: string[] = [];
+  const stdout = { write: (text: string) => written.push(text) };
+  await codexHandoffHook.main(
+    ['1000', stateDirectory],
+    [JSON.stringify(hookInputFor(recordedRollout('hooks-on')))],
+    stdout,
+  );
+  assert.equal(written.length, 1, 'it writes once');
+  assert.ok(addedContext(written[0]!).includes('"handed-off"'), written[0]);
+  await codexHandoffHook.main(['1000', stateDirectory], ['not json'], stdout);
+  assert.equal(written.length, 1, 'it writes nothing for input it cannot parse');
+});

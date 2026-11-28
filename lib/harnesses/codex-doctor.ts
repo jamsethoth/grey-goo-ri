@@ -45,7 +45,8 @@ const FORK_AGENT: model.Agent = {
   effort: 'low',
   access: 'read-only',
 };
-const PROBE_AGENT: model.Agent = { ...FORK_AGENT, contextBudget: 1 };
+// The profile probe's budget is the 1,000 tokens #485 Q2 A names, which its first request passes.
+const PROBE_AGENT: model.Agent = { ...FORK_AGENT, contextBudget: 1000 };
 const FORK_SCHEMA = {
   type: 'object',
   properties: { answer: { type: 'string' } },

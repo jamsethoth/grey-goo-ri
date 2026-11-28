@@ -81,3 +81,16 @@ test('the hand-off hook skips a partly written last line to the latest complete 
   writeFileSync(input.transcript_path, '{"type":"assistant","message":{"usa', { flag: 'a' });
   assert.ok(addedContext(claudeHandoffHook.respond(input, { budget: BUDGET, stateDirectory })).includes('151k'));
 });
+
+// The hook's process: its arguments, its stdin and its stdout, as the command line Claude runs gives them.
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('the hook process reads its input from stdin and writes its ask, and stays silent on unreadable input', async (t) => {
+  const { input, stateDirectory } = hookInput(t, 151000);
+  const written: string[] = [];
+  const stdout = { write: (text: string) => written.push(text) };
+  await claudeHandoffHook.main([String(BUDGET), stateDirectory], [JSON.stringify(input)], stdout);
+  assert.equal(written.length, 1, 'it writes once');
+  assert.ok(addedContext(written[0]!).includes('"handed-off"'), written[0]);
+  await claudeHandoffHook.main([String(BUDGET), stateDirectory], ['not json'], stdout);
+  assert.equal(written.length, 1, 'it writes nothing for input it cannot parse');
+});
