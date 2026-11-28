@@ -318,7 +318,12 @@ async function validateIn(listOnce: () => Promise<Listings>, homes: Homes, agent
     errors.push('contextBudget must be a positive integer of tokens');
   else if (budget !== undefined) errors.push(...codexHandoffHook.homeHookErrors(homes.codexHome));
   const tools = resolveTools(agent);
-  if (!errors.length) errors.push(...codexSkills.declared(homes.skillsHome, fields.skills).errors);
+  try {
+    if (!errors.length) errors.push(...codexSkills.declared(homes.skillsHome, fields.skills).errors);
+  } catch (err) {
+    // validate never throws (the Harness contract), so a skill it cannot read is the Agent's error.
+    errors.push(`a declared skill cannot be read: ${(err as Error).message}`);
+  }
   if (!errors.length && (tools.plugins.length || tools.mcp.length)) {
     try {
       errors.push(...matched(homes.codexHome, tools, await listOnce()).errors);

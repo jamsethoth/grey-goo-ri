@@ -36,15 +36,18 @@ const RECORDED_PLUGINS = (
 const codexCli = () =>
   cliReplay.replayLaunch((args) => ({ stdout: args[0] === 'plugin' ? RECORDED_PLUGINS : '[]', exitCode: 0 }), {});
 
-// A Codex home holding the superpowers plugin, a plugin of skills, where Codex keeps it, and `files` at its top.
-function codexHome(t: TestContext, files: Record<string, string> = {}) {
+// A Codex home holding the superpowers plugin, a plugin of skills, where Codex keeps it, and `files` at its top, a
+// null one a directory.
+function codexHome(t: TestContext, files: Record<string, string | null> = {}) {
   const home = tempDirectory.tempDirectory(t, 'gg-codex-home-');
   const { installed } = JSON.parse(RECORDED_PLUGINS) as { installed: codex.InstalledPlugin[] };
   const plugin = installed.find(({ name }) => name === 'superpowers')!;
   const directory = join(home, 'plugins', 'cache', plugin.marketplaceName, plugin.name, plugin.version);
   mkdirSync(join(directory, '.codex-plugin'), { recursive: true });
   writeFileSync(join(directory, '.codex-plugin', 'plugin.json'), JSON.stringify({ name: plugin.name, skills: './s' }));
-  for (const [file, text] of Object.entries(files)) writeFileSync(join(home, file), text);
+  for (const [file, text] of Object.entries(files))
+    if (text === null) mkdirSync(join(home, file));
+    else writeFileSync(join(home, file), text);
   return home;
 }
 
@@ -147,7 +150,8 @@ function launchError(home: string, agent: model.Agent, listings: codex.Listings)
 test("a hook file in gg's Codex home fails a Codex Agent with a contextBudget at preflight and before spawn, naming it", async (t) => {
   const wrong: string[] = [];
   // Each form a config.toml declares hooks in refuses; one with plugins, MCP servers or a comment only does not (D1 A).
-  const files: [file: string, text: string, hooks: boolean][] = [
+  // One gg cannot read (null: a directory) may declare hooks, so it refuses too (#485 F9).
+  const files: [file: string, text: string | null, hooks: boolean][] = [
     ['hooks.json', '{"hooks":{}}', true],
     ['config.toml', '[hooks]\nPostToolUse = []\n', true],
     ['config.toml', '[[hooks.PostToolUse]]\nmatcher = ".*"\n', true],
@@ -158,6 +162,7 @@ test("a hook file in gg's Codex home fails a Codex Agent with a contextBudget at
     ['config.toml', '[plugins."git-hooks@x"]\nenabled = true\n', false],
     ['config.toml', '[mcp_servers.docs]\ncommand = "node"\nargs = ["server.js"]\n', false],
     ['config.toml', '# hooks = {}\n[features]\n', false],
+    ['config.toml', null, true],
   ];
   for (const [file, text, hooks] of files)
     for (const contextBudget of [undefined, BUDGET]) {
@@ -174,4 +179,16 @@ test("a hook file in gg's Codex home fails a Codex Agent with a contextBudget at
         );
     }
   assert.deepEqual(wrong, []);
+});
+
+// validate never throws (the Harness contract), so a declared skill it cannot read is its error, naming the file: the
+// second file this preflight reads, beside the hook files above (#485 F9).
+test('a declared skill whose SKILL.md cannot be read fails preflight, naming it', async (t) => {
+  const skills = tempDirectory.tempDirectory(t, 'gg-skills-');
+  const file = join(skills, 'tdd', 'SKILL.md');
+  mkdirSync(file, { recursive: true });
+  const { validate } = codex.createCli(codexCli(), { codexHome: codexHome(t), skillsHome: skills });
+  const { ok, errors } = await validate({ ...READER, skills: ['tdd'] });
+  assert.equal(ok, false);
+  assert.ok(errors.join('; ').startsWith(`a declared skill cannot be read: ${file}`), errors.join('; '));
 });

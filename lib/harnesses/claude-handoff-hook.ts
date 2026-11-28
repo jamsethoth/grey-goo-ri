@@ -55,8 +55,8 @@ export function respond(input: unknown, options: { budget: number; stateDirector
     const { session_id: id } = input;
     if (typeof id === 'string') {
       const statePath = join(options.stateDirectory, `${id.replace(/[^\w-]/g, '_')}.step`);
-      if (existsSync(statePath) && Number(readFileSync(statePath, 'utf8')) >= step) return null;
       try {
+        if (existsSync(statePath) && Number(readFileSync(statePath, 'utf8')) >= step) return null;
         mkdirSync(options.stateDirectory, { recursive: true });
         writeFileSync(statePath, String(step));
       } catch {

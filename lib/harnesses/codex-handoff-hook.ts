@@ -25,11 +25,20 @@ export function command(budget: number, stateDirectory: string): string {
 // With hooks on, Codex also runs the hooks of gg's Codex home, which would reach the call beside gg's own (Q8 A), so a
 // hooks.json there, or a config.toml that declares hooks, fails an Agent with a contextBudget, named (Q3 A, D1 A). A
 // config.toml declares them by a key path with a hooks segment: a table header, a dotted or an inline key.
-// shortcut: a line match, not a TOML parse; it refuses too much (a hooks key in a string), never too little, short
-// of an escaped key name; upgrade to a parse if a refusal ever names a file with no hook.
+// shortcut: a line match, not a TOML parse; it refuses too much (a hooks key under another table, such as
+// features.hooks or mcp_servers.hooks, or in a string), never too little, short of an escaped key name; upgrade to a
+// parse if a refusal ever names a file with no hook.
 const HOOKS_KEY = /(^\s*|[[.{,]\s*)["']?hooks["']?\s*[.\]=]/m;
 const HOME_HOOK_FILES = ['hooks.json', 'config.toml'];
-const declaresHooks = (path: string) => !path.endsWith('config.toml') || HOOKS_KEY.test(readFileSync(path, 'utf8'));
+function declaresHooks(path: string): boolean {
+  if (!path.endsWith('config.toml')) return true;
+  try {
+    return HOOKS_KEY.test(readFileSync(path, 'utf8'));
+  } catch {
+    // A config.toml gg cannot read may declare hooks, so it is refused, named, as one that does.
+    return true;
+  }
+}
 export const homeHookErrors = (codexHome: string): string[] =>
   HOME_HOOK_FILES.map((file) => join(codexHome, file))
     .filter((path) => existsSync(path) && declaresHooks(path))
@@ -72,8 +81,8 @@ export function respond(input: unknown, options: { budget: number; stateDirector
     const { session_id: id } = input;
     if (typeof id === 'string') {
       const statePath = join(options.stateDirectory, `${id.replace(/[^\w-]/g, '_')}.step`);
-      if (existsSync(statePath) && Number(readFileSync(statePath, 'utf8')) >= step) return null;
       try {
+        if (existsSync(statePath) && Number(readFileSync(statePath, 'utf8')) >= step) return null;
         mkdirSync(options.stateDirectory, { recursive: true });
         writeFileSync(statePath, String(step));
       } catch {

@@ -1,6 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as claudeHandoffHook from '../../lib/harnesses/claude-handoff-hook.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
@@ -101,6 +101,13 @@ test('the hook asks when it cannot keep its step file', (t) => {
   writeFileSync(stateDirectory, 'a file where the state directory would be');
   const options = { budget: BUDGET, stateDirectory: join(stateDirectory, 'state') };
   assert.ok(addedContext(claudeHandoffHook.respond(input, options)).includes('151k'));
+});
+
+// A step file the hook cannot read never silences it either (#485 F10).
+test('the hook asks when it cannot read its step file', (t) => {
+  const { input, stateDirectory } = hookInput(t, 151000);
+  mkdirSync(join(stateDirectory, `${input.session_id}.step`), { recursive: true });
+  assert.ok(addedContext(claudeHandoffHook.respond(input, { budget: BUDGET, stateDirectory })).includes('151k'));
 });
 
 // A missing session id names no step file, so one thread without it never silences another (#485 F8).
