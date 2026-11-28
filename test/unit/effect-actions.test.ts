@@ -118,8 +118,10 @@ test('no effect Action kind publishes a ticket branch with no commit its base la
     const byKind: Record<string, string[]> = {};
     for (const kind of Object.keys(effectActions.EFFECT_KINDS) as Kind[]) {
       const given = await ticketBranch(t, { ahead });
-      // A kind this context cannot carry through (a commit with no agent call, a comment with no PR) publishes nothing.
-      await runKind(given, kind).catch(() => null);
+      // A kind this context cannot carry through (a commit with no agent call, a comment with no PR) publishes nothing;
+      // push and pr-upsert must run through, so a throw is not read as publishing nothing.
+      const running = runKind(given, kind);
+      await (kind === 'push' || kind === 'pr-upsert' ? running : running.catch(() => null));
       byKind[kind] = await published(given);
     }
     return byKind;
