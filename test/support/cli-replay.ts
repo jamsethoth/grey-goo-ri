@@ -108,8 +108,8 @@ export interface FakeCliOptions {
   // wall clocks count from that write (#475).
   orphan?: boolean;
   // The arguments of a helper the descendant is started under, a re-run of the CLI that writes its pid to helperPidFile
-  // and stays while the descendant runs, as a CLI's sandbox helper stays while the command it started runs (#483 Q1 A);
-  // none starts it through a middle process that exits.
+  // (and its exit to helperExitFile if it ends by itself) and stays while the descendant runs, as a CLI's sandbox
+  // helper stays while the command it started runs (#483 Q1 A); none starts it through a middle process that exits.
   helper?: string[];
   // What the fake writes to its stderr.
   stderr?: string;
@@ -164,7 +164,8 @@ function replaysIn(directory: string, recordings: string, scenarios: string[]) {
 }
 
 // What the fake's directory holds: the CLI's home, the repository a call runs in, the Run directory, and the pid file
-// each process of the fake writes, the CLI's, the helper's and the descendant's.
+// each process of the fake writes, the CLI's, the helper's and the descendant's, and the file the helper writes if it
+// ends by itself.
 const pathsIn = (directory: string) => ({
   home: join(directory, 'home'),
   cwd: join(directory, 'repo'),

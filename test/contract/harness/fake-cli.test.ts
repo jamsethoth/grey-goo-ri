@@ -3,10 +3,11 @@
 // or hang, the transcript it writes where it is told, and a command that is no model call.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as cliReplay from '../../support/cli-replay.ts';
+import * as processProbe from '../../support/process-probe.ts';
 
 const CASE = { timeout: 120_000 };
 const RECORDINGS = fileURLToPath(new URL('../../fixtures/stand-in-cli', import.meta.url));
@@ -117,4 +118,38 @@ test('garbage sends a line that is not JSON after the first line', CASE, async (
   const fake = cliReplay.fakeCli(t, { ...STAND_IN, scenario: 'said', mode: 'garbage' });
   const { ended, lines } = await launchOver(fake);
   assert.deepEqual({ lines, code: ended.code }, { lines: [SAID[0], 'not a JSON line', ...SAID.slice(1)], code: 0 });
+});
+
+// Loaded into each process of the fake: a helper loses the timer that keeps it, so it ends by itself once its command
+// has written its pid, as no helper the Codex launcher cases run does.
+const HELPER_ENDS = `if (process.env.FAKE_CLI_ROLE === 'helper') {
+  const later = globalThis.setTimeout;
+  globalThis.setTimeout = (run, ms, ...rest) => (ms === 600000 ? undefined : later(run, ms, ...rest));
+}
+`;
+
+// The Codex launcher cases read no exit file as the helper staying (#483 D3 A), so a helper that ends by itself must
+// write one, through the env the fixture passes and the path it returns; the call is cancelled once it has.
+test('a helper that ends by itself writes its exit file', CASE, async (t) => {
+  let preload = '';
+  const env = () => ({ NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` });
+  const fake = cliReplay.fakeCli(t, { ...STAND_IN, scenario: 'said', mode: 'hang', orphan: true, helper: [], env });
+  preload = join(fake.directory, 'helper ends.mjs');
+  writeFileSync(preload, HELPER_ENDS);
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  void processProbe.waitFor(() => existsSync(fake.helperExitFile), t.signal).then(abort, abort);
+  const ended = await fake.launch({
+    command: 'stand-in',
+    args: ['run', '--json'],
+    cwd: fake.cwd,
+    input: 'the prompt',
+    wallMs: 60_000,
+    signal: controller.signal,
+    onLine: () => {},
+  });
+  assert.deepEqual(
+    { exitFile: existsSync(fake.helperExitFile), timedOut: ended.timedOut },
+    { exitFile: true, timedOut: null },
+  );
 });

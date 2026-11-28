@@ -13,10 +13,10 @@
 // descendant has written its pid to that file, so the descendant is an orphan the CLI left: detached on Windows, which
 // keeps it out of the job libuv gives node's children; elsewhere in the CLI's process group, as a CLI's own children
 // are. With FAKE_CLI_HELPER (a JSON argv) the descendant starts instead under a helper, a re-run of this script with
-// those arguments that writes its pid to FAKE_CLI_HELPER_PID and stays, as a CLI's sandbox helper stays while the
-// command it started runs (#483 Q1 A); the CLI waits for the descendant's pid before its replay. Its tests copy it
-// alone to a directory whose path holds spaces, so it imports nothing. The test runner also loads this file with no
-// FAKE_CLI_RECORDING, where it does nothing.
+// those arguments that writes its pid to FAKE_CLI_HELPER_PID (and, ending by itself, its exit to FAKE_CLI_HELPER_EXIT)
+// and stays, as a CLI's sandbox helper stays while the command it started runs (#483 Q1 A); the CLI waits for the
+// descendant's pid before its replay. Its tests copy it alone to a directory whose path holds spaces, so it imports
+// nothing. The test runner also loads this file with no FAKE_CLI_RECORDING, where it does nothing.
 import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
