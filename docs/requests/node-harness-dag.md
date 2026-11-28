@@ -96,7 +96,7 @@ is passed as prompt text or a best-effort setting and the action is logged as hi
 `unsupported` means an agent that lists the field fails preflight. A harness declares one of the three for `skills`,
 `mcp`, `plugins`, `access`, `network`, `contextBudget`. Current declarations: Claude `plugins` exact, `mcp`
 unsupported (until filtering lands), `skills` hint; Codex `plugins` exact, `mcp` exact for config servers, `skills`
-hint until verified per installed version. The matrix also declares `interactive`, `backgroundSessions`, `sessionResume` with its
+hint until verified per installed version, `contextBudget` exact by its hand-off hook (ADR 0033). The matrix also declares `interactive`, `backgroundSessions`, `sessionResume` with its
 preconditions, `structuredOutput`, `sandbox: none | codex-windows | codex-posix`, `peakContextReporting`,
 `costReporting`, `turnCountReporting`, `toolCallReporting`, `reasoningTokenReporting`, `backgroundWork: reported |
 none | unobserved`.
@@ -177,8 +177,10 @@ which accepts `exec resume --output-schema`.
 
 Claude `protectedPaths`: `.claude/`, `.mcp.json`, `CLAUDE.md`. Codex `protectedPaths`: `.codex/`, `AGENTS.md`.
 
-Plugin hook injection (Codex without hooks): `harnesses.codex.injectHooks` lists plugin names; a generic hook runner
-reads the plugin's hook manifest, runs its session-start command through the shell runner, and injects the output.
+Plugin hook injection is dropped (ADR 0033, #485): Codex runs hooks under `exec`, so no `harnesses.codex.injectHooks`
+runner is built, and a listed plugin bringing hooks stays refused on Codex. A Codex Agent with a `contextBudget` runs
+with `features.hooks=true`, `--dangerously-bypass-hook-trust` and gg's hand-off hook inline; every other Codex call
+keeps hooks off.
 
 ### 3.3 Workflow definition
 

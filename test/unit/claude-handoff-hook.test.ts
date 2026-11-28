@@ -1,6 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as claudeHandoffHook from '../../lib/harnesses/claude-handoff-hook.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
@@ -80,4 +80,42 @@ test('the hand-off hook skips a partly written last line to the latest complete 
   const { input, stateDirectory } = hookInput(t, 151000);
   writeFileSync(input.transcript_path, '{"type":"assistant","message":{"usa', { flag: 'a' });
   assert.ok(addedContext(claudeHandoffHook.respond(input, { budget: BUDGET, stateDirectory })).includes('151k'));
+});
+
+// The hook's process: its arguments, its stdin and its stdout, as the command line Claude runs gives them.
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('the hook process reads its input from stdin and writes its ask, and stays silent on unreadable input', async (t) => {
+  const { input, stateDirectory } = hookInput(t, 151000);
+  const written: string[] = [];
+  const stdout = { write: (text: string) => written.push(text) };
+  await claudeHandoffHook.main([String(BUDGET), stateDirectory], [JSON.stringify(input)], stdout);
+  assert.equal(written.length, 1, 'it writes once');
+  assert.ok(addedContext(written[0]!).includes('"handed-off"'), written[0]);
+  await claudeHandoffHook.main([String(BUDGET), stateDirectory], ['not json'], stdout);
+  assert.equal(written.length, 1, 'it writes nothing for input it cannot parse');
+});
+
+// The step file only throttles the ask (#485 F7), so a state directory the hook cannot write leaves it asking.
+test('the hook asks when it cannot keep its step file', (t) => {
+  const { input, stateDirectory } = hookInput(t, 151000);
+  writeFileSync(stateDirectory, 'a file where the state directory would be');
+  const options = { budget: BUDGET, stateDirectory: join(stateDirectory, 'state') };
+  assert.ok(addedContext(claudeHandoffHook.respond(input, options)).includes('151k'));
+});
+
+// A step file the hook cannot read never silences it either (#485 F10).
+test('the hook asks when it cannot read its step file', (t) => {
+  const { input, stateDirectory } = hookInput(t, 151000);
+  mkdirSync(join(stateDirectory, `${input.session_id}.step`), { recursive: true });
+  assert.ok(addedContext(claudeHandoffHook.respond(input, { budget: BUDGET, stateDirectory })).includes('151k'));
+});
+
+// A missing session id names no step file, so one thread without it never silences another (#485 F8).
+test('a thread with no session id is asked whatever another one was', (t) => {
+  const first = hookInput(t, 151000);
+  const options = { budget: BUDGET, stateDirectory: first.stateDirectory };
+  const { session_id: _first, ...firstInput } = first.input;
+  const { session_id: _second, ...secondInput } = hookInput(t, 152000).input;
+  assert.ok(addedContext(claudeHandoffHook.respond(firstInput, options)).includes('151k'));
+  assert.ok(addedContext(claudeHandoffHook.respond(secondInput, options)).includes('152k'));
 });

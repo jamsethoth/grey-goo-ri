@@ -1,26 +1,30 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import * as config from '../config.ts';
-import type * as exec from '../exec.ts';
 import type * as model from '../model.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as runContext from '../run-context.ts';
-import * as cliDoctor from './cli-doctor.ts';
 import * as codexDoctor from './codex-doctor.ts';
+import * as codexHandoffHook from './codex-handoff-hook.ts';
+import * as codexListings from './codex-listings.ts';
 import * as codexPlugins from './codex-plugins.ts';
 import * as codexRun from './codex-run.ts';
 import * as codexSkills from './codex-skills.ts';
 
 // The doctor's sandbox command, for scripts/record-codex.ts to record as the doctor runs it (#484 D2 A).
 export { SANDBOX_ARGS } from './codex-doctor.ts';
+export { list } from './codex-listings.ts';
+export type { InstalledPlugin, Listings } from './codex-listings.ts';
+type InstalledPlugin = codexListings.InstalledPlugin;
+type Listings = codexListings.Listings;
 
 // The paths that configure Codex, which gg protects from every agent (request 3.2).
 export const protectedPaths: string[] = ['.codex/', 'AGENTS.md'];
 
 export const name = 'codex';
 
-// The launch profile the Config Hash pins: its name and version (ADR 0031). A change to the argv or environment
-// launchArgs builds bumps the version.
+// The launch profile the Config Hash pins: its name and version (ADR 0031). A change to the argv or environment of a
+// call this version admits bumps the version; argv added for an Agent it refused at preflight does not (ADR 0033).
 export const launchProfile: runContext.LaunchProfile = { name: 'codex-exec', version: 1 };
 
 // The Capabilities #479's recordings show, a field not shown exact unsupported (Q15 A, ADR 0031 point 5). The call runs
@@ -31,7 +35,7 @@ export const capabilities = {
   plugins: 'exact',
   access: 'exact',
   network: 'unsupported',
-  contextBudget: 'unsupported',
+  contextBudget: 'exact',
   interactive: false,
   backgroundSessions: false,
   sessionResume: { supported: true, preconditions: [] as string[] },
@@ -54,20 +58,6 @@ export const codexHome = (environment: NodeJS.ProcessEnv = process.env, home: st
 // root, which skills.include_instructions=false keeps out of every call.
 export const skillsHome = (home: string = homedir()): string => join(home, '.agents', 'skills');
 
-// An installed plugin as `codex plugin list --json` lists it.
-export interface InstalledPlugin {
-  pluginId: string;
-  name: string;
-  marketplaceName: string;
-  version: string;
-}
-
-// What Codex lists of its home: the installed plugins and the configured MCP servers by name.
-export interface Listings {
-  plugins: InstalledPlugin[];
-  mcp: string[];
-}
-
 // What resolveTools gives a Codex Agent: the plugins and MCP servers it lists, and the Agent fields Codex only hints.
 export type CodexTools = {
   plugins: string[];
@@ -82,6 +72,8 @@ export interface CodexCall {
   schema: object;
   cwd: string;
   resume: string | null;
+  // gg ask-session's read-only copy of the resumed thread (#485), which leaves the thread itself unchanged.
+  fork?: boolean;
   runDirectory: string;
   access: string;
 }
@@ -104,56 +96,7 @@ export interface Validated {
   hinted: string[];
 }
 
-type Runner = Pick<exec.Exec, 'launch' | 'childInJob'>;
-
-// What a listing printed, parsed; a failure or no JSON is an error naming the command, never an empty list, which
-// would leave every plugin and server on (ported, feature-flow 89e1d67 lib/toolkit.mjs:79-96).
-async function listed(runner: Runner, home: string, args: string[], signal?: AbortSignal) {
-  const command = ['codex', ...args].join(' ');
-  // The plugin listing reads OpenAI's catalog and once took 87 s, past the cheap limit (#481 F16).
-  const ran = await cliDoctor.said(runner, {
-    command: 'codex',
-    args,
-    env: { CODEX_HOME: home },
-    wallMs: cliDoctor.PROBE_WALL_MS,
-    signal,
-  });
-  const reason = cliDoctor.reasonOf(ran);
-  if (reason !== null) throw new Error(`${command} failed: ${reason}`);
-  try {
-    return { command, data: JSON.parse(ran.lines.join('\n')) };
-  } catch {
-    throw new Error(`${command} printed no JSON`);
-  }
-}
-
-const filled = (value: unknown, keys: string[]) =>
-  referencePaths.isRecord(value) && keys.every((key) => typeof value[key] === 'string' && value[key] !== '');
-
-const PLUGIN_KEYS = ['pluginId', 'name', 'marketplaceName', 'version'];
-
-// The installed plugins and MCP servers, listed afresh, both at once. The server listing leaves out a plugin's servers,
-// which Q3 C refuses and whose launch entry failed Codex's configuration load in feature-flow (#481 D9 B).
-export async function list(runner: Runner, home: string, signal?: AbortSignal): Promise<Listings> {
-  const [plugins, servers] = await Promise.all([
-    listed(runner, home, ['plugin', 'list', '--json'], signal),
-    listed(runner, home, ['mcp', 'list', '--json', '-c', 'features.plugins=false'], signal),
-  ]);
-  const installed = referencePaths.isRecord(plugins.data) ? plugins.data.installed : undefined;
-  if (!Array.isArray(installed) || !installed.every((entry) => filled(entry, PLUGIN_KEYS)))
-    throw new Error(`${plugins.command} printed an unexpected listing: expected installed plugins, each named`);
-  if (!Array.isArray(servers.data) || !servers.data.every((entry) => filled(entry, ['name'])))
-    throw new Error(`${servers.command} printed an unexpected listing: expected servers, each named`);
-  return {
-    plugins: (installed as InstalledPlugin[]).map(({ pluginId, name: plugin, marketplaceName, version }) => ({
-      pluginId,
-      name: plugin,
-      marketplaceName,
-      version,
-    })),
-    mcp: (servers.data as { name: string }[]).map(({ name: server }) => server),
-  };
-}
+type Runner = codexListings.Runner;
 
 const isStrings = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === 'string');
@@ -255,11 +198,11 @@ const table = (key: string, entries: [string, boolean][]) =>
   `${key}={${entries.map(([id, enabled]) => `${tomlString(id)}={enabled=${enabled}}`).join(',')}}`;
 
 // Every key an empty start needs, set on every call (ADR 0031 point 2, D10 A, Q18 A).
-const profileKeys = (cwd: string) => [
+const profileKeys = (cwd: string, hooks: boolean) => [
   'approval_policy="never"',
   'windows.sandbox="mxc"',
   `projects={${tomlString(cwd)}={trust_level="untrusted"}}`,
-  'features.hooks=false',
+  `features.hooks=${hooks}`,
   'features.apps=false',
   'features.tool_suggest=false',
   'check_for_update_on_startup=false',
@@ -268,6 +211,18 @@ const profileKeys = (cwd: string) => [
   'allow_login_shell=false',
 ];
 
+// The keys of an Agent with a contextBudget (#485): the hand-off hook, its command its commandWindows too (request
+// 3.2), which keeps each thread's last ask in the Run directory, and compaction at 125% of the budget as the backstop
+// behind it (ADR 0029 point 1; #479 `compaction` shows the key compacts).
+function handoffKeys(budget: number, runDirectory: string) {
+  const command = tomlString(codexHandoffHook.command(budget, join(runDirectory, 'handoff-hook')));
+  const handler = `{type="command",command=${command},commandWindows=${command},timeout=30}`;
+  return [
+    `hooks={PostToolUse=[{matcher=".*",hooks=[${handler}]}]}`,
+    `model_auto_compact_token_limit=${Math.ceil(budget * 1.25)}`,
+  ];
+}
+
 // The argv and environment of the launch profile (ADR 0031), and the files they name. A listing Codex lacks a tool
 // in fails here, before any spawn.
 function launchArgsIn(homes: Homes, call: CodexCall, tools: CodexTools, listings: Listings): Launch {
@@ -275,6 +230,9 @@ function launchArgsIn(homes: Homes, call: CodexCall, tools: CodexTools, listings
   const { errors, plugins, appsOff } = matched(home, tools, listings);
   const declared = codexSkills.declared(homes.skillsHome, call.agent.skills);
   errors.push(...declared.errors);
+  const budget = typeof call.agent.contextBudget === 'number' ? call.agent.contextBudget : null;
+  // A hook file added to gg's Codex home since preflight fails the call before it spawns (Q3 A).
+  if (budget !== null) errors.push(...codexHandoffHook.homeHookErrors(home));
   if (errors.length) throw new Error(errors.join('; '));
   const access = call.access === 'workspace-write' ? 'workspace-write' : 'read-only';
   const { model: modelName, effort } = call.agent;
@@ -286,7 +244,8 @@ function launchArgsIn(homes: Homes, call: CodexCall, tools: CodexTools, listings
   const overrides = [
     ...(modelName == null ? [] : [`model=${tomlString(modelName)}`]),
     ...(effort == null ? [] : [`model_reasoning_effort=${tomlString(effort)}`]),
-    ...profileKeys(call.cwd),
+    ...profileKeys(call.cwd, budget !== null),
+    ...(budget === null ? [] : handoffKeys(budget, call.runDirectory)),
     ...(enabled.size
       ? [
           // Without `_default` a store plugin's own `enabled=true` outranks its entry here, so its tool servers load;
@@ -310,9 +269,12 @@ function launchArgsIn(homes: Homes, call: CodexCall, tools: CodexTools, listings
   const argv = [
     'exec',
     ...['-s', access, '-C', call.cwd],
-    // Resume takes exec's -s and -C only before it, and a resumed turn runs under them (ADR 0031 point 3).
-    ...(call.resume === null ? [] : ['resume', call.resume]),
+    // Resume and fork take exec's -s and -C only before them, and their turn runs under them (ADR 0031 point 3, #479
+    // D18 A).
+    ...(call.resume === null ? [] : [call.fork === true ? 'fork' : 'resume', call.resume]),
     ...overrides.flatMap((override) => ['-c', override]),
+    // Without it no hook fires, silently (#479 `hooks-untrusted`); the project stays untrusted, so its hooks stay out.
+    ...(budget === null ? [] : ['--dangerously-bypass-hook-trust']),
     // The table cannot switch plugins off when none is listed, so none load (D11 A).
     ...(enabled.size ? [] : ['--disable', 'plugins']),
     ...['--json', '--output-schema', schemaPath, '-o', lastMessage, '-'],
@@ -343,16 +305,25 @@ export function createCodex({
   };
 }
 
-// An Agent Codex cannot run as asked fails at preflight: a plugin or server it lists that Codex lacks or refuses, or a
-// skill it declares that the user's skills folder lacks. The listings run once, and only for an Agent that lists one
-// (Q2 A).
+// An Agent Codex cannot run as asked fails at preflight: a plugin or server it lists that Codex lacks or refuses, a
+// skill it declares that the user's skills folder lacks, or a contextBudget beside a hook file in gg's Codex home (Q3
+// A). The listings run once, and only for an Agent that lists one (Q2 A).
 async function validateIn(listOnce: () => Promise<Listings>, homes: Homes, agent: unknown): Promise<Validated> {
   const fields = (agent ?? {}) as Record<string, unknown>;
   const errors = (['plugins', 'mcp', 'skills'] as const).flatMap((field) =>
     fields[field] === undefined || isStrings(fields[field]) ? [] : [`${field} must be a list of names`],
   );
+  const budget = fields.contextBudget;
+  if (budget !== undefined && !(Number.isInteger(budget) && (budget as number) > 0))
+    errors.push('contextBudget must be a positive integer of tokens');
+  else if (budget !== undefined) errors.push(...codexHandoffHook.homeHookErrors(homes.codexHome));
   const tools = resolveTools(agent);
-  if (!errors.length) errors.push(...codexSkills.declared(homes.skillsHome, fields.skills).errors);
+  try {
+    if (!errors.length) errors.push(...codexSkills.declared(homes.skillsHome, fields.skills).errors);
+  } catch (err) {
+    // validate never throws (the Harness contract), so a skill it cannot read is the Agent's error.
+    errors.push(`a declared skill cannot be read: ${(err as Error).message}`);
+  }
   if (!errors.length && (tools.plugins.length || tools.mcp.length)) {
     try {
       errors.push(...matched(homes.codexHome, tools, await listOnce()).errors);
@@ -376,10 +347,10 @@ export const createCli = (
   { codexHome: home = codexHome(), skillsHome: skills = skillsHome() }: Partial<Homes> = {},
 ) => {
   let listing: Promise<Listings> | undefined;
-  const listOnce = () => (listing ??= list(runner, home));
+  const listOnce = () => (listing ??= codexListings.list(runner, home));
   const homes = { codexHome: home, skillsHome: skills };
   const launch = async (call: codexRun.RunCall, signal: AbortSignal) =>
-    launchArgsIn(homes, call, call.tools, await list(runner, home, signal));
+    launchArgsIn(homes, call, call.tools, await codexListings.list(runner, home, signal));
   return {
     run: (call: Record<string, unknown>, hooks: runContext.HarnessHooks) =>
       codexRun.run(runner, { codexHome: home, launch }, call as unknown as codexRun.RunCall, hooks),

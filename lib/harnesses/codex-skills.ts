@@ -32,7 +32,14 @@ function frontMatter(text: string): Record<string, string> {
 export function skillAt(directory: string, prefix = ''): Skill | undefined {
   const file = join(directory, SKILL_FILE);
   if (!existsSync(file)) return undefined;
-  const fields = frontMatter(readFileSync(file, 'utf8'));
+  let text: string;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (err) {
+    // Node's EISDIR names no file, so the error names it.
+    throw new Error(`${file}: ${(err as Error).message}`, { cause: err });
+  }
+  const fields = frontMatter(text);
   return { name: prefix + (fields.name || basename(directory)), description: fields.description ?? '', file };
 }
 

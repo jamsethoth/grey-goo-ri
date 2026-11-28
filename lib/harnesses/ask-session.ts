@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import type * as exec from '../exec.ts';
 import * as referencePaths from '../reference-paths.ts';
 import * as stateDatabase from '../state-database/index.ts';
-import * as claude from './claude.ts';
+import * as shipped from './shipped.ts';
 
 export interface AskSessionOptions {
   // What starts the CLI, which bin/gg.ts builds (ADR 0019).
@@ -30,7 +30,8 @@ const SCHEMA = {
   additionalProperties: false,
 };
 
-// The worktree a handed-off Session ran in, and the Agent's model and effort, from the Execution Record that keeps it.
+// The worktree a handed-off Session ran in, and the Agent's Harness, model and effort, from the Execution Record that
+// keeps it.
 function handedOff(commonDir: string, sessionId: string) {
   for (const executionRecord of stateDatabase.loadAll(commonDir, 'ticket'))
     for (const session of Object.values(executionRecord.sessions))
@@ -43,12 +44,16 @@ function handedOff(commonDir: string, sessionId: string) {
 export async function askSession(options: AskSessionOptions): Promise<string> {
   const { worktree, session } = handedOff(options.commonDir, options.sessionId);
   const { model, effort } = session;
-  const agent = { harness: claude.name, persona: 'ask-session.md', model, effort, access: ACCESS };
+  // The copy runs on the Harness the Session ran on (#485).
+  const harness = Object.entries(shipped.HARNESSES).find(([name]) => name === session.harness)?.[1];
+  if (harness === undefined) throw new Error(`${options.sessionId} ran on ${session.harness}, which gg does not ship`);
+  const agent = { harness: harness.name, persona: 'ask-session.md', model, effort, access: ACCESS };
   const runDirectory = mkdtempSync(join(tmpdir(), 'gg-ask-session-'));
   try {
-    const tools = claude.resolveTools(agent, { commands: {}, platform: process.platform });
-    const cli = claude.createCli(options.runner, options.configDirectory === undefined ? {} : options);
+    const tools = harness.resolveTools(agent, { commands: {}, platform: process.platform });
+    const cli = harness.createCli(options.runner, options.configDirectory === undefined ? {} : options);
     const call = {
+      marker: 'ask-session',
       agent,
       persona: { name: agent.persona, bytes: PERSONA, hash: createHash('sha256').update(PERSONA).digest('hex') },
       schema: SCHEMA,

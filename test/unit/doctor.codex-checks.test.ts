@@ -13,6 +13,7 @@ import * as codex from '../../lib/harnesses/codex.ts';
 import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as recordCodexCommands from '../../scripts/record-codex-commands.ts';
 import * as caseEnv from '../support/case-env.ts';
+import * as codexHookHandlers from '../support/codex-hook-handlers.ts';
 import * as exampleSource from '../support/example-source.ts';
 import * as fakeGh from '../support/fake-gh.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
@@ -272,11 +273,11 @@ test('each failing cheap check is one harness-doctor-failed error naming codex a
 });
 
 // Decision 2: gg doctor --probe runs the launch profile on a cheap call and codex exec resume with --output-schema,
-// and prints each that passed.
-test('gg doctor --probe runs the profile probe and the resume probe and prints a passed line for each', async (t) => {
+// and prints each that passed; since #485 also the hand-off hook on the profile probe's call and a read-only fork.
+test('gg doctor --probe runs each model probe and prints a passed line for each', async (t) => {
   const { text } = await doctorOverCodex(t, {}, { probe: true });
   const passed = text.split('\n').filter((line) => line.startsWith('passed: harness codex: '));
-  for (const probe of ['profile-probe', 'resume-probe'])
+  for (const probe of ['profile-probe', 'handoff-probe', 'resume-probe', 'fork-probe'])
     assert.equal(passed.filter((line) => line.startsWith(`passed: harness codex: ${probe}: `)).length, 1, text);
   assert.deepEqual(codexDoctorLines(text, 'error'), [], text);
 });
@@ -286,7 +287,7 @@ const RECORDED_THREAD = '01a2044a-1251-7180-8d49-dc1220e52393';
 
 test("the resume probe resumes the profile probe's thread with --output-schema", async (t) => {
   const { launches } = await codexDoctor(t, {}, { probe: true });
-  const calls = launches.filter(({ args }) => isModelCall(args));
+  const calls = launches.filter(({ args }) => isModelCall(args) && !args.includes('fork'));
   assert.equal(calls.length, 2, JSON.stringify(calls.map(({ args }) => args)));
   const [profile, resumed] = calls as [(typeof calls)[number], (typeof calls)[number]];
   assert.ok(!profile.args.includes('resume'), JSON.stringify(profile.args));
@@ -295,6 +296,64 @@ test("the resume probe resumes the profile probe's thread with --output-schema",
   assert.equal(profile.env?.CODEX_HOME, codex.codexHome());
   assert.equal(resumed.args[resumed.args.indexOf('resume') + 1], RECORDED_THREAD);
   assert.ok(resumed.args.includes('--output-schema'), JSON.stringify(resumed.args));
+});
+
+// #485 Q2 A: the profile probe's call runs as an Agent with a contextBudget its first request passes, so its hand-off
+// hook asks for the hand-off; the hand-off stand-in answers as such a call does, since no recording shows one.
+test('under --probe the profile probe carries the hand-off hook and the handoff probe passes', async (t) => {
+  const { named, launches } = await codexDoctor(t, {}, { probe: true });
+  const [profile] = launches.filter(({ args }) => isModelCall(args));
+  assert.ok(profile !== undefined, 'the profile probe ran');
+  assert.ok(!profile.args.includes('resume') && !profile.args.includes('fork'), JSON.stringify(profile.args));
+  const passed = codexHookHandlers.overrides(profile.args);
+  assert.ok(passed.includes('features.hooks=true'), JSON.stringify(profile.args));
+  assert.ok(profile.args.includes('--dangerously-bypass-hook-trust'), JSON.stringify(profile.args));
+  const handlers = codexHookHandlers.hookHandlers(profile.args);
+  assert.deepEqual(
+    handlers.map(({ event }) => event),
+    ['PostToolUse'],
+  );
+  for (const command of [handlers[0]!.keys.command, handlers[0]!.keys.commandWindows]) {
+    assert.ok(command?.includes('codex-handoff-hook'), `the hand-off hook, on both commands: ${command}`);
+    assert.ok(command.includes(' 1000 '), `at the 1,000-token budget Q2 A names: ${command}`);
+  }
+  const handoff = named('handoff-probe');
+  assert.equal(handoff?.ok, true, handoff?.message ?? 'no handoff-probe check');
+});
+
+// #485 Q2 A: a hook that stays silent leaves the call answering as it would under its budget, which fails the probe.
+test('a hand-off hook that stays silent fails the handoff probe', async (t) => {
+  const { text } = await doctorOverCodex(t, { hookSilent: true }, { probe: true });
+  const errors = codexDoctorLines(text, 'error');
+  assert.equal(errors.length, 1, text);
+  assert.ok(errors[0]!.startsWith('error: harness codex: handoff-probe: '), errors[0]);
+});
+
+// #485 Q2 A, as Claude's doctor asks one (#430 D6 A): gg ask-session's read-only fork of the profile probe's thread,
+// `-s read-only` and `-C` before `fork` (#479 D18 A), answers under a thread of its own.
+test("under --probe the fork probe asks a read-only fork of the profile probe's thread", async (t) => {
+  const { named, launches } = await codexDoctor(t, {}, { probe: true });
+  const forks = launches.filter(({ args }) => isModelCall(args) && args.includes('fork'));
+  assert.equal(forks.length, 1, JSON.stringify(launches.map(({ args }) => args)));
+  const [{ args, cwd, env }] = forks as [(typeof forks)[number]];
+  const fork = args.indexOf('fork');
+  assert.equal(args[fork + 1], RECORDED_THREAD);
+  assert.ok(!args.includes('resume'), JSON.stringify(args));
+  const before = args.slice(0, fork);
+  assert.equal(before[before.indexOf('-s') + 1], 'read-only', JSON.stringify(args));
+  assert.equal(before[before.indexOf('-C') + 1], cwd, JSON.stringify(args));
+  assert.equal(env?.CODEX_HOME, codex.codexHome());
+  const forked = named('fork-probe');
+  assert.equal(forked?.ok, true, forked?.message ?? 'no fork-probe check');
+});
+
+test('a fork probe whose stream names no thread of its own fails', async (t) => {
+  for (const state of [{ unthreaded: 'fork' }, { fork: 'start' }] as const) {
+    const { named } = await codexDoctor(t, state, { probe: true });
+    const forked = named('fork-probe');
+    assert.equal(forked?.ok, false, `${JSON.stringify(state)}: ${forked?.message ?? 'no fork-probe check'}`);
+    assert.equal(forked.severity, 'error');
+  }
 });
 
 test('a failed profile probe is an error and runs no resume probe', async (t) => {
@@ -311,10 +370,11 @@ test('a failed profile probe is an error and runs no resume probe', async (t) =>
 
 // D17 A of #481: only the Agent's listing turns a configured server on, so the probes launch over a listing like the
 // one each Run's call takes, which switches off each server the probe Agent does not list, and the plugins with it.
-test('under --probe both probe calls switch off each configured MCP server and the plugins', async (t) => {
+// The fork probe's call too (#485).
+test('under --probe every probe call switches off each configured MCP server and the plugins', async (t) => {
   const { launches } = await codexDoctor(t, { servers: ['playwright'] }, { probe: true });
   const calls = launches.filter(({ args }) => isModelCall(args));
-  assert.equal(calls.length, 2, JSON.stringify(calls.map(({ args }) => args)));
+  assert.equal(calls.length, 3, JSON.stringify(calls.map(({ args }) => args)));
   for (const { args } of calls) {
     assert.ok(args.includes('mcp_servers={"playwright"={enabled=false}}'), JSON.stringify(args));
     assert.equal(args[args.indexOf('--disable') + 1], 'plugins', JSON.stringify(args));

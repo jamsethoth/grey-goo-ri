@@ -51,10 +51,18 @@ export function respond(input: unknown, options: { budget: number; stateDirector
     const context = latestContext(input.transcript_path);
     if (context === null || context <= options.budget) return null;
     const step = Math.floor((context - options.budget) / STEP);
-    const statePath = join(options.stateDirectory, `${String(input.session_id).replace(/[^\w-]/g, '_')}.step`);
-    if (existsSync(statePath) && Number(readFileSync(statePath, 'utf8')) >= step) return null;
-    mkdirSync(options.stateDirectory, { recursive: true });
-    writeFileSync(statePath, String(step));
+    // The step file only throttles the ask, so one the hook cannot name or keep never silences it (#485 F7, F8).
+    const { session_id: id } = input;
+    if (typeof id === 'string') {
+      const statePath = join(options.stateDirectory, `${id.replace(/[^\w-]/g, '_')}.step`);
+      try {
+        if (existsSync(statePath) && Number(readFileSync(statePath, 'utf8')) >= step) return null;
+        mkdirSync(options.stateDirectory, { recursive: true });
+        writeFileSync(statePath, String(step));
+      } catch {
+        // Asked again at the next tool call, which beats never asking.
+      }
+    }
     const additionalContext =
       `Context budget: your latest request sent ${thousands(context)} tokens, past this Agent's budget of ` +
       `${thousands(options.budget)}. Finish now: end with the Structured Response whose claim is ` +
@@ -66,10 +74,15 @@ export function respond(input: unknown, options: { budget: number; stateDirector
   }
 }
 
-async function main() {
-  const [budget, stateDirectory] = process.argv.slice(2);
+// The hook process, over the arguments, stdin and stdout its command line gives it.
+export async function main(
+  args: string[],
+  stdin: AsyncIterable<unknown> | Iterable<unknown>,
+  stdout: { write(text: string): unknown },
+) {
+  const [budget, stateDirectory] = args;
   let text = '';
-  for await (const chunk of process.stdin) text += String(chunk);
+  for await (const chunk of stdin) text += String(chunk);
   let input: unknown;
   try {
     input = JSON.parse(text);
@@ -77,7 +90,7 @@ async function main() {
     input = undefined;
   }
   const said = respond(input, { budget: Number(budget), stateDirectory: stateDirectory! });
-  if (said !== null) process.stdout.write(said);
+  if (said !== null) stdout.write(said);
 }
 
-if (import.meta.main) await main();
+if (import.meta.main) await main(process.argv.slice(2), process.stdin, process.stdout);

@@ -73,9 +73,9 @@ function unstarted(
   return { response: null, result, failure };
 }
 
-// A resume recomputes its sandbox from its own flags (openai/codex#40149), so its rollout's last turn says what it ran
-// under: a rollout missing, or under another sandbox than the call asked, discards the output (ported, feature-flow
-// 89e1d67 lib/adapters.mjs:74-78,111).
+// A resume or a fork recomputes its sandbox from its own flags (openai/codex#40149), so its rollout's last turn says
+// what it ran under: a rollout missing, or under another sandbox than the call asked, discards the output (ported,
+// feature-flow 89e1d67 lib/adapters.mjs:74-78,111).
 function resumeFailure(call: RunCall, rollout: codexStream.Rollout | null): visit.HarnessFailure | null {
   if (call.resume === null) return null;
   const access = call.access === 'workspace-write' ? 'workspace-write' : 'read-only';
@@ -106,9 +106,12 @@ async function prepared(runs: Runs, call: RunCall, signal: AbortSignal) {
 }
 
 // Codex has no system-prompt flag, so the persona, then gg's skills list, lead a Session's first prompt; a resumed
-// thread already holds both (ported, feature-flow 89e1d67 lib/adapters.mjs:70-71; Q4 A).
+// thread already holds both (ported, feature-flow 89e1d67 lib/adapters.mjs:70-71; Q4 A). A fork takes the persona of
+// the one who asks it (#485).
 const promptOf = (call: RunCall, launched: codex.Launch) =>
-  call.resume === null ? [call.persona.bytes, launched.skills, call.brief].filter(Boolean).join('\n\n') : call.brief;
+  call.resume === null || call.fork === true
+    ? [call.persona.bytes, launched.skills, call.brief].filter(Boolean).join('\n\n')
+    : call.brief;
 
 // What the rollout tells of the call: where it is, and the CLI version, model and effort its last turn ran with.
 const rolloutFacts = (rollout: codexStream.Rollout | null) => ({

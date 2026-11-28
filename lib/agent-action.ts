@@ -144,7 +144,7 @@ async function briefOf(runContext: RunContext, briefed: Attempt, commands: Recor
       return changed;
     },
   });
-  return agentHandoff.withSection(text, handoff);
+  return agentHandoff.withSection(text, handoff, runContext.harnessOf()!);
 }
 
 // One Attempt. A completed one is never run again: runVisit routes every saved result but a retry's, which ends here.
@@ -195,7 +195,7 @@ function callOf(
 ) {
   const agentPinned = pinned.agent as Agent;
   const session = runContext.record.sessions[sessionKey(actionIdentity)];
-  const commands = agentHandoff.askable(session, pinned.commands as Record<string, string>);
+  const commands = agentHandoff.askable(session, pinned.commands as Record<string, string>, harness);
   const declared = JSON.parse(config.namedFile(pinned.files, action.schema));
   briefs.assertStrict(declared);
   const schema = agentHandoff.schemaOf(agentPinned, declared);
