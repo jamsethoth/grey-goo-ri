@@ -196,6 +196,7 @@ function refVerbs({ store, placeAt, headOf, commitOf, resolve, ancestors }: Part
           message: store.commit(sha).message.replace(/\n+$/, ''),
         }));
     },
+    commitsAhead: async (cwd: string, _base: string, _sha = 'HEAD') => (placeAt(cwd), -1),
   };
 }
 

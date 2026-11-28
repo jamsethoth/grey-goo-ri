@@ -553,6 +553,26 @@ for (const [name, err, failureClass, retryable] of [
   });
 }
 
+// gh pr create's refusals as gh prints them, with no HTTP status. Each stays a final unknown failure: gg stops
+// before an empty branch's create instead of classifying GitHub's "No commits between" (#490, DoD 2).
+test('every gh pr create refusal stays a final unknown failure', () => {
+  const ghRefusal = (stderr: string) =>
+    Object.assign(new Error(`${stderr}\ngh pr create --draft`), { code: 1, stdout: '', stderr: `${stderr}\n` });
+  const refusals = [
+    'pull request create failed: GraphQL: No commits between main and ticket/213-subtotal (createPullRequest)',
+    'a pull request for branch "ticket/15-x" into branch "main" already exists:\nhttps://github.com/o/r/pull/7',
+    "pull request create failed: GraphQL: Head sha can't be blank, Base sha can't be blank, " +
+      'Head ref must be a branch (createPullRequest)',
+    'pull request create failed: GraphQL: Base ref must be a branch (createPullRequest)',
+    'pull request create failed: GraphQL: Resource not accessible by integration (createPullRequest)',
+  ];
+  const classes = refusals.map((stderr) => {
+    const { failureClass, retryable } = outcome.classifyRemoteFailure(ghRefusal(stderr));
+    return `${failureClass} ${retryable ? 'retried' : 'final'}`;
+  });
+  assert.deepEqual(classes, ['unknown final', 'unknown final', 'unknown final', 'unknown final', 'unknown final']);
+});
+
 const delay = (err: outcome.RemoteError, retry: number) =>
   outcome.remoteRetryDelay(outcome.classifyRemoteFailure(err), retry, NOW);
 

@@ -216,7 +216,11 @@ function refVerbs(gitRunner: Runner) {
     (await runGit(['cat-file', '-e', `${tree}^{tree}`], { cwd, allowFail: true })).code === 0;
 
   const commitLog = (cwd: string, branch: string) => readCommitLog(gitRunner, cwd, branch);
-  return { push, headSha, remoteSha, branchHead, treeOf, hasTree, commitLog };
+
+  // The commits `sha` holds that origin's `base` lacks, counted after fetching it: zero when a branch has nothing to
+  // publish (#490).
+  const commitsAhead = async (_cwd: string, _base: string, _sha = 'HEAD') => -1;
+  return { push, headSha, remoteSha, branchHead, treeOf, hasTree, commitLog, commitsAhead };
 }
 
 function commitVerbs(gitRunner: Runner, { headSha, treeOf }: ReturnType<typeof refVerbs>) {
@@ -388,6 +392,7 @@ export const {
   treeOf,
   hasTree,
   commitLog,
+  commitsAhead,
   treeDiff,
   changedPaths,
   changedSince,
