@@ -308,3 +308,166 @@ for (const site of SITES)
       process.off('worker', onWorker);
       assert.deepEqual({ madeOnGgThread }, { madeOnGgThread: 0 });
     });
+
+// A cleanup that saw an escapee and could not confirm it gone reports containment none (#532 Q3 A), so a later Run
+// holds the Ticket for a person rather than take a job as proof (confirmedUnder); a confirmed one keeps job, as the
+// CONTAINED cases above show.
+const UNCONFIRMED_ESCAPEES = [
+  {
+    name: 'gg cannot end',
+    slug: 'unended',
+    doubles: () => kernel32Doubles.breakawayJobs(['gg-job', 'new-job', 'terminate']),
+  },
+  { name: 'gg cannot read', slug: 'unread', doubles: () => kernel32Doubles.breakawayJobs([], { closedOutside: true }) },
+];
+
+for (const site of SITES)
+  for (const row of UNCONFIRMED_ESCAPEES)
+    test(
+      `${site.name}: an unconfirmed cleanup after an escapee ${row.name} reports containment none`,
+      WIN_CASE,
+      async (t) => {
+        const pidFile = join(scratch, `${site.name}-unconfirmed-${row.slug}.pid`);
+        t.after(() => processProbe.endProcessIn(pidFile));
+        const { kernel32 } = row.doubles();
+        const { cleanup } = await site.finishes(kernel32, gitBash.backgroundNode(pidFile));
+        t.after(() => cleanup.closeJob?.());
+        assert.deepEqual(
+          { confirmed: cleanup.confirmed, containment: cleanup.containment },
+          { confirmed: false, containment: { kind: 'none' } },
+        );
+      },
+    );
+
+// A launch's started reports, each with how many processes gg had tried to adopt or end when it came.
+type Report = { kind: string; triedBefore: number };
+type Launched = (script: string, extra?: Partial<exec.LaunchOptions>) => Promise<exec.LaunchResult>;
+type SightContext = { pidFile: string; go: string; attempts: Map<number, kernel32Doubles.Adoption[]>; t: TestContext };
+
+// Each way a launch's watcher first sees a process outside gg's job (#532, ADR 0030 decision 4): by a periodic snapshot
+// while its command runs, as its command exits (cleanup's last poll), as its wall clock takes it down (the stop path),
+// closed to gg so it is linked and never held, and an escapee whose child escapes in its turn, a second sight.
+const FIRST_SIGHTS: {
+  name: string;
+  slug: string;
+  doubles: () => ReturnType<typeof kernel32Doubles.breakawayJobs>;
+  launches: (launched: Launched, context: SightContext) => Promise<exec.LaunchResult>;
+}[] = [
+  {
+    name: 'by a periodic snapshot while its command runs',
+    slug: 'periodic',
+    doubles: () => kernel32Doubles.breakawayJobs(),
+    launches: async (launched, { pidFile, go, attempts, t }) => {
+      const ran = launched(`${gitBash.backgroundNode(pidFile)}; until [ -e ${go} ]; do sleep 0.1; done`);
+      await waitFor(() => attempts.has(pidIn(pidFile)), t.signal);
+      writeFileSync(go, '');
+      return ran;
+    },
+  },
+  {
+    name: 'as its command exits',
+    slug: 'exits',
+    doubles: () => kernel32Doubles.breakawayJobs(),
+    launches: (launched, { pidFile }) => launched(gitBash.backgroundNode(pidFile)),
+  },
+  {
+    name: 'as its wall clock takes the command down',
+    slug: 'stop',
+    doubles: () => kernel32Doubles.breakawayJobs(),
+    launches: (launched, { pidFile, t }) =>
+      launched(gitBash.backgroundNode(pidFile, { waits: true }), {
+        wallMs: 200,
+        testHooks: { signal: processProbe.pidWritten(pidFile, t.signal) },
+      }),
+  },
+  {
+    name: 'closed to gg, linked and never held',
+    slug: 'closed',
+    doubles: () => kernel32Doubles.breakawayJobs([], { closedOutside: true }),
+    launches: (launched, { pidFile }) => launched(gitBash.backgroundNode(pidFile)),
+  },
+  {
+    name: 'with a child that escapes in its turn',
+    slug: 'child',
+    doubles: () => kernel32Doubles.breakawayJobs(['gg-job']),
+    launches: (launched, { pidFile }) =>
+      launched(gitBash.backgroundNode(pidFile, { scripts: [childScripts.LINKED_STARTER, childScripts.LONG_LIVED] })),
+  },
+];
+
+// The first sight saves none before gg adopts or ends the escapee (decision 1's order), and a later sight saves nothing
+// more: the launch reports job, then none once, with nothing tried by then.
+for (const sight of FIRST_SIGHTS)
+  test(
+    `launch: an escapee seen ${sight.name} is reported none once, before gg adopts or ends it`,
+    WIN_CASE,
+    async (t) => {
+      const pidFile = join(scratch, `first-sight-${sight.slug}.pid`);
+      const go = join(scratch, `first-sight-${sight.slug}.go`).split(sep).join('/');
+      t.after(() => processProbe.endProcessIn(pidFile));
+      const { kernel32, attempts } = sight.doubles();
+      const reports: Report[] = [];
+      const launched: Launched = (script, extra = {}) =>
+        exec.createExec({ kernel32 }).launch({
+          command: gitBash.gitBash(),
+          args: ['-c', script],
+          wallMs: 60_000,
+          onStarted: ({ kind }) => void reports.push({ kind, triedBefore: attempts.size }),
+          ...extra,
+        });
+      const { cleanup } = await sight.launches(launched, { pidFile, go, attempts, t });
+      t.after(() => cleanup.closeJob?.());
+      assert.deepEqual(reports, [
+        { kind: 'job', triedBefore: 0 },
+        { kind: 'none', triedBefore: 0 },
+      ]);
+    },
+  );
+
+// A none save that fails (ADR 0030 decision 2, #532 Q2 A): the escapee is ended, never adopted, then the call is taken
+// down as a timeout takes it down, before its command could end, and the launch resolves, so the Harness returns and
+// agent-call rethrows the save's error it kept. Unfixed, gg adopts the escapee; the go file then lets the command end,
+// so the case reaches its asserts.
+test('launch: a none report that throws ends the escapee unadopted and takes the call down', WIN_CASE, async (t) => {
+  const pidFile = join(scratch, 'none-throws.pid');
+  const go = join(scratch, 'none-throws.go').split(sep).join('/');
+  t.after(() => processProbe.endProcessIn(pidFile));
+  const { kernel32, attempts } = kernel32Doubles.breakawayJobs();
+  const reports: string[] = [];
+  const settled = exec
+    .createExec({ kernel32 })
+    .launch({
+      command: gitBash.gitBash(),
+      args: ['-c', `${gitBash.backgroundNode(pidFile)}; until [ -e ${go} ]; do sleep 0.1; done`],
+      wallMs: 60_000,
+      onStarted: ({ kind }) => {
+        reports.push(kind);
+        if (kind === 'none') throw new Error('the none save failed');
+      },
+    })
+    .then(
+      ({ code, cancelled }) => ({ outcome: 'resolved', code, cancelled }),
+      (err: Error) => ({ outcome: 'rejected', message: err.message }),
+    );
+  const adopted = () => [...attempts.values()].some((tried) => tried.includes('gg-job'));
+  await Promise.race([settled, waitFor(adopted, t.signal)]);
+  writeFileSync(go, '');
+  const outcome = await settled;
+  const tried = [...attempts.values()].flat();
+  assert.deepEqual(
+    {
+      reports,
+      outcome,
+      adoptions: tried.filter((adoption) => adoption !== 'terminate'),
+      ended: tried.includes('terminate'),
+      running: [...attempts.keys()].filter(alive),
+    },
+    {
+      reports: ['job', 'none'],
+      outcome: { outcome: 'resolved', code: null, cancelled: true },
+      adoptions: [],
+      ended: true,
+      running: [],
+    },
+  );
+});

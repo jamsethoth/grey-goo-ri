@@ -66,11 +66,17 @@ function reasonFor({ survivors, cleanupErrors }: Cleanup) {
 }
 
 // Confirmed only under a containment gg can check, with nothing left and nothing it could not check (L11, L14): an
-// uncontained command's orphans cannot be found, so it never is, whatever it is seen to have left.
-export function cleanupReport(containment: CleanupContainment, cleanup: Cleanup): CleanupReport {
+// uncontained command's orphans cannot be found, so it never is, whatever it is seen to have left. One whose watcher
+// saw an escapee and could not confirm it gone reports none, since the escapee may outlive gg's job (#532 Q3 A).
+export function cleanupReport(
+  containment: CleanupContainment,
+  cleanup: Cleanup,
+  { escaped = false }: { escaped?: boolean } = {},
+): CleanupReport {
   const { survivors, cleanupErrors } = cleanup;
   const confirmed = containment.kind !== 'none' && !survivors.length && !cleanupErrors.length;
-  return { confirmed, survivors, reason: confirmed ? null : reasonFor(cleanup), containment };
+  const reported = escaped && !confirmed ? { kind: 'none' as const } : containment;
+  return { confirmed, survivors, reason: confirmed ? null : reasonFor(cleanup), containment: reported };
 }
 
 // Whether a later Run finds a held call's processes gone under its containment (L14).

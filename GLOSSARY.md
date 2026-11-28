@@ -214,8 +214,12 @@ cannot prove a process its child. A process it cannot tie to the command is left
 confirm gone is named as a survivor. A command that finishes has what it left named as leftovers. Agent Actions and
 command and tests-fail Checks record the result as their `cleanup` output,
 `{ confirmed, survivors, reason, containment }`: when `confirmed` is false no further Action touches the worktree and
-the Ticket holds. An uncontained Windows command is never confirmed, since its orphans cannot be found, and a process
-that starts its own session escapes, an accepted residual risk.
+the Ticket holds. An uncontained Windows command is never confirmed, since its orphans cannot be found, and a cleanup
+after a process seen outside the job that it cannot confirm reports `none`. The accepted residual risk is ADR 0030
+decision 8's: on Windows, a process outside the job that no poll saw before its parent ended or gg died, or one a poll
+saw whose call's `none` save had not committed when gg died, or that gg failed to end after that save failed; and one a
+service, WMI or the task scheduler starts; on Linux without a cgroup, one that leaves the process group and closes its
+stdio.
 _Avoid_: cleanup (alone, which also names removing a ticket's worktree), teardown, reaping
 
 **Permission Intent**:

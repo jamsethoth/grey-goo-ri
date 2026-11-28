@@ -57,7 +57,13 @@ ends, which ends every process still in the job.
   `none`. gg holds the job's only handle, so the handle closed when the gg process that ran the call ended, and
   kill-on-close ended every process still in the job. An uncontained Attempt (POSIX, or a job that could not be
   created or assigned) is rescued and held, never reset, since a surviving writer could write after the rescue's
-  verification. A tool that explicitly breaks away from the job is an accepted residual risk. Linux cgroup
+  verification. A tool that explicitly breaks away from the job is an accepted residual risk. Amended 2026-11-27
+  (grey-goo-ri issue #532, ADR 0030 decisions 4 and 8): no tool can break away from gg's job now, and a call's
+  containment is `job` only while nothing it started has left the job; the first process the watcher sees outside it
+  makes gg save `none` before it adopts or ends that process, and it stays `none`, so that Attempt is rescued and held.
+  The accepted residual risk is decision 8's: a process outside gg's job that no poll saw before its parent ended or
+  gg died, one whose call's `none` save had not committed when gg died or that gg failed to end after the save
+  failed, and a process a service, WMI or the task scheduler starts on a command's behalf. Linux cgroup
   containment is backlogged (grey-goo-ri issue #128). A call that returns normally kills its leftover processes too
   (decision L6), so routed rescues and resets meet the same rule.
 - A human edit made between the crash and the resume leaves the worktree; the History and any hold comment name the

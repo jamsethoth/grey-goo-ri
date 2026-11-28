@@ -157,8 +157,13 @@ export type Job = {
   // A process the watcher linked outside the job's members, held by a handle gg keeps open, so its pid names no other
   // process while it is, and adopted through it: into this job, else a new kill-on-close job, else ended (ADR 0030
   // decision 3). One gg cannot open is not held, and named as far as the system will say; one whose start is not the
-  // start it was linked at is another process under a reused pid, so null, and left alone.
-  hold(entry: commandCleanup.ProcessEntry, started: bigint): commandCleanup.LinkedProcess | null;
+  // start it was linked at is another process under a reused pid, so null, and left alone. With 'end', it is ended
+  // through its handle, never adopted, as after a failed save of its call's containment (#532 Q2 A).
+  hold(
+    entry: commandCleanup.ProcessEntry,
+    started: bigint,
+    fate?: 'adopt' | 'end',
+  ): commandCleanup.LinkedProcess | null;
   // whether a held process's handle has signalled; never for one gg does not hold, which it cannot see end
   exited(pid: number): boolean;
   // ends each held pid through its adopted job and its handle, and resolves once each whose end was accepted has exited
@@ -207,6 +212,7 @@ function linkedHoldings(kernel32: Kernel32, ggJob: bigint) {
   const hold = (
     { pid, parentPid }: commandCleanup.ProcessEntry,
     started: bigint,
+    fate: 'adopt' | 'end' = 'adopt',
   ): commandCleanup.LinkedProcess | null => {
     const handle = kernel32.OpenProcess(PROCESS_HELD, 0, pid);
     if (!handle) return { ...describe(kernel32, pid), parentPid, started: null, held: false };
@@ -216,7 +222,8 @@ function linkedHoldings(kernel32: Kernel32, ggJob: bigint) {
       return null;
     }
     const named = { pid, created: createdAt(kernel32, handle), commandLine: commandLineOf(kernel32, handle) };
-    held.set(pid, { handle, job: adopt(handle) });
+    if (fate === 'end') kernel32.TerminateProcess(handle, 1); // refused, it stays held, and its cleanup names it
+    held.set(pid, { handle, job: fate === 'adopt' ? adopt(handle) : null });
     return { ...named, parentPid, started, held: true };
   };
   // A process already ending, as a terminated job's are, refuses TerminateProcess, but its handle signals soon after.

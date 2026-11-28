@@ -381,6 +381,19 @@ test('launch reports the containment kind before it resolves', CASE, async () =>
   assert.notEqual(result.cleanup.containment.kind, 'none', 'launched contained');
 });
 
+// A failed save of the first started report takes the call down too, as the cancel does (#532 Q2 A).
+test('a launch whose first started report throws takes the call down', CASE, async () => {
+  const result = await launch({
+    command: process.execPath,
+    args: ['-e', 'setTimeout(() => {}, 60_000)'],
+    wallMs: 120_000,
+    onStarted: () => {
+      throw new Error('the containment save failed');
+    },
+  });
+  assert.deepEqual({ code: result.code, cancelled: result.cancelled }, { code: null, cancelled: true });
+});
+
 test("launch merges env over gg's environment", CASE, async () => {
   const lines: string[] = [];
   await launch({
