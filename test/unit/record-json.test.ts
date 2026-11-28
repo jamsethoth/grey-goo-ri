@@ -196,17 +196,18 @@ test('every row of the full fixture loads, and saves back as the row it was read
     }
 });
 
-// The full fixture as version 3 wrote it, every row and variant: a reader accepts the version before its own, and a
-// field new in its version is optional when absent (#422, decision 8). Version 4 added no field (#532).
-const VERSION_3 = JSON.parse(
-  readFileSync(new URL('../fixtures/record-rows-version-3.json', import.meta.url), 'utf8'),
+// The full fixture as version 4 wrote it, every row and variant: a reader accepts the version before its own, and a
+// field new in its version is optional when absent (#422, decision 8). Version 5 added the fixed row
+// nothing-to-publish (#490).
+const VERSION_4 = JSON.parse(
+  readFileSync(new URL('../fixtures/record-rows-version-4.json', import.meta.url), 'utf8'),
 ) as Fixture;
 
 test('a record saved at the previous schema version still reads', () => {
-  assert.equal(recordJson.RECORD_SCHEMA_VERSION, 4, 'version 3 is the one before');
-  for (const { row, under } of executionRows(VERSION_3))
-    loads('ticket', row, `the version 3 row with ${under || 'no variant'}`);
-  loads('epic', VERSION_3.epic, 'the version 3 Epic Record');
+  assert.equal(recordJson.RECORD_SCHEMA_VERSION, 5, 'version 4 is the one before');
+  for (const { row, under } of executionRows(VERSION_4))
+    loads('ticket', row, `the version 4 row with ${under || 'no variant'}`);
+  loads('epic', VERSION_4.epic, 'the version 4 Epic Record');
 });
 
 test('the full fixture holds an intent of every Effect and of an agent call', () => {
@@ -340,6 +341,7 @@ const CLOSED_SETS = [
     'parse-exhausted',
     'handed-off',
     'handoff-exhausted',
+    'nothing-to-publish',
     'claimed',
     'recover',
   ],

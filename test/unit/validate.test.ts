@@ -131,8 +131,9 @@ test("the Resolved Flow carries each Vertex's Agent, Procedure, access, tests an
     'harness-transient',
     'harness-unparsed',
     'harness-handoff',
+    'nothing-to-publish',
   ]);
-  assert.deepEqual(flows.default.ticket.vertices.publish.outcomes, ['ok', 'failed']);
+  assert.deepEqual(flows.default.ticket.vertices.publish.outcomes, ['ok', 'failed', 'nothing-to-publish']);
 });
 
 // The digest is sha256 of

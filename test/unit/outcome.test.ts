@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import * as outcome from '../../lib/outcome.ts';
 import type * as procedures from '../../lib/procedures.ts';
 import type * as visit from '../../lib/visit.ts';
@@ -739,4 +740,28 @@ test('every other fixed row but claimed outranks a hand-off', () => {
       assert.equal(resolution.row, name, `row ${name} with ${spent} hand-offs spent`);
     }
   }
+});
+
+// The documents that define the Outcomes name every engine Outcome, nothing-to-publish among them (#490, DoD 4).
+const documentText = (name: string) =>
+  readFileSync(new URL(`../../${name}`, import.meta.url), 'utf8').replace(/\s+/g, ' ');
+const codeSpans = (text: string) => (text.match(/`[^`]+`/g) ?? []).map((span) => span.slice(1, -1));
+
+test("the request's list of engine Outcomes is the engine's", () => {
+  const request = documentText('docs/requests/node-harness-dag.md');
+  const listed = /gg's engine Outcomes (.*?), each routable/.exec(request);
+  assert.ok(listed, 'the request lists the engine Outcomes');
+  assert.ok(outcome.ENGINE_OUTCOMES.includes('nothing-to-publish'), outcome.ENGINE_OUTCOMES.join(', '));
+  assert.deepEqual(codeSpans(listed[1]!).sort(), [...outcome.ENGINE_OUTCOMES].sort());
+});
+
+test("GLOSSARY.md's Outcome names each engine Outcome that is not a Harness's", () => {
+  const entry = /\*\*Outcome\*\*:(.*?)_Avoid_/.exec(documentText('GLOSSARY.md'));
+  assert.ok(entry, 'GLOSSARY.md defines Outcome');
+  const own = outcome.ENGINE_OUTCOMES.filter((name) => !outcome.HARNESS_OUTCOMES.includes(name));
+  assert.ok(own.includes('nothing-to-publish'), own.join(', '));
+  assert.deepEqual(
+    own.filter((name) => !codeSpans(entry[1]!).includes(name)),
+    [],
+  );
 });
