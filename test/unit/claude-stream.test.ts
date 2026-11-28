@@ -32,6 +32,7 @@ const SUCCESS_READ: claudeStream.ClaudeStream = {
   turns: 4,
   compactions: 0,
   peakContextTokens: 10035,
+  startContextTokens: 9755,
   totals: {
     inputTokens: 4,
     cacheReadTokens: 9753,

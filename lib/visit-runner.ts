@@ -303,7 +303,9 @@ function stopOf(state: RunningVisit, { actionIdentity, resolution }: Ran): termi
   // A Check's reason can quote agent-reported test names, so it is posted fenced, never in the reason text; a Check
   // with no reason of its own (a failing command) posts its output.
   const detail =
-    resolution.signal && resolution.rule.table === 'failed' ? (resolution.reason ?? resolution.output) : null;
+    resolution.signal && resolution.rule.table === 'failed'
+      ? (resolution.reason ?? resolution.output)
+      : terminal.handoffNote(resolution, state.response);
   if (detail) stop.detail = detail;
   // A stop token's `stopped` table decided, and the token may name the template its comment renders.
   if (resolution.rule.table === 'stopped') {

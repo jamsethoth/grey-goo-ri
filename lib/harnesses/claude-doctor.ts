@@ -236,7 +236,8 @@ function forkCheck(ran: cliDoctor.Said, handedOff: string): Check {
   );
 }
 
-const profileProbe = (runner: Runner, profile: ProfileLaunch) =>
+// The profile probe's calls, and the budget checks on the context its first request sent (#497).
+const profileProbe = (runner: Runner, profile: ProfileLaunch, agents: runContext.DoctorOptions['agents']) =>
   cliDoctor.inTemporary('gg-claude-probe-', async (directory) => {
     const cwd = join(directory, 'repo');
     mkdirSync(cwd);
@@ -250,14 +251,14 @@ const profileProbe = (runner: Runner, profile: ProfileLaunch) =>
     const ran = await launch(probeCall(directory), PROFILE_BRIEF);
     const checks = [profileCheck(ran), handoffCheck(ran)];
     // The fork needs a Session that handed off, in the same directory, where the CLI keeps it.
-    const { sessionId } = claudeStream.read(ran.lines);
-    if (checks.some(({ ok }) => !ok)) return checks;
-    if (sessionId === null)
-      return [
-        ...checks,
-        cliDoctor.failed('fork-probe', "the launch profile's call named no Session, so none can be copied"),
-      ];
-    return [...checks, forkCheck(await launch(forkCall(directory, sessionId), FORK_BRIEF), sessionId)];
+    const { sessionId, startContextTokens } = claudeStream.read(ran.lines);
+    const budgetChecks = cliDoctor.startChecks(startContextTokens, agents);
+    if (checks.some(({ ok }) => !ok)) return [...checks, ...budgetChecks];
+    const fork =
+      sessionId === null
+        ? cliDoctor.failed('fork-probe', "the launch profile's call named no Session, so none can be copied")
+        : forkCheck(await launch(forkCall(directory, sessionId), FORK_BRIEF), sessionId);
+    return [...checks, fork, ...budgetChecks];
   });
 
 // What the --bare probe's call shows: only a call the subscription's token answered tells anything.
@@ -365,7 +366,7 @@ export async function doctor(
       loginCheck(auth),
       helpCheck(help),
     );
-    if (probe) checks.push(...(await profileProbe(runner, profile)), await bareProbe(runner));
+    if (probe) checks.push(...(await profileProbe(runner, profile, agents)), await bareProbe(runner));
     // Claude runs the Agents' commands in its shell itself, so the probe runs there with nothing before it.
     if (probe && shell?.shell) checks.push(await cliDoctor.containmentCheck(runner, shell.shell.path));
   }

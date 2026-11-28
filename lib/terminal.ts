@@ -1,11 +1,14 @@
 // Terminals: the hold, abandonment, fault and run stops that end an Execution, the Terminal it ends at, and the
 // sentences of their Terminal Reasons. A Terminal's report is terminal-report's.
+import * as briefs from './briefs.ts';
 import * as effectErrors from './effect-errors.ts';
 import * as effects from './effects/index.ts';
 import type * as sideEffect from './effects/side-effect.ts';
 import * as flow from './flow.ts';
+import type * as jsonValue from './json-value.ts';
 import * as labels from './labels.ts';
 import * as record from './record.ts';
+import * as referencePaths from './reference-paths.ts';
 import * as terminalReport from './terminal-report.ts';
 import type * as visit from './visit.ts';
 
@@ -244,6 +247,14 @@ function rowText(where: string | null, vertex: string, resolution: StopResolutio
       );
   }
   return undefined;
+}
+
+// The last hand-off note of an agent that handed off until its budget ran out: the plan of what remained, which its
+// Terminal Reason's comment posts fenced and redacted (#497); null for any other stop.
+export function handoffNote(resolution: StopResolution, response: jsonValue.JsonValue | null): string | null {
+  if (resolution.row !== 'handoff-exhausted' || !referencePaths.isRecord(response)) return null;
+  const note = response[briefs.HANDOFF_NOTE];
+  return typeof note === 'string' && note.trim() ? note : null;
 }
 
 // The Terminal Reason's sentence for an Action that stopped with `outcomeName`.

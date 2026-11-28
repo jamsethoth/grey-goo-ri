@@ -234,7 +234,8 @@ test('a rollout is found by its thread id anywhere in the sessions tree', (t) =>
   assert.equal(codexStream.rollout(home, 'old-thread')?.path, path);
 });
 
-test("the rollout gives the CLI version, and the last turn's model, effort and sandbox", (t) => {
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test("the rollout gives the CLI version, the last turn's model, effort and sandbox, and the first request's context", (t) => {
   const home = tempDirectory.tempDirectory(t, 'gg-codexhome-');
   const directory = join(home, 'sessions', '2026', '11', '22');
   mkdirSync(directory, { recursive: true });
@@ -247,5 +248,6 @@ test("the rollout gives the CLI version, and the last turn's model, effort and s
     model: 'gpt-6-luna',
     effort: 'low',
     sandbox: 'workspace-write',
+    startContextTokens: 13_016,
   });
 });

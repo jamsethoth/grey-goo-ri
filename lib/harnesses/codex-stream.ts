@@ -25,13 +25,15 @@ export interface CodexStream {
 }
 
 // What a thread's rollout records: its path, the CLI version that wrote it, and the model, effort and sandbox of its
-// last turn.
+// last turn, and the context its first request sent: the first token_count's input tokens, cached ones among them,
+// where a fresh Session starts (#497).
 export interface Rollout {
   path: string;
   cliVersion: string | null;
   model: string | null;
   effort: string | null;
   sandbox: string | null;
+  startContextTokens: number | null;
 }
 
 type Line = Record<string, unknown>;
@@ -144,11 +146,15 @@ export function rollout(codexHome: string, threadId: string): Rollout | null {
   const lines = linesOf(readFileSync(path, 'utf8').split('\n'));
   const meta = recordOf(lines.find((line) => line.type === 'session_meta')?.payload);
   const turn = recordOf(lines.findLast((line) => line.type === 'turn_context')?.payload);
+  const starts = lines.map((line) =>
+    numberOf(recordOf(recordOf(recordOf(line.payload).info).last_token_usage).input_tokens),
+  );
   return {
     path,
     cliVersion: stringOf(meta.cli_version),
     model: stringOf(turn.model),
     effort: stringOf(turn.effort),
     sandbox: stringOf(recordOf(turn.sandbox_policy).type),
+    startContextTokens: starts.find((tokens) => tokens !== null) ?? null,
   };
 }
