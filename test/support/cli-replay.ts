@@ -107,6 +107,10 @@ export interface FakeCliOptions {
   // Whether the fake leaves an orphan descendant running, whose pid it writes to orphanPidFile; the call's stall and
   // wall clocks count from that write (#475).
   orphan?: boolean;
+  // The arguments of a helper the descendant is started under, a re-run of the CLI that writes its pid to helperPidFile
+  // (and its exit to helperExitFile if it ends by itself) and stays while the descendant runs, as a CLI's sandbox
+  // helper stays while the command it started runs (#483 Q1 A); none starts it through a middle process that exits.
+  helper?: string[];
   // What the fake writes to its stderr.
   stderr?: string;
   // The executable launched in place of the CLI, node unless a case names one that does not exist.
@@ -159,6 +163,26 @@ function replaysIn(directory: string, recordings: string, scenarios: string[]) {
   return { recordingAt: (call: number) => copies[replayedAt(call)]!, receivedFile, receivedAt, calls };
 }
 
+// What the fake's directory holds: the CLI's home, the repository a call runs in, the Run directory, and the pid file
+// each process of the fake writes, the CLI's, the helper's and the descendant's, and the file the helper writes if it
+// ends by itself.
+const pathsIn = (directory: string) => ({
+  home: join(directory, 'home'),
+  cwd: join(directory, 'repo'),
+  runDirectory: join(directory, 'run'),
+  cliPidFile: join(directory, 'cli.pid'),
+  helperPidFile: join(directory, 'helper.pid'),
+  helperExitFile: join(directory, 'helper exited'),
+  orphanPidFile: join(directory, 'orphan.pid'),
+});
+
+// What the fake's helper reads: its argv, and the files it writes its pid to and, ending by itself, its exit to.
+const helperEnv = (helper: string[], { helperPidFile, helperExitFile }: ReturnType<typeof pathsIn>) => ({
+  FAKE_CLI_HELPER: JSON.stringify(helper),
+  FAKE_CLI_HELPER_PID: helperPidFile,
+  FAKE_CLI_HELPER_EXIT: helperExitFile,
+});
+
 // The fake CLI in a temp directory holding the CLI's home, the repository a call runs in, the Run directory, and the
 // fake's script and recordings, copied there; its launch, every launch it was asked for, and what the fake received.
 export function fakeCli(t: TestContext, options: FakeCliOptions) {
@@ -166,17 +190,13 @@ export function fakeCli(t: TestContext, options: FakeCliOptions) {
   // On Windows a fake just killed holds its working directory for a moment, so the repository goes first, with retries;
   // any process of the fake's left running, which a failed case can leave, is ended before it.
   const removeRepository = () => {
-    for (const pidFile of [cliPidFile, orphanPidFile]) processProbe.endProcessIn(pidFile);
+    for (const pidFile of [cliPidFile, helperPidFile, orphanPidFile]) processProbe.endProcessIn(pidFile);
     rmSync(cwd, { recursive: true, force: true, maxRetries: 6, retryDelay: 100 });
   };
   const directory = tempDirectory.tempDirectory(t, 'gg fake cli-', undefined, removeRepository);
-  const [home, cwd, runDirectory] = ['home', 'repo', 'run'].map((name) => join(directory, name)) as [
-    string,
-    string,
-    string,
-  ];
+  const paths = pathsIn(directory);
+  const { home, cwd, runDirectory, cliPidFile, helperPidFile, orphanPidFile } = paths;
   for (const made of [home, cwd, runDirectory]) mkdirSync(made);
-  const [cliPidFile, orphanPidFile] = [join(directory, 'cli.pid'), join(directory, 'orphan.pid')];
   // .mts, so node runs the copy as a module whatever package.json lies above the temp directory
   const fakeScript = join(directory, 'fake cli.mts');
   copyFileSync(FAKE_CLI, fakeScript);
@@ -210,6 +230,7 @@ export function fakeCli(t: TestContext, options: FakeCliOptions) {
         FAKE_CLI_SENT: sentFile,
         ...(transcript && { FAKE_CLI_TRANSCRIPT: transcript.path, FAKE_CLI_TRANSCRIPT_FROM: transcript.from }),
         ...(orphan && { FAKE_CLI_ORPHAN: orphanPidFile }),
+        ...(options.helper && helperEnv(options.helper, paths)),
         ...(stderr !== undefined && { FAKE_CLI_STDERR: stderr }),
       },
     };
@@ -219,7 +240,7 @@ export function fakeCli(t: TestContext, options: FakeCliOptions) {
   // What the fake read at the last model call, and at each.
   const received = () => replays.receivedAt(Math.max(modelCalls() - 1, 0));
   const calls = () => replays.calls(modelCalls());
-  return { launch, launches, directory, home, cwd, runDirectory, received, calls, cliPidFile, orphanPidFile };
+  return { launch, launches, directory, received, calls, ...paths };
 }
 
 export type FakeCli = ReturnType<typeof fakeCli>;
